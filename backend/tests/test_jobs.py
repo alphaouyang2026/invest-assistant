@@ -1,5 +1,8 @@
-"""`Jobs` (spec §8, appendix A.5): one worker thread, one queue, one
-cross-process lock, and a log of results that survives restarts.
+"""`Jobs` (spec §8, appendix A.5): one worker thread, one job at a time,
+one cross-process lock, and a log of results that survives restarts.
+
+Nothing waits: a job is refused at `submit` while another one — here or in
+another process — is running.
 
 Jobs here are small functions; what a sync job does is the market data
 tests' business.
@@ -49,9 +52,16 @@ def test_a_submitted_job_runs_and_its_result_is_kept(jobs, runtime_dir) -> None:
     assert [r.id for r in reopened.history()] == [job_id]
 
 
+def one_after_another(jobs: Jobs, *items: Job) -> list[str]:
+    ids = []
+    for job in items:
+        ids.append(jobs.submit(job))
+        jobs.wait_until_idle()
+    return ids
+
+
 def test_history_is_newest_first_and_limited(jobs) -> None:
-    ids = [jobs.submit(Job(f"job-{n}", finished())) for n in range(3)]
-    jobs.wait_until_idle()
+    ids = one_after_another(jobs, *[Job(f"job-{n}", finished()) for n in range(3)])
 
     assert [result.id for result in jobs.history(limit=2)] == [ids[2], ids[1]]
 
@@ -77,66 +87,70 @@ def test_the_running_job_and_its_progress_are_visible(jobs) -> None:
     assert jobs.current() is None
 
 
-def test_jobs_run_one_at_a_time_in_the_order_submitted(jobs) -> None:
-    order, overlap = [], []
-    running = threading.Lock()
-
-    def step(name):
-        def run(progress):
-            if not running.acquire(blocking=False):
-                overlap.append(name)
-                return JobOutcome()
-            order.append(name)
-            running.release()
-            return JobOutcome()
-        return run
-
-    for name in ("a", "b", "c"):
-        jobs.submit(Job(name, step(name)))
-    jobs.wait_until_idle()
-
-    assert (order, overlap) == (["a", "b", "c"], [])
-
-
 def test_a_failing_job_is_recorded_and_the_next_one_still_runs(jobs) -> None:
     def broken(progress):
         raise RuntimeError("J-Quants 返回 HTTP 403")
 
-    jobs.submit(Job("sync", broken))
-    jobs.submit(Job("other", finished()))
-    jobs.wait_until_idle()
+    one_after_another(jobs, Job("sync", broken), Job("other", finished()))
 
     other, failed = jobs.history()
     assert (failed.status, failed.error) == ("failed", "J-Quants 返回 HTTP 403")
     assert other.status == "succeeded"
 
 
-def test_submitting_a_kind_already_waiting_returns_the_waiting_job(jobs) -> None:
-    """Pressing 立即同步 twice, or the 18:00 timer firing during a manual
-    sync, should not queue a second sync behind the first."""
-    release = threading.Event()
-    first = jobs.submit(Job("sync", lambda progress: release.wait(5) and JobOutcome()))
+@pytest.mark.parametrize("second_kind", ["sync", "advance"])
+def test_submitting_while_a_job_is_running_is_refused_at_once(jobs, second_kind) -> None:
+    """One job at a time, and nothing queues behind it: pressing 立即同步
+    twice, or the timer firing during a manual sync, is told so."""
+    started, release = threading.Event(), threading.Event()
 
-    again = jobs.submit(Job("sync", finished()))
+    def slow(progress):
+        started.set()
+        release.wait(5)
+        return JobOutcome()
+
+    first = jobs.submit(Job("sync", slow))
+    assert started.wait(5)
+
+    with pytest.raises(JobsBusy) as refusal:
+        jobs.submit(Job(second_kind, finished()))
 
     release.set()
     jobs.wait_until_idle()
-    assert again == first
-    assert len(jobs.history()) == 1
+    assert "正在运行" in str(refusal.value)
+    assert [result.id for result in jobs.history()] == [first]
 
 
-def test_a_job_waits_while_another_process_holds_the_lock(jobs, runtime_dir) -> None:
+def test_submitting_while_another_process_holds_the_lock_is_refused_at_once(jobs, runtime_dir) -> None:
+    """The command line's backfill holds the lock for 40 minutes; a sync
+    submitted meanwhile is refused, not left waiting behind it."""
+    runtime_dir.mkdir(parents=True, exist_ok=True)
     other_process = FileLock(runtime_dir / "job.lock")
     other_process.acquire()
     try:
-        jobs.submit(Job("sync", finished()))
-        assert jobs.wait_until_idle(timeout=0.5) is False
-        assert jobs.current().state == "waiting_for_lock"
+        with pytest.raises(JobsBusy):
+            jobs.submit(Job("sync", finished()))
+        assert jobs.current() is None
     finally:
         other_process.release()
 
+    jobs.submit(Job("sync", finished()))
     assert jobs.wait_until_idle()
-    assert jobs.history()[0].status == "succeeded"
+    assert [result.status for result in jobs.history()] == ["succeeded"]
+
+
+def test_the_lock_is_held_from_submit_until_the_job_ends(jobs, runtime_dir) -> None:
+    """Taken at `submit`, not when the worker gets round to the job, so
+    the command line cannot slip in between and leave the job waiting."""
+    release = threading.Event()
+    jobs.submit(Job("sync", lambda progress: release.wait(5) and JobOutcome()))
+
+    with pytest.raises(JobsBusy):
+        run_now(Job("sync", finished()), runtime_dir)
+
+    release.set()
+    jobs.wait_until_idle()
+    assert run_now(Job("sync", finished()), runtime_dir).status == "succeeded"
 
 
 def test_run_now_refuses_while_the_lock_is_held(runtime_dir) -> None:

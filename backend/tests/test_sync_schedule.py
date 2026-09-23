@@ -11,6 +11,7 @@ from datetime import date, datetime, time
 from zoneinfo import ZoneInfo
 
 import pytest
+from filelock import FileLock
 
 from app.jobs import DailySync, Job, JobOutcome, Jobs
 
@@ -47,6 +48,11 @@ def world(tmp_path):
 
     yield clock, published, tick_at
     jobs.stop()
+
+
+@pytest.fixture
+def lock_file(tmp_path):
+    return tmp_path / "var" / "job.lock"
 
 
 def test_nothing_before_six_in_the_evening_then_a_sync_at_six(world) -> None:
@@ -87,3 +93,18 @@ def test_retries_stop_once_the_data_is_out(world) -> None:
     published["yet"] = True
     assert tick_at(18, 30) is True
     assert tick_at(19, 0) is False
+
+
+def test_a_sync_refused_because_the_lock_is_held_is_tried_again_on_the_next_tick(world, lock_file) -> None:
+    """The command line is backfilling at 18:00: the timer is refused,
+    shrugs, and gets in once the backfill lets go."""
+    _, published, tick_at = world
+    published["yet"] = True
+    backfill = FileLock(lock_file)
+    backfill.acquire()
+    try:
+        assert tick_at(18, 0) is False
+    finally:
+        backfill.release()
+
+    assert tick_at(18, 1) is True

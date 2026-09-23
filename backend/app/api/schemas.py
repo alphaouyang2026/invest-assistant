@@ -23,7 +23,7 @@ class JobResultOut(BaseModel):
 class JobStatusOut(BaseModel):
     id: str
     kind: str
-    state: str  # "queued" / "waiting_for_lock" / "running"
+    state: str  # "queued" / "running"
     submitted_at: datetime
     started_at: datetime | None
     progress: dict[str, Any] | None
@@ -38,6 +38,12 @@ class DataStatus(BaseModel):
 
 class SyncAccepted(BaseModel):
     job_id: str
+
+
+class Refusal(BaseModel):
+    """Why a request was turned away (FastAPI's `HTTPException` shape)."""
+
+    detail: str
 
 
 class SecurityGap(BaseModel):

@@ -14,6 +14,7 @@ function fakeBackend() {
     quality: { missing_sessions: [] as string[], gaps: [] as unknown[], untradable_rows: 0, untradable_on_latest: 0 },
     current: null as unknown,
     posts: 0,
+    refuseSync: null as string | null,
   };
   const fetch = vi.fn(async (input: Request) => {
     const path = new URL(input.url).pathname;
@@ -21,6 +22,7 @@ function fakeBackend() {
       new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
     if (input.method === "POST" && path === "/api/data/sync") {
       state.posts += 1;
+      if (state.refuseSync) return json({ detail: state.refuseSync }, 409);
       state.current = { id: "job1", kind: "sync", state: "queued", submitted_at: "2026-09-24T18:00:00+09:00", started_at: null, progress: null };
       return json({ job_id: "job1" }, 202);
     }
@@ -104,5 +106,15 @@ describe("数据页", () => {
     backend.state.current = null;
     expect(await screen.findByText("2026-09-24", { selector: "dd" })).toBeInTheDocument();
     await waitFor(() => expect(screen.getByRole("button", { name: "立即同步" })).toBeEnabled());
+  });
+
+  it("已有任务在运行时，「立即同步」被拒，并显示原因", async () => {
+    backend.state.refuseSync = "另一个任务正在运行（var/job.lock 已被占用），请稍后再试";
+    render(<DataCenter pollMs={10} />);
+
+    await userEvent.click(await screen.findByRole("button", { name: "立即同步" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("另一个任务正在运行（var/job.lock 已被占用），请稍后再试");
+    expect(screen.getByRole("button", { name: "立即同步" })).toBeEnabled();
   });
 });

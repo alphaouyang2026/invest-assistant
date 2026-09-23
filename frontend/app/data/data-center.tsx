@@ -10,8 +10,7 @@ type Current = Schemas["JobStatusOut"] | null;
 type JobResult = Schemas["JobResultOut"];
 
 const STATE_LABELS: Record<string, string> = {
-  queued: "排队中",
-  waiting_for_lock: "等待另一个任务结束",
+  queued: "即将开始",
   running: "进行中",
 };
 
@@ -62,11 +61,13 @@ export function DataCenter({ pollMs = 2000 }: { pollMs?: number }) {
   }, [watching, pollMs, refresh]);
 
   const syncNow = async () => {
-    const { error: failed } = await api.POST("/api/data/sync");
-    if (failed) {
-      setError("排入同步失败");
+    const { error: refused } = await api.POST("/api/data/sync");
+    if (refused) {
+      // 409: a job is already running, here or in another process
+      setError(refused.detail);
       return;
     }
+    setError(null);
     const { data } = await api.GET("/api/jobs/current");
     setCurrent(data ?? null);
   };

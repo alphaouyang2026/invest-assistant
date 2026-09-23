@@ -74,16 +74,14 @@ def test_quality_is_worked_out_on_request(api) -> None:
     }
 
 
-def test_the_current_job_shows_while_it_waits_for_the_lock(api) -> None:
+def test_sync_now_is_refused_with_the_reason_while_another_job_holds_the_lock(api) -> None:
     held = FileLock(Settings(_env_file=None).runtime_dir / "job.lock")
     held.acquire()
     try:
-        job_id = api.post("/api/data/sync").json()["job_id"]
-        time.sleep(0.1)
-        current = api.get("/api/jobs/current").json()
+        response = api.post("/api/data/sync")
     finally:
         held.release()
-    wait_for_idle(api)
 
-    assert (current["id"], current["kind"], current["state"]) == (job_id, "sync", "waiting_for_lock")
-    assert current["progress"] is None
+    assert response.status_code == 409
+    assert "另一个任务正在运行" in response.json()["detail"]
+    assert api.get("/api/jobs/current").json() is None

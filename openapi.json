@@ -43,6 +43,16 @@
                 }
               }
             }
+          },
+          "409": {
+            "description": "已有任务正在运行，没有排入",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            }
           }
         }
       }
@@ -289,6 +299,20 @@
           "progress"
         ],
         "title": "JobStatusOut"
+      },
+      "Refusal": {
+        "properties": {
+          "detail": {
+            "type": "string",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "required": [
+          "detail"
+        ],
+        "title": "Refusal",
+        "description": "Why a request was turned away (FastAPI's `HTTPException` shape)."
       },
       "SecurityGap": {
         "properties": {

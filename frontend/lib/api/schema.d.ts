@@ -145,6 +145,14 @@ export interface components {
                 [key: string]: unknown;
             } | null;
         };
+        /**
+         * Refusal
+         * @description Why a request was turned away (FastAPI's `HTTPException` shape).
+         */
+        Refusal: {
+            /** Detail */
+            detail: string;
+        };
         /** SecurityGap */
         SecurityGap: {
             /** Code */
@@ -202,6 +210,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SyncAccepted"];
+                };
+            };
+            /** @description 已有任务正在运行，没有排入 */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
                 };
             };
         };

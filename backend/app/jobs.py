@@ -1,11 +1,12 @@
 """Background jobs (spec §8, appendix A.5).
 
-One worker thread takes jobs off one queue, one at a time, because SQLite
-has one writer (ADR-0002). Each job first takes `var/job.lock`, which the
-command line takes too, so a foreground backfill and the service never
-write at once. Every result is appended to `var/jobs.jsonl`; the job in
-progress lives only in memory — a restart loses it, and rerunning is the
-recovery.
+One job at a time, because SQLite has one writer (ADR-0002), and nothing
+waits in line: `submit` refuses a job outright while another is running,
+here or in another process. It takes `var/job.lock` — which the command
+line takes too — the moment it accepts a job and holds it until the job
+ends, so a foreground backfill and the service never write at once. Every
+result is appended to `var/jobs.jsonl`; the job in progress lives only in
+memory — a restart loses it, and rerunning is the recovery.
 
 Callers see `submit`, `current` and `history`, plus `run_now` for the
 command line.
@@ -16,7 +17,6 @@ from __future__ import annotations
 import json
 import threading
 import uuid
-from collections import deque
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from datetime import date, datetime, time, timedelta
@@ -51,7 +51,7 @@ class Job:
 class JobStatus:
     id: str
     kind: str
-    state: str  # "queued" / "waiting_for_lock" / "running"
+    state: str  # "queued" (accepted, not yet started) / "running"
     submitted_at: datetime
     started_at: datetime | None
     progress: dict[str, Any] | None
@@ -70,7 +70,10 @@ class JobResult:
 
 
 class JobsBusy(RuntimeError):
-    """Another process holds the job lock."""
+    """A job is already running, in this process or another."""
+
+
+LOCK_HELD = "另一个任务正在运行（var/job.lock 已被占用），请稍后再试"
 
 
 def _tokyo_now() -> datetime:
@@ -94,9 +97,11 @@ class Jobs:
     def __init__(self, runtime_dir: Path, *, clock: Callable[[], datetime] = _tokyo_now) -> None:
         self._dir = Path(runtime_dir)
         self._clock = clock
+        # Taken by `submit` in the caller's thread, released by the worker
+        # when the job ends — so not tied to either thread.
+        self._lock = FileLock(self._dir / LOCK_FILE, thread_local=False)
         self._changed = threading.Condition()
-        self._queue: deque[_Entry] = deque()
-        self._active: _Entry | None = None
+        self._current: _Entry | None = None
         self._stopping = False
         self._thread: threading.Thread | None = None
 
@@ -107,65 +112,57 @@ class Jobs:
     def stop(self) -> None:
         with self._changed:
             self._stopping = True
+            if self._current is not None and self._current.state == "queued":
+                self._current = None
+                self._lock.release()
             self._changed.notify_all()
         if self._thread is not None:
             self._thread.join(timeout=10)
 
     def submit(self, job: Job) -> str:
-        """Queue `job`; if one of the same kind is already waiting or
-        running, that one's id comes back instead."""
+        """Accept `job` and start it, or raise `JobsBusy` at once if a job
+        is already running here or another process holds the lock."""
         with self._changed:
-            for entry in (self._active, *self._queue):
-                if entry is not None and entry.job.kind == job.kind:
-                    return entry.id
-            entry = _Entry(uuid.uuid4().hex[:12], job, self._clock())
-            self._queue.append(entry)
+            if self._current is not None:
+                raise JobsBusy(f"已有任务正在运行（{self._current.job.kind}），请等它结束后再试")
+            self._dir.mkdir(parents=True, exist_ok=True)
+            try:
+                self._lock.acquire(timeout=0)
+            except Timeout:
+                raise JobsBusy(LOCK_HELD) from None
+            self._current = _Entry(uuid.uuid4().hex[:12], job, self._clock())
             self._changed.notify_all()
-            return entry.id
+            return self._current.id
 
     def current(self) -> JobStatus | None:
-        """The job being worked on, else the next one waiting."""
         with self._changed:
-            entry = self._active or (self._queue[0] if self._queue else None)
-            return None if entry is None else entry.status()
+            return None if self._current is None else self._current.status()
 
     def history(self, limit: int = 20) -> list[JobResult]:
         """Finished jobs, newest first."""
         return read_history(self._dir, limit)
 
     def wait_until_idle(self, timeout: float = 10.0) -> bool:
-        """True once nothing is queued or running; False if `timeout` ran out."""
+        """True once no job is running; False if `timeout` ran out."""
         with self._changed:
-            return self._changed.wait_for(lambda: self._active is None and not self._queue, timeout)
+            return self._changed.wait_for(lambda: self._current is None, timeout)
 
     def _work(self) -> None:
-        self._dir.mkdir(parents=True, exist_ok=True)
-        lock = FileLock(self._dir / LOCK_FILE)
         while True:
             with self._changed:
-                self._changed.wait_for(lambda: self._stopping or self._queue)
+                self._changed.wait_for(
+                    lambda: self._stopping or (self._current is not None and self._current.state == "queued")
+                )
                 if self._stopping:
                     return
-                entry = self._active = self._queue.popleft()
-                entry.state = "waiting_for_lock"
-
-            while not self._stopping:
-                try:
-                    lock.acquire(timeout=0.2)
-                    break
-                except Timeout:
-                    continue
-            else:
-                return
-
+                entry = self._current
+                entry.state, entry.started_at = "running", self._clock()
             try:
-                with self._changed:
-                    entry.state, entry.started_at = "running", self._clock()
                 _execute(entry.id, entry.job, self._dir, self._clock, entry.started_at, self._set_progress(entry))
             finally:
-                lock.release()
+                self._lock.release()
                 with self._changed:
-                    self._active = None
+                    self._current = None
                     self._changed.notify_all()
 
     def _set_progress(self, entry: _Entry) -> Progress:
@@ -206,9 +203,6 @@ class DailySync:
         now = self._clock()
         if now.time() < self.FIRST or not self._is_session(now.date()):
             return None
-        current = self._jobs.current()
-        if current is not None and current.kind == "sync":
-            return None
         tonight = [
             result for result in self._jobs.history()
             if result.kind == "sync" and result.started_at.date() == now.date() and result.started_at.time() >= self.FIRST
@@ -219,7 +213,10 @@ class DailySync:
                 return None
             if now.time() > self.LAST or now < latest.finished_at + self.RETRY_AFTER:
                 return None
-        return self._jobs.submit(self._make_job())
+        try:
+            return self._jobs.submit(self._make_job())
+        except JobsBusy:
+            return None  # something else is running; the next tick tries again
 
     def run_forever(self, stop: threading.Event, every_seconds: float = 30.0) -> None:
         while not stop.wait(every_seconds):
@@ -242,7 +239,7 @@ def run_now(job: Job, runtime_dir: Path, *, clock: Callable[[], datetime] = _tok
     try:
         lock.acquire(timeout=0)
     except Timeout:
-        raise JobsBusy("另一个任务正在运行（var/job.lock 已被占用），请稍后再试") from None
+        raise JobsBusy(LOCK_HELD) from None
     try:
         return _execute(uuid.uuid4().hex[:12], job, runtime_dir, clock, clock(), progress)
     finally:
