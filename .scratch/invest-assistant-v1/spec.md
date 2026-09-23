@@ -208,12 +208,13 @@ interface 见[附录 A](#附录-a模块-interface)。要点：一次查询取整
 
 纯函数。输入是一只证券的 `Series`，或「行是交易日、列是证券代码」的宽表 `DataFrame`（由 `MarketFrame.wide(列名)` 得到），输出同形状的指标；所有计算都按列进行，所以全股票池约 1,600 只证券一次调用就算完，不逐只循环。公式按 TradingView Pine 的内置函数实现，并在代码注释中标明对应的 `ta.*`：
 
-- SMA、EMA（`ta.ema`）、Wilder RMA（`ta.rma`）：起点规则对照 Pine 文档确认——`ta.rma` 以前 n 个值的简单平均为起点，`ta.ema` 的文档示例可能直接以第一个值为起点，两者未必相同；以简单平均为起点时，每一列按它自己的前 n 个有效值计算（新上市的证券前面是 NaN）；
+- SMA、EMA（`ta.ema`）、Wilder RMA（`ta.rma`）：EMA 和 RMA 都以前 n 个值的简单平均为起点，之前为 NaN——参考手册 `ta.ema` 的示例代码以第一个值为起点，但与 TradingView 实际数值比对，内置函数用的是简单平均（[indicators.md](indicators.md) §5 第 1 条）；每一列按它自己的前 n 个有效值计算（新上市的证券前面是 NaN）；
 - RSI（RMA 平滑）、ATR（RMA 平滑的 True Range）、+DI / −DI / ADX（`ta.dmi`）；
-- Hull MA、VWMA、一目均衡表（9/26/52）、Stochastic（14,3,3）、CCI（20）、Awesome Oscillator、Momentum（10）、MACD（12,26,9）、Stochastic RSI（3,3,14,14）、Williams %R（14）、Bull Bear Power（13）、Ultimate Oscillator（7,14,28）；
-- N 日最高收盘价。
+- Hull MA、VWMA、一目均衡表（9/26/52）、Stochastic（14,3,3）、CCI（20）、Awesome Oscillator、Momentum（10）、MACD（12,26,9）、Stochastic RSI（3,3,14,14）、Williams %R（14）、Bull Bear Power（13）、Ultimate Oscillator（7,14,28）。
 
-分母为零时的结果（例如 RSI 平均收益与平均损失同时为 0）要显式规定并写进测试，不依赖 pandas 默认行为。
+逐项公式、参数与取整见 [indicators.md](indicators.md)。
+
+分母为零时的结果要显式规定并写进测试，不依赖 pandas 默认行为：RSI 平均损失为 0 时取 100、否则平均收益为 0 时取 0，DMI 的 `+DI + −DI` 为 0 时按 1 算（都照 Pine 手册示例）；其余指标（Stochastic、Stoch RSI、Williams %R 的最高等于最低，CCI 的平均偏差为 0，VWMA 的成交量全为 0，UO 的 True Range 之和为 0）结果为 NaN，之后含 NaN 的比较一律不成立。
 
 NaN 的处理也要显式规定并写进测试：宽表对齐后，某证券当天没有日线的格子和停牌日一样是 NaN。规则是**把这一天当作没有 K 线**——TradingView 在无成交的日子本来就没有 K 线：递推类指标（EMA、RMA 及由它们组成的指标）跳过这一天、保留之前的平滑状态；窗口类指标（SMA、N 日最高价等）的「最近 n 根」跳过这一天往前数；这一天本身输出 NaN。停牌不多，实现上可以只对中间有 NaN 的列单独处理。
 
@@ -272,12 +273,12 @@ RSI14[t−1] ≤ 30      且  RSI14[t] > 30
 
 ### 6.4 技术评级 v1
 
-按 TradingView Technical Ratings 官方页面 <https://www.tradingview.com/support/solutions/43000614331-technical-ratings/> 复刻 26 项：
+按 TradingView `TechnicalRating` 库 v3 的 Pine 源码复刻 26 项——内置「Technical Ratings」指标、筛选器和个股页仪表盘用的都是它；源码存在 [tradingview/](tradingview/) 下，逐项规则见 [indicators.md](indicators.md) §4：
 
 - 均线组 15 项：SMA、EMA 各取 10/20/30/50/100/200，Hull MA 9，VWMA 20，一目均衡表；
 - 振荡器组 11 项：RSI 14、Stochastic 14,3,3、CCI 20、ADX 14、AO、Momentum 10、MACD 12,26,9、Stoch RSI 3,3,14,14、Williams %R 14、Bull Bear Power 13、UO 7,14,28。
 
-每项按官方规则给出 −1/0/+1，组内取平均。总评如何由两组合成，官方页面没有写，实现时对照 TradingView 公开的 Pine 源码确认，并写进测试。五档：`> 0.5` 强烈买入、`(0.1, 0.5]` 买入、`[−0.1, 0.1]` 中性、`[−0.5, −0.1)` 卖出、`< −0.5` 强烈卖出。
+每项给出 −1/0/+1；当天算不出的项不计入平均。组内取平均，总评是两组的平均（各占 50%）。官方说明页 <https://www.tradingview.com/support/solutions/43000614331-technical-ratings/> 的文字与源码有一处不一致（ADX 的卖出条件），按源码。五档：`> 0.5` 强烈买入、`(0.1, 0.5]` 买入、`[−0.1, 0.1]` 中性、`[−0.5, −0.1)` 卖出、`< −0.5` 强烈卖出。
 
 - 入场：总评 > 0.5；排序值 = 总评。
 - 持仓退出：总评 < −0.1。

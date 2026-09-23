@@ -2,13 +2,13 @@
 
 **What to build:** 用户打开信号页，选 Trend-Pullback v1 或技术评级 v1，就能看到最新交易日（或任选一个交易日）收盘后股票池里的入场候选，以及每只候选的排序值和理由；点开一只证券，可以在 K 线图上看到研究价格、成交量、该策略的指标和历史入场点。指标数值按 TradingView 的公式计算。
 
-**Design:** [invest-assistant v1 系统设计](../spec.md) §5、§6、§9（信号页、证券详情）、附录 A.2 与 A.3；指标逐项说明与待确认问题见 [03 用到的指标](../indicators.md)
+**Design:** [invest-assistant v1 系统设计](../spec.md) §5、§6、§9（信号页、证券详情）、附录 A.2 与 A.3；指标逐项公式、技术评级逐项规则与已查清的问题见 [03 用到的指标](../indicators.md)
 
 **Blocked by:** 02 — J-Quants 行情同步与数据页
 
 **Status:** ready-for-agent
 
-- [ ] 指标模块是纯 pandas 函数、不访问数据库，覆盖设计 §5 列出的全部指标；输入一只证券的 `Series` 或宽表（行是交易日、列是代码），按列计算，全股票池一次调用；EMA / RMA 的起点规则分别对照 TradingView Pine 文档确认并写进测试（两者未必相同）；分母为零时的结果显式规定；NaN 当作「这一天没有 K 线」（设计 §5），宽表里新上市证券前面的 NaN、中间停牌的 NaN 各有测试
+- [ ] 指标模块是纯 pandas 函数、不访问数据库，覆盖设计 §5 列出的全部指标；输入一只证券的 `Series` 或宽表（行是交易日、列是代码），按列计算，全股票池一次调用；EMA 与 RMA 都以前 n 个值的简单平均为起点（已对照 TradingView 实际数值确认，[indicators.md](../indicators.md) §5），写进测试；分母为零时的结果按设计 §5 的规定，每一处有测试；NaN 当作「这一天没有 K 线」（设计 §5），宽表里新上市证券前面的 NaN、中间停牌的 NaN 各有测试
 - [ ] 指标黄金测试：每个指标用手算的短序列做样例，RSI、ATR、ADX 验证 Wilder 平滑
 - [ ] 股票池实现为行情数据模块的 `universe(day)`（附录 A.1，不带参数表），规则按设计 §6.1：当天所在的市场分类区间为 Prime + 商品类别 011、最近 20 个开市日平均成交额 ≥ 5 亿日元（缺失或 `untradable` 按 0 计）、当天不是 `untradable`；市场分类区间和成交额门槛不外露给策略
 - [ ] 行情数据模块补上 `instruments(query=, codes=)`（代码、名称、英文名、当前市场区分）和 `MarketFrame.wide(列名)`（附录 A.1）
@@ -16,8 +16,8 @@
 - [ ] 指标对整个 `frame` 只算一次、按 `frame` 缓存（设计 §6.2「frame 的起点」，已决定：接受起点不同带来的小差异，换回测只算一次）；测试：同一个 `frame` 按日循环调用不重算；「不看未来」——用整个 `frame` 在 `t` 日评价，结果等于把 `frame` 截到 `t` 日再评价
 - [ ] Trend-Pullback v1 按设计 §6.3：入场五个条件、排序值 ADX/100、四条退出按优先级取理由、退出当天不重新入场、预热期 180；全部数字可由账户参数覆盖
 - [ ] Trend-Pullback v1 场景测试：满足入场、差一个条件不入场、四种退出各一例、同一天多个退出条件时理由取优先级最高的、持有第 5 天收盘触发时间退出
-- [ ] 技术评级 v1 按设计 §6.4 复刻 26 项，每项按官方规则给出 −1/0/+1、组内平均；两组合成总评的方式对照 TradingView 公开的 Pine 源码确认并写进测试；入场 > 0.5、持仓退出 < −0.1、排序值为总评、预热期 260
-- [ ] 技术评级每一项至少一个 buy / sell / neutral 的测试样例，五档阈值的边界值各一例
+- [ ] 技术评级 v1 按设计 §6.4 与 [indicators.md](../indicators.md) §4 复刻 26 项（以 `TechnicalRating` 库 v3 源码为准，ADX 卖出条件按源码而非说明页）：每项给出 −1/0/+1，检查值为 NaN 的项不计入平均，组内平均，总评为两组平均；入场 > 0.5、持仓退出 < −0.1、排序值为总评、预热期 260
+- [ ] 技术评级每一项至少一个 buy / sell / neutral 的测试样例，五档阈值的边界值各一例；另有「某项算不出时不计入平均」和「检查值有、条件里别的值是 NaN 时按 0 计入」各一例
 - [ ] 策略测试只用合成 K 线，不依赖数据库
 - [ ] `strategies` 模块的 `entry_candidates(market, strategy, day)` 和 `history(market, strategy, code, start, end)`（附录 A.3）收住「取股票池 → 往前读预热期 → `evaluate` → 补证券名称」的组装；一个交易日的入场评价对股票池一次批量读取行情，不逐只证券查询
 - [ ] API：`GET /api/signals?strategy=&date=`、`GET /api/instruments?q=`、`GET /api/instruments/{code}/bars?from=&to=&strategy=`；处理函数只调用上面两个函数和 `MarketData.instruments`，不写业务规则
