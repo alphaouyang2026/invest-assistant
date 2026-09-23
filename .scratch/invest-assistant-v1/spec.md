@@ -206,14 +206,18 @@ interface 见[附录 A](#附录-a模块-interface)。要点：一次查询取整
 
 ## 5. 指标模块
 
-纯函数，输入研究价格 DataFrame（单证券或按证券分组），输出同索引的指标列。公式按 TradingView Pine 的内置函数实现，并在代码注释中标明对应的 `ta.*`：
+纯函数。输入是一只证券的 `Series`，或「行是交易日、列是证券代码」的宽表 `DataFrame`（由 `MarketFrame.wide(列名)` 得到），输出同形状的指标；所有计算都按列进行，所以全股票池约 1,600 只证券一次调用就算完，不逐只循环。公式按 TradingView Pine 的内置函数实现，并在代码注释中标明对应的 `ta.*`：
 
-- SMA、EMA（`ta.ema`）、Wilder RMA（`ta.rma`）：EMA 与 RMA 以前 n 个值的简单平均为起点——实现时对照 Pine 文档确认起点规则；
+- SMA、EMA（`ta.ema`）、Wilder RMA（`ta.rma`）：起点规则对照 Pine 文档确认——`ta.rma` 以前 n 个值的简单平均为起点，`ta.ema` 的文档示例可能直接以第一个值为起点，两者未必相同；以简单平均为起点时，每一列按它自己的前 n 个有效值计算（新上市的证券前面是 NaN）；
 - RSI（RMA 平滑）、ATR（RMA 平滑的 True Range）、+DI / −DI / ADX（`ta.dmi`）；
 - Hull MA、VWMA、一目均衡表（9/26/52）、Stochastic（14,3,3）、CCI（20）、Awesome Oscillator、Momentum（10）、MACD（12,26,9）、Stochastic RSI（3,3,14,14）、Williams %R（14）、Bull Bear Power（13）、Ultimate Oscillator（7,14,28）；
 - N 日最高收盘价。
 
 分母为零时的结果（例如 RSI 平均收益与平均损失同时为 0）要显式规定并写进测试，不依赖 pandas 默认行为。
+
+NaN 的处理也要显式规定并写进测试：宽表对齐后，某证券当天没有日线的格子和停牌日一样是 NaN。规则是**把这一天当作没有 K 线**——TradingView 在无成交的日子本来就没有 K 线：递推类指标（EMA、RMA 及由它们组成的指标）跳过这一天、保留之前的平滑状态；窗口类指标（SMA、N 日最高价等）的「最近 n 根」跳过这一天往前数；这一天本身输出 NaN。停牌不多，实现上可以只对中间有 NaN 的列单独处理。
+
+指标是因果的：某一天的值只用到这一天及以前的数据。递推类指标的值取决于输入从哪天开始（见 6.2「frame 的起点」）。
 
 ## 6. 信号
 
@@ -229,12 +233,20 @@ interface 见[附录 A](#附录-a模块-interface)。要点：一次查询取整
 
 ### 6.2 策略 seam
 
-策略是一个声明了名称、默认参数、预热期的对象，只有一个方法 `evaluate(frame, day, holdings)`（[附录 A](#附录-a模块-interface)）。它对两类证券给出信号：
+策略是一个声明了名称、默认参数、预热期和图上画哪些指标的对象，只有一个方法 `evaluate(frame, day, holdings)`（[附录 A](#附录-a模块-interface)）。`frame` 里每只**能判断**的证券（预热期够、当天不是 `untradable`）都得到一条信号，处置可以是「不参与」，信号里带着这一天的指标值。它对两类证券给出信号：
 
-- **未持仓**：从空仓角度判断是否「可持有」，给出理由和候选排序值。`holdings` 传空时得到的就是信号页的入场候选，与任何账户无关。
+- **未持仓**：从空仓角度判断「可持有」还是「不参与」，给出理由；「可持有」的带候选排序值。`holdings` 传空时，其中「可持有」的就是信号页的入场候选，与任何账户无关。
 - **持仓**：结合持仓事实判断「可持有」还是「必须清仓」，给出理由。持仓只传代码、股数和开仓成交日；持有天数和开仓以来最高研究收盘价由策略自己从行情算出，不由调用方传入——否则这条规则会散到每个调用方去。
+  - 持有天数 = `frame` 里这只证券从开仓成交日到 `day`（含两端）的日线条数：停牌日库里有一条 `untradable` 日线，算一天；完全没有日线的开市日不算。
+  - `frame` 里这只证券的日线晚于开仓成交日才开始时，直接报错，不静默计算——否则开仓以来最高收盘价会被算低，跟踪止损无声地算错。
+
+返回「不参与」也是为了证券详情页：按日循环调用 `evaluate`，就同时得到指标曲线（每天信号里的指标值）和历史入场点，不需要为画图另加方法。
 
 策略不查数据库、不筛股票池：`frame` 里有什么就评价什么，股票池由调用方先问行情数据模块。预热期不足的证券没有信号；持仓证券当天 `untradable`（例如停牌）时也没有信号，持仓维持原状。
+
+**frame 的起点**：递推类指标的值取决于输入从哪天开始。策略对整个 `frame` 把指标算一次，按 `frame` 对象缓存（缓存不属于 interface），之后每次 `evaluate` 只按日取值，所以按日循环调用的开销与只调用一次相近。代价是：同一证券同一交易日，`frame` 起点不同，指标值会略有不同（见第 12 节）。调用方至少要从第一个评价日往前读预热期那么多个开市日；`frame` 传入后不得再修改。一条测试守住「不看未来」：用整个 `frame` 在 `t` 日评价，结果等于把 `frame` 截到 `t` 日再评价。
+
+「往前读多少、先取股票池、再补上证券名称」这套组装只写在一处：`strategies` 模块的 `entry_candidates` 和 `history`（附录 A.3），信号页和证券详情页的 API 只调用它们。
 
 ### 6.3 Trend-Pullback v1
 
@@ -369,7 +381,7 @@ backend/
     jobs.py            # 任务队列、文件锁、定时器、jobs.jsonl
     market_data/       # 4 张行情表、J-Quants 适配器、同步、研究价格、质量标记、读取
     indicators.py
-    strategies/        # 策略 seam、股票池、trend_pullback.py、technical_rating.py
+    strategies/        # 策略 seam、entry_candidates / history、trend_pullback.py、technical_rating.py
     accounts/          # 2 张账户表、组合规则、开盘成交、推进、统计
     api/
   migrations/
@@ -394,6 +406,7 @@ docker-compose.yml
 - 只用日线：跟踪止损是「收盘确认、次日开盘卖出」，跳空时按真实开盘价成交，不按止损线成交。
 - 开盘即涨停的买单一律视为买不到，现实中可能在收盘按比例分到少量；开盘即跌停的卖单同理。
 - 技术评级的长周期 EMA 与 TradingView 页面的数值可能略有差异。
+- 同一证券同一交易日，信号页（从当天往前读预热期）和回测中的账户（从起始日往前读，frame 更长）算出的 EMA 类指标不完全相同，偶尔会给出不同的处置——主要是技术评级：EMA200 只往前读 260 天时，当天的值里还有约 55% 来自起点的简单平均，信号页上的入场候选因此可能和回测账户那天的买入对不上。Trend-Pullback 读 180 天，EMA60 里起点只占约 2%，RSI、ATR、ADX 基本不受影响。这是为了让回测只算一次指标而接受的代价（6.2「frame 的起点」）。
 - 证券代码被重复使用时只记警告，不拆分两家公司的历史。
 
 ## 附录 A：模块 interface
@@ -409,14 +422,21 @@ class MarketData:
     def sync(self, *, until: date | None = None,
              on_progress: Callable[[SyncProgress], None] | None = None) -> SyncReport: ...
     def read(self, codes: Sequence[str] | None, start: date, end: date) -> MarketFrame: ...
-    def universe(self, day: date, policy: UniversePolicy = DEFAULT_POLICY) -> list[str]: ...
+    def universe(self, day: date) -> list[str]: ...
+    def instruments(self, *, query: str | None = None,
+                    codes: Sequence[str] | None = None) -> list[Instrument]: ...
     def calendar(self) -> Calendar: ...      # sessions()/next()/prev()/offset()，纯内存
     def overview(self) -> DataOverview: ...  # 最大日期、行数、最近任务结果、现算的质量警告
+
+@dataclass(frozen=True)
+class Instrument:   code: str; name: str; name_en: str; market: str | None   # 当前市场区分；已退市为 None
 ```
 
-藏在后面：J-Quants 分页与限速、逐日覆盖写入、市场分类区间的开闭、研究价格的累计系数、质量标记、拆合股核对、4 张表的全部 SQL。
+藏在后面：J-Quants 分页与限速、逐日覆盖写入、市场分类区间的开闭、研究价格的累计系数、质量标记、拆合股核对、股票池的市场分类区间与成交额门槛、4 张表的全部 SQL。
 
-`MarketFrame` 是一个很薄的包装：内部是以 (证券, 交易日) 为索引的 DataFrame，列名由模块给出的常量声明（研究价格 OHLCV、成交价格 OHLC、成交额、涨跌停标志、质量标记），并提供 `closes()` 这类宽表访问器。它是 interface 的一部分，列名和空值语义都要写进文档——这是选择用 pandas 换来的代价。
+`universe` 不带参数表：规则只有一套（6.1），门槛是模块内部的常量——只有一种取值的参数就是一个还用不上的 seam。`instruments` 给信号页补证券名称与市场、给 `GET /api/instruments?q=` 做搜索（按代码前缀或名称包含）；只有这个模块能读 `instruments` 表，所以由它提供。
+
+`MarketFrame` 是一个很薄的包装：内部是以 (证券, 交易日) 为索引的 DataFrame，列名由模块给出的常量声明（研究价格 OHLCV、成交价格 OHLC、成交额、涨跌停标志、质量标记），并提供宽表访问器 `wide(列名)`（行是交易日、列是证券代码，没有日线的格子为 NaN），指标模块直接吃这种宽表。它是 interface 的一部分，列名和空值语义都要写进文档——这是选择用 pandas 换来的代价。
 
 `client` 从构造函数传入，这就是 J-Quants seam：生产用 HTTP 适配器，测试用内存假适配器。
 
@@ -425,15 +445,17 @@ class MarketData:
 ### A.2 指标模块 `indicators`
 
 ```python
-def sma(s: Series, n: int) -> Series: ...
-def ema(s: Series, n: int) -> Series: ...
-def rma(s: Series, n: int) -> Series: ...
+Prices = Series | DataFrame   # 一只证券，或宽表（行是交易日、列是证券代码）
+
+def sma(s: Prices, n: int) -> Prices: ...
+def ema(s: Prices, n: int) -> Prices: ...
+def rma(s: Prices, n: int) -> Prices: ...
 def rsi(...), atr(...), dmi(...), adx(...), hull_ma(...), vwma(...), ichimoku(...),
     stochastic(...), cci(...), awesome_oscillator(...), momentum(...), macd(...),
     stoch_rsi(...), williams_r(...), bull_bear_power(...), ultimate_oscillator(...)
 ```
 
-一组纯函数，没有 seam，也不需要适配器。它的价值不在于藏住编排，而在于藏住正确性规则：Wilder 平滑的起点、分母为零时的取值、NaN 的传播。两个策略共用这一份，否则 RMA 会被各写一遍。
+一组纯函数，没有 seam，也不需要适配器。输入输出同形状，按列计算，所以全股票池一次调用。它的价值不在于藏住编排，而在于藏住正确性规则：Wilder 平滑的起点、分母为零时的取值、NaN 当作「这一天没有 K 线」（第 5 节）。两个策略共用这一份，否则 RMA 会被各写一遍。
 
 ### A.3 策略 seam `strategies`
 
@@ -441,6 +463,7 @@ def rsi(...), atr(...), dmi(...), adx(...), hull_ma(...), vwma(...), ichimoku(..
 class Strategy(Protocol):
     name: str
     warmup_sessions: int
+    plots: tuple[Plot, ...]          # 图上画哪些指标：指标名 → 叠在价格上，还是单独一栏
 
     def evaluate(self, frame: MarketFrame, day: date,
                  holdings: Sequence[Holding]) -> list[Signal]: ...
@@ -448,16 +471,31 @@ class Strategy(Protocol):
 def build_strategy(name: str, params: Mapping[str, Any]) -> Strategy: ...
 STRATEGY_DEFAULTS: Mapping[str, Mapping[str, Any]]   # 供新建账户页展示
 
+def entry_candidates(market: MarketData, strategy: Strategy, day: date) -> list[Candidate]: ...
+def history(market: MarketData, strategy: Strategy, code: str,
+            start: date, end: date) -> SecurityHistory: ...
+
 @dataclass(frozen=True)
 class Holding:      code: str; quantity: int; opened_on: date
 @dataclass(frozen=True)
 class Signal:       code: str; disposition: Disposition; reason_codes: tuple[str, ...]
                     indicators: Mapping[str, float]; priority: float | None
+@dataclass(frozen=True)
+class Plot:         indicator: str; pane: Literal["price", "separate"]
+@dataclass(frozen=True)
+class Candidate:    signal: Signal; instrument: Instrument          # 已按排序值降序、代码升序
+@dataclass(frozen=True)
+class SecurityHistory:
+                    frame: MarketFrame                              # 研究价格与成交量
+                    indicators: DataFrame                           # 行是交易日、列是 plots 里的指标
+                    entries: list[date]                             # 未持仓角度得到「可持有」的交易日
 ```
 
-只有一个方法：`holdings` 传空就是入场候选，传账户持仓就同时得到该账户的清仓信号。参数在构造时就固定在策略对象里，不出现在方法签名上。
+只有一个方法：`frame` 里每只能判断的证券都得到一条信号（含「不参与」，带当天指标值）；`holdings` 传空，其中「可持有」的就是入场候选；传账户持仓，就同时得到该账户的清仓信号。参数在构造时就固定在策略对象里，不出现在方法签名上。指标对整个 `frame` 只算一次、按 `frame` 缓存，缓存不属于 interface（6.2「frame 的起点」）。
 
-两个适配器：Trend-Pullback v1 和技术评级 v1。证券详情页要画历史入场点时，按日循环调用同一个方法，不为此另加方法。
+两个适配器：Trend-Pullback v1 和技术评级 v1。
+
+`entry_candidates` 和 `history` 不是 seam，是写在 seam 之上的两个普通函数：它们藏住「先取股票池、从第一个评价日往前读预热期那么多个开市日、调用 `evaluate`、补上证券名称」这套组装。`history` 按日循环调用同一个 `evaluate`，从每天的信号里收集指标曲线和入场点，不为画图另加方法。**删除测试**：删掉它们，「预热期决定往前读多远」会同时出现在信号页和证券详情页两个 API 处理函数里，而 A.6 规定 API 里不写业务规则。账户模块读的是覆盖整段回测的长 `frame`，不经过它们，直接调用 `evaluate`。
 
 **删除测试**：删掉这个 seam，入场和退出规则会长进账户推进的循环里，信号页也就没法在不建账户的情况下显示候选。
 
@@ -502,9 +540,10 @@ class Jobs:
 ```text
 API / 命令行 / 定时器
         │            └── Jobs.submit ── 任务线程 ──┐
-        ├── MarketData.overview / read / universe │
+        ├── MarketData.overview / instruments     │
         ├── Accounts.report / list / create ──────┤
-        └── Strategy.evaluate（信号页）            │
+        └── entry_candidates / history（信号页）   │
+              └─ MarketData · Strategy.evaluate   │
                                                   ▼
                               MarketData.sync · Accounts.advance
                                                   │
