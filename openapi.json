@@ -4,5 +4,323 @@
     "title": "invest-assistant",
     "version": "0.1.0"
   },
-  "paths": {}
+  "paths": {
+    "/api/data/status": {
+      "get": {
+        "tags": [
+          "data"
+        ],
+        "summary": "Status",
+        "operationId": "status_api_data_status_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataStatus"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/data/sync": {
+      "post": {
+        "tags": [
+          "data"
+        ],
+        "summary": "Sync Now",
+        "operationId": "sync_now_api_data_sync_post",
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncAccepted"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/data/quality": {
+      "get": {
+        "tags": [
+          "data"
+        ],
+        "summary": "Quality",
+        "operationId": "quality_api_data_quality_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataQuality"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/jobs/current": {
+      "get": {
+        "tags": [
+          "jobs"
+        ],
+        "summary": "Current",
+        "operationId": "current_api_jobs_current_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/JobStatusOut"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Response Current Api Jobs Current Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "DataQuality": {
+        "properties": {
+          "missing_sessions": {
+            "items": {
+              "type": "string",
+              "format": "date"
+            },
+            "type": "array",
+            "title": "Missing Sessions"
+          },
+          "gaps": {
+            "items": {
+              "$ref": "#/components/schemas/SecurityGap"
+            },
+            "type": "array",
+            "title": "Gaps"
+          },
+          "untradable_rows": {
+            "type": "integer",
+            "title": "Untradable Rows"
+          },
+          "untradable_on_latest": {
+            "type": "integer",
+            "title": "Untradable On Latest"
+          }
+        },
+        "type": "object",
+        "required": [
+          "missing_sessions",
+          "gaps",
+          "untradable_rows",
+          "untradable_on_latest"
+        ],
+        "title": "DataQuality"
+      },
+      "DataStatus": {
+        "properties": {
+          "latest_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latest Date"
+          },
+          "securities": {
+            "type": "integer",
+            "title": "Securities"
+          },
+          "bar_rows": {
+            "type": "integer",
+            "title": "Bar Rows"
+          },
+          "recent_jobs": {
+            "items": {
+              "$ref": "#/components/schemas/JobResultOut"
+            },
+            "type": "array",
+            "title": "Recent Jobs"
+          }
+        },
+        "type": "object",
+        "required": [
+          "latest_date",
+          "securities",
+          "bar_rows",
+          "recent_jobs"
+        ],
+        "title": "DataStatus"
+      },
+      "JobResultOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Started At"
+          },
+          "finished_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Finished At"
+          },
+          "summary": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Summary"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "status",
+          "started_at",
+          "finished_at",
+          "summary",
+          "warnings",
+          "error"
+        ],
+        "title": "JobResultOut"
+      },
+      "JobStatusOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "state": {
+            "type": "string",
+            "title": "State"
+          },
+          "submitted_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Submitted At"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "progress": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Progress"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "state",
+          "submitted_at",
+          "started_at",
+          "progress"
+        ],
+        "title": "JobStatusOut"
+      },
+      "SecurityGap": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "missing_sessions": {
+            "type": "integer",
+            "title": "Missing Sessions"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "missing_sessions"
+        ],
+        "title": "SecurityGap"
+      },
+      "SyncAccepted": {
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "title": "Job Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_id"
+        ],
+        "title": "SyncAccepted"
+      }
+    }
+  }
 }

@@ -3,10 +3,161 @@
  * Do not make direct changes to the file.
  */
 
-export type paths = Record<string, never>;
+export interface paths {
+    "/api/data/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Status */
+        get: operations["status_api_data_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/data/sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Sync Now */
+        post: operations["sync_now_api_data_sync_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/data/quality": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Quality */
+        get: operations["quality_api_data_quality_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/current": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Current */
+        get: operations["current_api_jobs_current_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+}
 export type webhooks = Record<string, never>;
 export interface components {
-    schemas: never;
+    schemas: {
+        /** DataQuality */
+        DataQuality: {
+            /** Missing Sessions */
+            missing_sessions: string[];
+            /** Gaps */
+            gaps: components["schemas"]["SecurityGap"][];
+            /** Untradable Rows */
+            untradable_rows: number;
+            /** Untradable On Latest */
+            untradable_on_latest: number;
+        };
+        /** DataStatus */
+        DataStatus: {
+            /** Latest Date */
+            latest_date: string | null;
+            /** Securities */
+            securities: number;
+            /** Bar Rows */
+            bar_rows: number;
+            /** Recent Jobs */
+            recent_jobs: components["schemas"]["JobResultOut"][];
+        };
+        /** JobResultOut */
+        JobResultOut: {
+            /** Id */
+            id: string;
+            /** Kind */
+            kind: string;
+            /** Status */
+            status: string;
+            /**
+             * Started At
+             * Format: date-time
+             */
+            started_at: string;
+            /**
+             * Finished At
+             * Format: date-time
+             */
+            finished_at: string;
+            /** Summary */
+            summary: {
+                [key: string]: unknown;
+            };
+            /** Warnings */
+            warnings: string[];
+            /** Error */
+            error: string | null;
+        };
+        /** JobStatusOut */
+        JobStatusOut: {
+            /** Id */
+            id: string;
+            /** Kind */
+            kind: string;
+            /** State */
+            state: string;
+            /**
+             * Submitted At
+             * Format: date-time
+             */
+            submitted_at: string;
+            /** Started At */
+            started_at: string | null;
+            /** Progress */
+            progress: {
+                [key: string]: unknown;
+            } | null;
+        };
+        /** SecurityGap */
+        SecurityGap: {
+            /** Code */
+            code: string;
+            /** Missing Sessions */
+            missing_sessions: number;
+        };
+        /** SyncAccepted */
+        SyncAccepted: {
+            /** Job Id */
+            job_id: string;
+        };
+    };
     responses: never;
     parameters: never;
     requestBodies: never;
@@ -14,4 +165,85 @@ export interface components {
     pathItems: never;
 }
 export type $defs = Record<string, never>;
-export type operations = Record<string, never>;
+export interface operations {
+    status_api_data_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DataStatus"];
+                };
+            };
+        };
+    };
+    sync_now_api_data_sync_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SyncAccepted"];
+                };
+            };
+        };
+    };
+    quality_api_data_quality_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DataQuality"];
+                };
+            };
+        };
+    };
+    current_api_jobs_current_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobStatusOut"] | null;
+                };
+            };
+        };
+    };
+}

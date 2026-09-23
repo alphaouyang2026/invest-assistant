@@ -28,3 +28,13 @@ nav ul {
 main {
   padding: 1.5rem;
 }
+
+.figures {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.25rem 1rem;
+}
+
+.figures dd {
+  margin: 0;
+}

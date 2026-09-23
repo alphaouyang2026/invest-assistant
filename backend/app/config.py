@@ -30,6 +30,11 @@ class Settings(BaseSettings):
         """
         return f"sqlite:///{self.database_path.resolve().as_posix()}"
 
+    @property
+    def runtime_dir(self) -> Path:
+        """`var/`: the job lock and job log live beside the database."""
+        return self.database_path.parent
+
     def require_jquants_api_key(self) -> str:
         """The key, or a failure that names the variable to set.
 

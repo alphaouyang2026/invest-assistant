@@ -28,6 +28,9 @@ services:
       - backend
     environment:
       TZ: Asia/Tokyo
+      # next.config.ts forwards /api to here, so the browser only ever
+      # talks to port 3000.
+      BACKEND_URL: http://backend:8000
     ports:
       - "127.0.0.1:3000:3000"
     volumes:
