@@ -1,0 +1,30 @@
+:root {
+  color-scheme: light dark;
+  --border: color-mix(in srgb, currentColor 18%, transparent);
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, "Noto Sans SC", "Hiragino Sans GB", sans-serif;
+  line-height: 1.6;
+}
+
+header {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  padding: 0.75rem 1.5rem;
+  border-bottom: 1px solid var(--border);
+}
+
+nav ul {
+  display: flex;
+  gap: 1.25rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+main {
+  padding: 1.5rem;
+}

@@ -1,10 +1,10 @@
-# 02 — 指标、两个策略与信号页
+# 03 — 指标、两个策略与信号页
 
 **What to build:** 用户打开信号页，选 Trend-Pullback v1 或技术评级 v1，就能看到最新交易日（或任选一个交易日）收盘后股票池里的入场候选，以及每只候选的排序值和理由；点开一只证券，可以在 K 线图上看到研究价格、成交量、该策略的指标和历史入场点。指标数值按 TradingView 的公式计算。
 
 **Design:** [invest-assistant v1 系统设计](../spec.md) §5、§6、§9（信号页、证券详情）、附录 A.2 与 A.3
 
-**Blocked by:** 01 — 骨架、行情同步与数据页
+**Blocked by:** 02 — J-Quants 行情同步与数据页
 
 **Status:** ready-for-agent
 
@@ -20,4 +20,4 @@
 - [ ] API：`GET /api/signals?strategy=&date=`、`GET /api/instruments?q=`、`GET /api/instruments/{code}/bars?from=&to=&strategy=`；一个交易日的入场评价对股票池一次批量读取行情，不逐只证券查询
 - [ ] 中文信号页 `/signals`：选择策略和日期（默认最新交易日），列出代码、名称、市场、排序值、理由；可搜索证券
 - [ ] 证券详情 `/signals/[code]`：lightweight-charts 画研究价格 K 线、成交量、所选策略的指标，以及历史入场点（按日循环调用同一个 `evaluate`，不为画图另加方法）
-- [ ] 在 01 回填的真实数据上，两个策略对最新交易日都能在合理时间内（目标 10 秒以内）给出入场候选
+- [ ] 在 02 回填的真实数据上，两个策略对最新交易日都能在合理时间内（目标 10 秒以内）给出入场候选
