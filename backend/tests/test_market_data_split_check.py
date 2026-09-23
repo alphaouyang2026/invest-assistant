@@ -56,17 +56,22 @@ def test_research_closes_that_disagree_with_jquants_are_warned_about(migrated_da
     assert "13010" in warning and "60" in warning  # all 60 sessions disagree
 
 
-def test_a_difference_within_jquants_rounding_is_not_a_disagreement(migrated_database) -> None:
-    """AdjC keeps one decimal, so up to 0.1 yen apart is rounding however
-    cheap the stock. On a ¥21.5 research close that is 0.47 % — far over
-    0.1 % — which is why a difference must clear both bounds to count."""
-    near = split_week(close_before="43", adjusted_close_before="21.6")
+def test_a_difference_within_both_bounds_is_not_a_disagreement(migrated_database) -> None:
+    """0.1 yen on a ¥500 research close: not over 0.1 yen, and 0.02 %."""
+    near = split_week(adjusted_close_before="500.1")
     assert not [w for w in synced_daily(migrated_database, near).warnings if "拆合股核对" in w]
 
 
-def test_off_by_more_than_rounding_on_a_cheap_stock_is_still_caught(migrated_database) -> None:
-    far = split_week(close_before="43", adjusted_close_before="21.8")
-    assert [w for w in synced_daily(migrated_database, far).warnings if "拆合股核对" in w]
+def test_a_difference_over_the_relative_bound_alone_is_a_disagreement(migrated_database) -> None:
+    """0.1 yen on a ¥21.5 research close: not over 0.1 yen, but 0.47 %."""
+    cheap = split_week(close_before="43", adjusted_close_before="21.6")
+    assert [w for w in synced_daily(migrated_database, cheap).warnings if "拆合股核对" in w]
+
+
+def test_a_difference_over_the_absolute_bound_alone_is_a_disagreement(migrated_database) -> None:
+    """0.2 yen on a ¥10,000 research close: 0.002 %, but over 0.1 yen."""
+    dear = split_week(close_before="20000", adjusted_close_before="10000.2")
+    assert [w for w in synced_daily(migrated_database, dear).warnings if "拆合股核对" in w]
 
 
 def test_a_backfill_checks_a_sample_of_twenty_securities_that_had_a_split(migrated_database) -> None:
