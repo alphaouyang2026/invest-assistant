@@ -1,0 +1,41 @@
+services:
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      # Asia/Tokyo everywhere: every date in this system is a Tokyo date.
+      TZ: Asia/Tokyo
+      TIMEZONE: Asia/Tokyo
+      # A bind mount rather than a named volume, so backing the system up is
+      # copying one file off the host (ADR-0002).
+      DATABASE_PATH: /app/var/invest.db
+    # Bound to the loopback address: this system has no login and is not meant
+    # to be reachable from the network.
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - ./backend:/app
+      # The venv is baked into the image and the bind mount above would hide
+      # it. Anonymous, not named, so nothing else can join it.
+      - /app/.venv
+      - ./var:/app/var
+
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      TZ: Asia/Tokyo
+      # next.config.ts forwards /api to here, so the browser only ever
+      # talks to port 3000.
+      BACKEND_URL: http://backend:8000
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - ./frontend:/app
+      # Per-container state the bind mount would otherwise hide: node_modules
+      # is installed for the container's platform, .next is build output.
+      - /app/node_modules
+      - /app/.next

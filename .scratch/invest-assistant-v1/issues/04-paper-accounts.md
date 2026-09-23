@@ -1,10 +1,10 @@
-# 03 — 模拟账户：回测、模拟交易与账户页
+# 04 — 模拟账户：回测、模拟交易与账户页
 
 **What to build:** 用户新建一个模拟账户（选策略、参数、组合规则、费用和过去的起始日），系统立刻把它从起始日逐个交易日推进到最新交易日——这段就是回测；之后每次同步成功，账户自动再推进一天——这就是模拟交易。账户页显示收益、回撤、夏普等统计和与 TOPIX 的对比曲线、当前持仓、明天开盘要执行的订单及理由，以及全部历史订单。
 
 **Design:** [invest-assistant v1 系统设计](../spec.md) §3.5–§3.6、§7、§8、§9（账户页）、附录 A.4
 
-**Blocked by:** 02 — 指标、两个策略与信号页
+**Blocked by:** 03 — 指标、两个策略与信号页
 
 **Status:** ready-for-agent
 
@@ -23,4 +23,4 @@
 - [ ] 命令行 `python -m app.cli advance [--account ID]`，与服务内任务共用文件锁
 - [ ] API：`GET /api/accounts`、`POST /api/accounts`、`GET /api/accounts/{id}`、`GET /api/accounts/{id}/nav`、`GET /api/accounts/{id}/orders`、`POST /api/accounts/{id}/stop`、`DELETE /api/accounts/{id}`
 - [ ] 中文账户页：列表 `/accounts`、新建 `/accounts/new`、详情 `/accounts/[id]`（统计、净值 vs TOPIX、回撤曲线、持仓、明日订单与理由、历史订单与账户事件、停用 / 删除）；报表注明「不含分红、不含税」
-- [ ] 在 01 回填的真实数据上，两个策略各建一个从 3 年前开始的账户，推进到最新交易日在几分钟内完成，账户页数字与 `paper_orders` 手工核对一致
+- [ ] 在 02 回填的真实数据上，两个策略各建一个从 3 年前开始的账户，推进到最新交易日在几分钟内完成，账户页数字与 `paper_orders` 手工核对一致

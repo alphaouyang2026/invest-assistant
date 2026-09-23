@@ -382,9 +382,10 @@ docker-compose.yml
 
 每张票都要端到端可验证：
 
-1. [01 骨架、行情同步与数据页](issues/01-skeleton-market-data-sync.md)
-2. [02 指标、两个策略与信号页](issues/02-indicators-strategies-signals.md)——依赖 01
-3. [03 模拟账户：回测、模拟交易与账户页](issues/03-paper-accounts.md)——依赖 02
+1. [01 项目骨架与运行环境](issues/01-skeleton-and-runtime.md)
+2. [02 J-Quants 行情同步与数据页](issues/02-jquants-market-data-sync.md)——依赖 01
+3. [03 指标、两个策略与信号页](issues/03-indicators-strategies-signals.md)——依赖 02
+4. [04 模拟账户：回测、模拟交易与账户页](issues/04-paper-accounts.md)——依赖 03
 
 ## 12. 已知局限
 
