@@ -1,0 +1,14 @@
+# runtime data: SQLite file, job log, locks
+var/
+.env
+
+# python
+__pycache__/
+*.pyc
+.venv/
+.pytest-tmp/
+.coverage
+
+# node
+node_modules/
+.next/
