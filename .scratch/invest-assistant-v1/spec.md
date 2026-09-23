@@ -202,12 +202,7 @@
 
 ### 4.5 读取
 
-行情数据模块对外提供的读取能力（具体函数签名在实现时定）：
-
-- 一批证券在一个日期区间内的研究价格 OHLCV 与成交价格 OHLC、涨跌停标志、质量标记，按证券 × 日期返回 DataFrame；一次查询取整批，不逐只证券查询；
-- 某日各证券所在的市场分类区间；
-- 开市日序列、某日的下一开市日；
-- 数据概况：最大日期、行数、最近任务结果、现算的质量警告。
+interface 见[附录 A](#附录-a模块-interface)。要点：一次查询取整批证券，不逐只查询；研究价格、质量过滤、日历对齐都在模块内部完成，调用方拿到的是已经对齐好的行情。市场分类区间和成交额门槛不外露，收在 `universe()` 后面。
 
 ## 5. 指标模块
 
@@ -234,12 +229,12 @@
 
 ### 6.2 策略 seam
 
-策略是一个声明了名称、默认参数、预热期的对象，对每个交易日给出：
+策略是一个声明了名称、默认参数、预热期的对象，只有一个方法 `evaluate(frame, day, holdings)`（[附录 A](#附录-a模块-interface)）。它对两类证券给出信号：
 
-- **入场评价**：对股票池里的每只证券，从空仓角度判断是否「可持有」，给出理由和候选排序值——这就是信号页的入场候选，与账户无关；
-- **持仓评价**：对某账户的每个持仓，结合持仓事实（开仓成交日、持有交易日数、开仓以来最高研究收盘价）判断「可持有」还是「必须清仓」，给出理由。
+- **未持仓**：从空仓角度判断是否「可持有」，给出理由和候选排序值。`holdings` 传空时得到的就是信号页的入场候选，与任何账户无关。
+- **持仓**：结合持仓事实判断「可持有」还是「必须清仓」，给出理由。持仓只传代码、股数和开仓成交日；持有天数和开仓以来最高研究收盘价由策略自己从行情算出，不由调用方传入——否则这条规则会散到每个调用方去。
 
-预热期：证券在 `t` 之前的有效日线不足预热期时，策略不对它给出信号。持仓证券当天 `untradable`（例如停牌）时也不给出信号，持仓维持原状。
+策略不查数据库、不筛股票池：`frame` 里有什么就评价什么，股票池由调用方先问行情数据模块。预热期不足的证券没有信号；持仓证券当天 `untradable`（例如停牌）时也没有信号，持仓维持原状。
 
 ### 6.3 Trend-Pullback v1
 
@@ -399,3 +394,122 @@ docker-compose.yml
 - 开盘即涨停的买单一律视为买不到，现实中可能在收盘按比例分到少量；开盘即跌停的卖单同理。
 - 技术评级的长周期 EMA 与 TradingView 页面的数值可能略有差异。
 - 证券代码被重复使用时只记警告，不拆分两家公司的历史。
+
+## 附录 A：模块 interface
+
+用 Python 伪代码写出每个模块**对外**的全部内容。调用方需要知道的仅限于此；括号里是这个 interface 背后藏着的东西。
+
+### A.1 行情数据模块 `market_data`
+
+```python
+class MarketData:
+    def __init__(self, session_factory, client: JQuantsClient): ...
+
+    def sync(self, *, until: date | None = None,
+             on_progress: Callable[[SyncProgress], None] | None = None) -> SyncReport: ...
+    def read(self, codes: Sequence[str] | None, start: date, end: date) -> MarketFrame: ...
+    def universe(self, day: date, policy: UniversePolicy = DEFAULT_POLICY) -> list[str]: ...
+    def calendar(self) -> Calendar: ...      # sessions()/next()/prev()/offset()，纯内存
+    def overview(self) -> DataOverview: ...  # 最大日期、行数、最近任务结果、现算的质量警告
+```
+
+藏在后面：J-Quants 分页与限速、逐日覆盖写入、市场分类区间的开闭、研究价格的累计系数、质量标记、拆合股核对、4 张表的全部 SQL。
+
+`MarketFrame` 是一个很薄的包装：内部是以 (证券, 交易日) 为索引的 DataFrame，列名由模块给出的常量声明（研究价格 OHLCV、成交价格 OHLC、成交额、涨跌停标志、质量标记），并提供 `closes()` 这类宽表访问器。它是 interface 的一部分，列名和空值语义都要写进文档——这是选择用 pandas 换来的代价。
+
+`client` 从构造函数传入，这就是 J-Quants seam：生产用 HTTP 适配器，测试用内存假适配器。
+
+**删除测试**：删掉它，累计系数、质量判定、日历对齐和 4 张表的 SQL 会散到策略、账户、API 和命令行里。复杂度是被它集中住的。
+
+### A.2 指标模块 `indicators`
+
+```python
+def sma(s: Series, n: int) -> Series: ...
+def ema(s: Series, n: int) -> Series: ...
+def rma(s: Series, n: int) -> Series: ...
+def rsi(...), atr(...), dmi(...), adx(...), hull_ma(...), vwma(...), ichimoku(...),
+    stochastic(...), cci(...), awesome_oscillator(...), momentum(...), macd(...),
+    stoch_rsi(...), williams_r(...), bull_bear_power(...), ultimate_oscillator(...)
+```
+
+一组纯函数，没有 seam，也不需要适配器。它的价值不在于藏住编排，而在于藏住正确性规则：Wilder 平滑的起点、分母为零时的取值、NaN 的传播。两个策略共用这一份，否则 RMA 会被各写一遍。
+
+### A.3 策略 seam `strategies`
+
+```python
+class Strategy(Protocol):
+    name: str
+    warmup_sessions: int
+
+    def evaluate(self, frame: MarketFrame, day: date,
+                 holdings: Sequence[Holding]) -> list[Signal]: ...
+
+def build_strategy(name: str, params: Mapping[str, Any]) -> Strategy: ...
+STRATEGY_DEFAULTS: Mapping[str, Mapping[str, Any]]   # 供新建账户页展示
+
+@dataclass(frozen=True)
+class Holding:      code: str; quantity: int; opened_on: date
+@dataclass(frozen=True)
+class Signal:       code: str; disposition: Disposition; reason_codes: tuple[str, ...]
+                    indicators: Mapping[str, float]; priority: float | None
+```
+
+只有一个方法：`holdings` 传空就是入场候选，传账户持仓就同时得到该账户的清仓信号。参数在构造时就固定在策略对象里，不出现在方法签名上。
+
+两个适配器：Trend-Pullback v1 和技术评级 v1。证券详情页要画历史入场点时，按日循环调用同一个方法，不为此另加方法。
+
+**删除测试**：删掉这个 seam，入场和退出规则会长进账户推进的循环里，信号页也就没法在不建账户的情况下显示候选。
+
+### A.4 模拟账户模块 `accounts`
+
+```python
+class Accounts:
+    def __init__(self, session_factory, market: MarketData): ...
+
+    def create(self, spec: AccountSpec) -> AccountId: ...          # 校验起始日与预热期
+    def advance(self, account_id: AccountId, *, through: date | None = None) -> AdvanceReport: ...
+    def report(self, account_id: AccountId) -> AccountReport: ...  # 统计、净值序列、持仓、明日订单、历史订单
+    def list(self, *, active_only: bool = False) -> list[AccountSummary]: ...
+    def stop(self, account_id: AccountId) -> None: ...
+    def delete(self, account_id: AccountId) -> None: ...
+```
+
+`advance` 是这个模块的全部分量：拆合股调整、退市结清、开盘成交、卖单重下、出信号、组合规则、写订单，全在它后面。它从 `advanced_through` 的下一个开市日推进到 `through`（默认最新交易日）；重复调用不会重复推进。回测和模拟交易都是它（ADR-0004），没有第二个入口。
+
+内部还有两个 seam，只给自己的测试用，不对外：
+
+```python
+def plan_orders(signals, holdings, cash, nav, rules) -> list[PlannedOrder]   # 纯函数
+def fill(order, bar, cash, costs) -> FillResult                              # 纯函数
+```
+
+两者都不碰数据库、不产生副作用，所以「开盘涨停买不到」「现金不够减手数」这类规则可以用几行合成数据测，而不必造一个账户再推进一年。
+
+### A.5 任务模块 `jobs`
+
+```python
+class Jobs:
+    def submit(self, job: Job) -> JobId: ...
+    def current(self) -> JobStatus | None: ...
+    def history(self, limit: int = 20) -> list[JobResult]: ...
+```
+
+藏住单线程队列、`var/job.lock` 文件锁、定时器和 `var/jobs.jsonl`。API、定时器和命令行都只看见这三个方法。
+
+### A.6 调用关系
+
+```text
+API / 命令行 / 定时器
+        │            └── Jobs.submit ── 任务线程 ──┐
+        ├── MarketData.overview / read / universe │
+        ├── Accounts.report / list / create ──────┤
+        └── Strategy.evaluate（信号页）            │
+                                                  ▼
+                              MarketData.sync · Accounts.advance
+                                                  │
+                        Accounts.advance ── MarketData.read/calendar
+                                         └─ Strategy.evaluate
+                                         └─ plan_orders / fill（内部）
+```
+
+规则：API 处理函数里不写业务规则，只调用上面这些方法并把结果转成 JSON；策略不碰数据库；`plan_orders` 和 `fill` 不越过账户模块被别处调用。
