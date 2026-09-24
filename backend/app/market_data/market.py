@@ -24,6 +24,11 @@ BACKFILL_YEARS = 5
 OPEN_DIVISIONS = (1, 2)  # HolDiv: a full or a half trading day
 STOCK, INDEX = "stock", "index"
 TOPIX = "TOPIX"
+# The universe (spec §6.1). One rule set, so constants rather than a policy
+# argument (spec A.1).
+PRIME, COMMON_STOCK = "0111", "011"
+TURNOVER_SESSIONS = 20
+MIN_AVERAGE_TURNOVER = Decimal("500000000")  # yen
 
 
 @dataclass(frozen=True)
@@ -37,6 +42,14 @@ class QualityReport:
     gaps: dict[str, int]
     untradable_rows: int
     untradable_on_latest: int
+
+
+@dataclass(frozen=True)
+class Instrument:
+    code: str
+    name: str
+    name_en: str
+    market: str | None  # its market code now; None once it has left the roster
 
 
 @dataclass(frozen=True)
@@ -194,6 +207,55 @@ class MarketData:
             bar_rows=bar_rows,
             quality=QualityReport(missing, gaps, untradable_rows, untradable_on_latest),
         )
+
+    def universe(self, day: date) -> list[str]:
+        """Codes that may be newly bought on `day` (spec §6.1): Prime common
+        stock that day, averaging ¥500M turnover over the last 20 sessions
+        with a missing or untradable day counting as nothing, and with a
+        bar that day that is not untradable."""
+        segments, bars = tables.segment_periods, tables.daily_bars
+        sessions = [session for session in self._sessions() if session <= day][-TURNOVER_SESSIONS:]
+        on_day = (segments.c.valid_from <= day) & (segments.c.valid_to.is_(None) | (segments.c.valid_to >= day))
+        with self._engine.connect() as connection:
+            prime = select(segments.c.code).where(
+                on_day, segments.c.market_code == PRIME, segments.c.product_category == COMMON_STOCK,
+            )
+            rows = connection.execute(
+                select(bars.c.code, bars.c.date, bars.c.turnover).where(
+                    bars.c.code.in_(prime), bars.c.date.in_(sessions), bars.c.quality_status != UNTRADABLE,
+                )
+            ).all()
+        turnover: dict[str, Decimal] = {}
+        tradable_that_day = set()
+        for code, session, amount in rows:
+            turnover[code] = turnover.get(code, Decimal(0)) + (amount or Decimal(0))
+            if session == day:
+                tradable_that_day.add(code)
+        return sorted(
+            code for code in tradable_that_day if turnover[code] >= MIN_AVERAGE_TURNOVER * TURNOVER_SESSIONS
+        )
+
+    def instruments(self, *, query: str | None = None, codes: Sequence[str] | None = None) -> list[Instrument]:
+        """Stocks by code, or searched: `query` matches the start of a code
+        or any part of either name (the English one in any case)."""
+        instruments, segments = tables.instruments, tables.segment_periods
+        now = segments.c.valid_to.is_(None)
+        statement = (
+            select(instruments.c.code, instruments.c.name, instruments.c.name_en, segments.c.market_code)
+            .join(segments, (segments.c.code == instruments.c.code) & now, isouter=True)
+            .where(instruments.c.kind == STOCK)
+            .order_by(instruments.c.code)
+        )
+        if query is not None:
+            statement = statement.where(
+                instruments.c.code.startswith(query, autoescape=True)
+                | instruments.c.name.contains(query, autoescape=True)
+                | instruments.c.name_en.icontains(query, autoescape=True)
+            )
+        if codes is not None:
+            statement = statement.where(instruments.c.code.in_(list(codes)))
+        with self._engine.connect() as connection:
+            return [Instrument(*row) for row in connection.execute(statement)]
 
     def calendar(self) -> Calendar:
         return Calendar(self._sessions())

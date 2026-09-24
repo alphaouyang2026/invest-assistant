@@ -58,9 +58,10 @@ class MarketFrame:
             return []
         return list(self.data.xs(code, level=CODE).index)
 
-    def closes(self) -> pd.DataFrame:
-        """Research closes, one column per code, one row per date."""
-        return self.data[CLOSE].unstack(CODE)
+    def wide(self, column: str) -> pd.DataFrame:
+        """`column` with a row per date and a column per code; NaN where a
+        code has no bar that day — the shape the indicator module takes."""
+        return self.data[column].unstack(CODE)
 
 
 def build_frame(
