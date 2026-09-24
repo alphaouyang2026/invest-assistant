@@ -1,6 +1,6 @@
 """The FastAPI application, with the job thread and the daily sync timer.
 
-Signals arrive in ticket 03, accounts in 04.
+Accounts arrive in ticket 04.
 """
 
 from __future__ import annotations
@@ -12,7 +12,7 @@ from datetime import date
 
 from fastapi import FastAPI
 
-from app.api import data, jobs as jobs_api
+from app.api import data, jobs as jobs_api, signals
 from app.config import Settings
 from app.jobs import DailySync, Jobs
 from app.log import configure_logging
@@ -56,6 +56,7 @@ def create_app(
     app.state.jobs = jobs
     app.include_router(data.router)
     app.include_router(jobs_api.router)
+    app.include_router(signals.router)
     return app
 
 

@@ -72,10 +72,98 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/signals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Signals */
+        get: operations["signals_api_signals_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/instruments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Instruments */
+        get: operations["instruments_api_instruments_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/instruments/{code}/bars": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Bars
+         * @description Defaults: up to the latest session, a year back.
+         */
+        get: operations["bars_api_instruments__code__bars_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * BarOut
+         * @description Research prices: comparable across splits. None on a halted day.
+         */
+        BarOut: {
+            /**
+             * Date
+             * Format: date
+             */
+            date: string;
+            /** Open */
+            open: number | null;
+            /** High */
+            high: number | null;
+            /** Low */
+            low: number | null;
+            /** Close */
+            close: number | null;
+            /** Volume */
+            volume: number | null;
+        };
+        /** CandidateOut */
+        CandidateOut: {
+            /** Code */
+            code: string;
+            /** Name */
+            name: string;
+            /** Market */
+            market: string | null;
+            /** Priority */
+            priority: number | null;
+            /** Reason Codes */
+            reason_codes: string[];
+        };
         /** DataQuality */
         DataQuality: {
             /** Missing Sessions */
@@ -97,6 +185,22 @@ export interface components {
             bar_rows: number;
             /** Recent Jobs */
             recent_jobs: components["schemas"]["JobResultOut"][];
+        };
+        /** HTTPValidationError */
+        HTTPValidationError: {
+            /** Detail */
+            detail?: components["schemas"]["ValidationError"][];
+        };
+        /** InstrumentOut */
+        InstrumentOut: {
+            /** Code */
+            code: string;
+            /** Name */
+            name: string;
+            /** Name En */
+            name_en: string;
+            /** Market */
+            market: string | null;
         };
         /** JobResultOut */
         JobResultOut: {
@@ -145,6 +249,23 @@ export interface components {
                 [key: string]: unknown;
             } | null;
         };
+        /** LinePoint */
+        LinePoint: {
+            /**
+             * Date
+             * Format: date
+             */
+            date: string;
+            /** Value */
+            value: number | null;
+        };
+        /** PlotOut */
+        PlotOut: {
+            /** Indicator */
+            indicator: string;
+            /** Pane */
+            pane: string;
+        };
         /**
          * Refusal
          * @description Why a request was turned away (FastAPI's `HTTPException` shape).
@@ -153,6 +274,21 @@ export interface components {
             /** Detail */
             detail: string;
         };
+        /** SecurityBarsOut */
+        SecurityBarsOut: {
+            /** Code */
+            code: string;
+            /** Bars */
+            bars: components["schemas"]["BarOut"][];
+            /** Plots */
+            plots: components["schemas"]["PlotOut"][];
+            /** Lines */
+            lines: {
+                [key: string]: components["schemas"]["LinePoint"][];
+            };
+            /** Entries */
+            entries: string[];
+        };
         /** SecurityGap */
         SecurityGap: {
             /** Code */
@@ -160,10 +296,35 @@ export interface components {
             /** Missing Sessions */
             missing_sessions: number;
         };
+        /** SignalsOut */
+        SignalsOut: {
+            /** Strategy */
+            strategy: string;
+            /**
+             * Date
+             * Format: date
+             */
+            date: string;
+            /** Candidates */
+            candidates: components["schemas"]["CandidateOut"][];
+        };
         /** SyncAccepted */
         SyncAccepted: {
             /** Job Id */
             job_id: string;
+        };
+        /** ValidationError */
+        ValidationError: {
+            /** Location */
+            loc: (string | number)[];
+            /** Message */
+            msg: string;
+            /** Error Type */
+            type: string;
+            /** Input */
+            input?: unknown;
+            /** Context */
+            ctx?: Record<string, never>;
         };
     };
     responses: never;
@@ -259,6 +420,122 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["JobStatusOut"] | null;
+                };
+            };
+        };
+    };
+    signals_api_signals_get: {
+        parameters: {
+            query: {
+                strategy: string;
+                date?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SignalsOut"];
+                };
+            };
+            /** @description 没有这个策略，或还没有行情 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    instruments_api_instruments_get: {
+        parameters: {
+            query: {
+                q: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InstrumentOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    bars_api_instruments__code__bars_get: {
+        parameters: {
+            query: {
+                strategy: string;
+                from?: string | null;
+                to?: string | null;
+            };
+            header?: never;
+            path: {
+                code: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SecurityBarsOut"];
+                };
+            };
+            /** @description 没有这个策略，或还没有行情 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
