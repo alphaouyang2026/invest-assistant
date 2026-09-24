@@ -57,7 +57,7 @@
 - **DMI(14, 14)**：
   - `up = high − high[1]`，`down = low[1] − low`；
   - `+DM = up > down 且 up > 0 ? up : 0`，`−DM = down > up 且 down > 0 ? down : 0`；
-  - `+DI = 100 · RMA(+DM, 14) / RMA(TR, 14)`，`−DI` 同理；
+  - `+DI = 100 · RMA(+DM, 14) / RMA(TR, 14)`，`−DI` 同理；这里的 TR 从第二根 K 线才有值（Pine `ta.dmi` 示例用的是 `ta.tr`，第一根没有前一天收盘价就是 na），和 ATR 第一根取 `high − low` 不同，这样 TR 与 ±DM 从同一根开始平滑；
   - `ADX = 100 · RMA(|+DI − −DI| / s, 14)`，`s = +DI + −DI`，`s = 0` 时按 1 算（Pine `ta.dmi` 示例）。
   - 三次 RMA 叠加，ADX 要约 2n 根之后才有值。
 
@@ -163,6 +163,14 @@ ADX 一行与官方说明页不同：说明页写卖出要「ADX 低于前一天
 | 7 | N 日最高收盘价 | 删掉 | 两个策略都没用到；跟踪止损用的「开仓以来最高收盘价」由策略按开仓日自己算 |
 | 8 | 振荡器的分母为零 | 结果为 NaN，含 NaN 的比较不成立（§2 开头） | TradingView 内置函数这时返回什么没有公开，这是本系统的规定 |
 | 9 | CCI 的输入 | 收盘价 | 库第 59 行 `ta.cci(close, 20)` |
+
+**本系统复刻的是评级库，不是筛选器**（2026-09-24 决定）。TradingView 有两套技术评级：图表上的「Technical Ratings」指标用 `TechnicalRating` 库，源码公开；筛选器和个股页的仪表盘由服务器端计算，源码不公开，两者并不完全一致。在 150 只成交额最大的 Prime 股票上（2026-09-18）黑盒比对筛选器：
+
+- 它逐项公开的 7 项里，Stoch RSI、Williams %R、Bull Bear Power、UO、VWMA、Hull MA 与评级库 150/150 一致；一目均衡表按评级库只有 120/150 一致，按库的旧版（Pine v4）规则——先行带不平移，买入要先行带 A 高于 B、收盘价在 A 之上、在基准线之下、当天刚上穿转换线，卖出反过来——有 149/150 一致；
+- 振荡器组按评级库有 134/150 一致，不一致的都差一票；把 CCI 换成 hlc3、Stochastic 加上「前一天刚交叉」后到 143/150，其余 7 只找不出统一规律。这两处是从 12 种组合里挑出来的推断，没有源码依据；
+- 总评按评级库与筛选器一致的是 112/150。
+
+所以本系统的评级和个股页仪表盘会有约 1/4 的股票差一票左右，这是已知的、有意的差异，不要照着仪表盘去「修正」。黄金测试 `test_technical_rating_against_tradingview.py` 把冻结数据里唯一受影响的 9020（一目均衡表：库判 −1，筛选器判 0）单独写明。
 
 「与 TradingView 实际数值比对」用的是 TradingView 筛选器的查询接口 `POST https://scanner.tradingview.com/japan/scan`（不用登录），它对每只东证股票返回最新一根 K 线的 EMA10–200、HullMA9、RSI、ADX、CCI20、UO，以及三个评级 `Recommend.All` / `Recommend.MA` / `Recommend.Other`。实现完成后可以用它对全股票池做一次端到端核对。这是非公开接口，只用于一次性核对，不要让系统依赖它。比对时用的是 02 回填到 `var/invest.db` 的数据（最新到 2026-09-18），研究收盘价与 TradingView 的收盘价逐只一致。
 
