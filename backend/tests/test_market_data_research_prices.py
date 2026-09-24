@@ -98,6 +98,6 @@ def test_research_closes_are_continuous_across_a_split_with_no_false_crash(migra
         D3: [bar("13010", D3, "1010")],
     })
 
-    closes = market.read(["13010"], D1, D3).closes()["13010"]
+    closes = market.read(["13010"], D1, D3).wide(CLOSE)["13010"]
 
     assert closes.pct_change().dropna().tolist() == pytest.approx([0.004, 1010 / 1004 - 1])

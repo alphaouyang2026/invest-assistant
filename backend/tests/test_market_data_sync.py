@@ -14,7 +14,7 @@ import pytest
 
 from app.market_data.jquants import IndexBar
 
-from app.market_data import MarketData
+from app.market_data import CLOSE, MarketData
 from tests.fakes import FakeJQuants, bar, listed
 
 TODAY = date(2026, 9, 24)
@@ -122,8 +122,8 @@ def test_topix_is_synced_over_the_same_sessions_and_read_only_by_name(market_for
     market_for(client).sync()
 
     market = market_for(client)
-    assert market.read(["TOPIX"], date(2026, 9, 1), TODAY).closes()["TOPIX"].tolist() == [2700.0, 2710.5]
-    assert market.read(None, date(2026, 9, 1), TODAY).closes().columns.tolist() == ["13010"]
+    assert market.read(["TOPIX"], date(2026, 9, 1), TODAY).wide(CLOSE)["TOPIX"].tolist() == [2700.0, 2710.5]
+    assert market.read(None, date(2026, 9, 1), TODAY).wide(CLOSE).columns.tolist() == ["13010"]
 
 
 def test_progress_is_reported_after_each_session(market_for) -> None:

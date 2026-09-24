@@ -22,10 +22,10 @@ from app.market_data.frame import (
     VOLUME,
     MarketFrame,
 )
-from app.market_data.market import DataOverview, MarketData, QualityReport, SyncProgress, SyncReport
+from app.market_data.market import DataOverview, Instrument, MarketData, QualityReport, SyncProgress, SyncReport
 
 __all__ = [
     "CLOSE", "EXEC_CLOSE", "EXEC_HIGH", "EXEC_LOW", "EXEC_OPEN", "HIGH", "LOW", "LOWER_LIMIT_HIT",
     "OPEN", "QUALITY", "TURNOVER", "UPPER_LIMIT_HIT", "VOLUME",
-    "Calendar", "DataOverview", "MarketData", "MarketFrame", "QualityReport", "SyncProgress", "SyncReport",
+    "Calendar", "DataOverview", "Instrument", "MarketData", "MarketFrame", "QualityReport", "SyncProgress", "SyncReport",
 ]

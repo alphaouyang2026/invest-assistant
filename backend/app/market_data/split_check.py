@@ -17,9 +17,9 @@ from app.market_data.jquants import BarRecord
 SESSIONS_BEFORE = 60
 BACKFILL_SAMPLE = 20
 
-# AdjC keeps one decimal, so 0.1 yen apart is rounding, not disagreement,
-# however cheap the stock; 0.1 % covers the rounding of dearer ones. A
-# difference has to clear both to count.
+# A difference over either bound counts (spec §4.3). AdjC keeps one
+# decimal, so on a stock under about ¥100 its rounding alone can clear
+# 0.1 % and be reported.
 ABSOLUTE_TOLERANCE = Decimal("0.1")
 RELATIVE_TOLERANCE = Decimal("0.001")
 
@@ -44,7 +44,7 @@ def disagreements(local: Mapping[date, Decimal], jquants: Iterable[BarRecord]) -
         if ours is None or theirs is None:
             continue
         difference = abs(ours - theirs)
-        if difference > ABSOLUTE_TOLERANCE and difference > RELATIVE_TOLERANCE * abs(theirs):
+        if difference > ABSOLUTE_TOLERANCE or difference > RELATIVE_TOLERANCE * abs(theirs):
             found.append((record.date, ours, theirs))
     return sorted(found)
 
