@@ -271,6 +271,8 @@ RSI14[t−1] ≤ 30      且  RSI14[t] > 30
 
 退出当天不重新入场。以上价格都用研究价格。
 
+**已知问题**：按这组规则，02 回填的三年数据上一次都不会入场——RSI14 ≤ 30 与「趋势完好」几乎不会同一天成立。失败记录与 v2 的方向见[策略研究](strategy-research.md) §2；v1 保留原样，作为系统中「没有交易」这条路径的检验对象。
+
 ### 6.4 技术评级 v1
 
 按 TradingView `TechnicalRating` 库 v3 的 Pine 源码复刻 26 项——内置「Technical Ratings」指标、筛选器和个股页仪表盘用的都是它；源码存在 [tradingview/](tradingview/) 下，逐项规则见 [indicators.md](indicators.md) §4：
@@ -296,6 +298,8 @@ RSI14[t−1] ≤ 30      且  RSI14[t] > 30
 4. **重下卖单**：`t` 开盘过期的卖单，在 `t` 收盘重新下一张同样的卖单（执行日为下一开市日），直到成交或退市结清——不需要策略再次给出信号（Q26）。
 5. **收盘出信号并生成订单**（7.2）。
 6. `advanced_through = t`。
+
+每个交易日在**一个事务**里提交：这一天写下的全部记录和 `advanced_through = t` 一起提交或一起放弃，所以推进中途被打断，重跑会从断点接着推进，不会多写或漏写一天。同一账户、同一份数据推进两次，得到逐行相同的记录：记录里不写墙上时间，金额全用 `Decimal`，同分按代码排序。
 
 回测 = 从 `start_date` 到最新交易日逐日推进；追上后写 `backtest_data_mark`。之后每次同步成功，每个 `active` 账户推进新出现的交易日。已成交记录不因日线后来被修正而改写（ADR-0004）。
 
@@ -423,7 +427,7 @@ class MarketData:
     def sync(self, *, until: date | None = None,
              on_progress: Callable[[SyncProgress], None] | None = None) -> SyncReport: ...
     def read(self, codes: Sequence[str] | None, start: date, end: date) -> MarketFrame: ...
-    def universe(self, day: date) -> list[str]: ...
+    def universe(self, start: date, end: date | None = None) -> dict[date, list[str]]: ...  # end 缺省为 start
     def instruments(self, *, query: str | None = None,
                     codes: Sequence[str] | None = None) -> list[Instrument]: ...
     def calendar(self) -> Calendar: ...      # sessions()/next()/prev()/offset()，纯内存
@@ -435,9 +439,9 @@ class Instrument:   code: str; name: str; name_en: str; market: str | None   # �
 
 藏在后面：J-Quants 分页与限速、逐日覆盖写入、市场分类区间的开闭、研究价格的累计系数、质量标记、拆合股核对、股票池的市场分类区间与成交额门槛、4 张表的全部 SQL。
 
-`universe` 不带参数表：规则只有一套（6.1），门槛是模块内部的常量——只有一种取值的参数就是一个还用不上的 seam。`instruments` 给信号页补证券名称与市场、给 `GET /api/instruments?q=` 做搜索（按代码前缀或名称包含）；只有这个模块能读 `instruments` 表，所以由它提供。
+`universe` 不带参数表：规则只有一套（6.1），门槛是模块内部的常量——只有一种取值的参数就是一个还用不上的 seam。它一次给出一段日期里每个开市日的股票池：信号页只问一天，回测要问几百天，逐日调用时每天约 0.25 秒（02 回填数据实测），3 年的回测光股票池就要 3 分钟，一次查询算完整段则只读一次成交额和市场分类区间。`instruments` 给信号页补证券名称与市场、给 `GET /api/instruments?q=` 做搜索（按代码前缀或名称包含）；只有这个模块能读 `instruments` 表，所以由它提供。
 
-`MarketFrame` 是一个很薄的包装：内部是以 (证券, 交易日) 为索引的 DataFrame，列名由模块给出的常量声明（研究价格 OHLCV、成交价格 OHLC、成交额、涨跌停标志、质量标记），并提供宽表访问器 `wide(列名)`（行是交易日、列是证券代码，没有日线的格子为 NaN），指标模块直接吃这种宽表。它是 interface 的一部分，列名和空值语义都要写进文档——这是选择用 pandas 换来的代价。
+`MarketFrame` 是一个很薄的包装：内部是以 (证券, 交易日) 为索引的 DataFrame，列名由模块给出的常量声明（研究价格 OHLCV、成交价格 OHLC、成交额、涨跌停标志、质量标记、调整系数、除权类型），另带 `listed_through`（证券代码 → 它在名册中的最后一个交易日，仍在名册中为 `None`，由市场分类区间推出），并提供宽表访问器 `wide(列名)`（行是交易日、列是证券代码，没有日线的格子为 NaN），指标模块直接吃这种宽表。它是 interface 的一部分，列名和空值语义都要写进文档——这是选择用 pandas 换来的代价。调整系数、除权类型和 `listed_through` 是给模拟账户的——拆合股调整和退市结清（7.1）要用，而账户模块不能直接查这四张表；回测时账户按「那一天」判断在不在名册，不能用 `instruments` 给出的当前市场区分。
 
 `client` 从构造函数传入，这就是 J-Quants seam：生产用 HTTP 适配器，测试用内存假适配器。
 
@@ -516,14 +520,24 @@ class Accounts:
 
 `advance` 是这个模块的全部分量：拆合股调整、退市结清、开盘成交、卖单重下、出信号、组合规则、写订单，全在它后面。它从 `advanced_through` 的下一个开市日推进到 `through`（默认最新交易日）；重复调用不会重复推进。回测和模拟交易都是它（ADR-0004），没有第二个入口。
 
-内部还有两个 seam，只给自己的测试用，不对外：
+`advance` 自己只做读库、写库和逐日循环：一次读出整段所需的行情（`MarketData.read` 取整段股票池的并集加上持仓）和整段股票池（`MarketData.universe(start, end)`），然后每个交易日分开盘、收盘两段——收盘段要先拿到开盘成交之后的持仓，才能问策略 `evaluate(frame, t, holdings)`。
+
+内部的 seam 只给自己的测试用，不对外；全部不碰数据库、不产生副作用，所以「开盘涨停买不到」「卖出所得当场可用」「现金不够减手数」「十合一的零股折现」这类规则可以用几行合成数据测，而不必造一个账户再推进一年：
 
 ```python
-def plan_orders(signals, holdings, cash, nav, rules) -> list[PlannedOrder]   # 纯函数
-def fill(order, bar, cash, costs) -> FillResult                              # 纯函数
+class Ledger:                     # 由订单记录推出持仓（股数、开仓成交日、成本）、现金、待成交订单
+    def apply(self, records) -> Ledger: ...                       # advance 与 report 共用这一份推算
+
+def corporate_actions(ledger, day) -> list[Record]                # 拆合股调整、零股折现、退市结清（7.1 第 1–2 步）
+def open_session(orders, day, cash, costs) -> list[Record]        # 一次开盘的全部订单：先卖后买、买单按排序值、
+                                                                  # 卖出所得当场可用、逐单按 7.3 成交或过期
+def replace_sells(expired, day) -> list[Record]                   # 7.1 第 4 步
+def plan_orders(exits, candidates, closes, cash, nav, rules) -> list[Record]   # 7.2；含被放弃的订单
 ```
 
-两者都不碰数据库、不产生副作用，所以「开盘涨停买不到」「现金不够减手数」这类规则可以用几行合成数据测，而不必造一个账户再推进一年。
+`day` 是账户看到的 `t` 日行情：当天的成交价格、涨跌停标志、质量标记、调整系数与除权类型，前一交易日收盘成交价格，以及哪些证券已不在名册中。`plan_orders` 收到的是 `advance` 过滤好的信号：`exits` 是持仓（未重下卖单的）得到的判断，`candidates` 是当天在股票池内、未持仓、「可持有」的入场候选；`closes` 是 `t` 日收盘成交价格，用来算计划股数和预估卖出所得。
+
+**删除测试**：删掉 `Ledger`，「持仓、现金由订单记录推出」会在 `advance` 和 `report` 里各写一份，迟早不一致；把 `open_session` 拆回逐单的 `fill`，先卖后买与现金流转就只能经由 `advance` 测。
 
 ### A.5 任务模块 `jobs`
 
@@ -550,7 +564,7 @@ API / 命令行 / 定时器
                                                   │
                         Accounts.advance ── MarketData.read/calendar
                                          └─ Strategy.evaluate
-                                         └─ plan_orders / fill（内部）
+                                         └─ Ledger · plan_orders · open_session（内部）
 ```
 
-规则：API 处理函数里不写业务规则，只调用上面这些方法并把结果转成 JSON；策略不碰数据库；`plan_orders` 和 `fill` 不越过账户模块被别处调用。
+规则：API 处理函数里不写业务规则，只调用上面这些方法并把结果转成 JSON；策略不碰数据库；`Ledger`、`plan_orders`、`open_session` 等内部函数不越过账户模块被别处调用。
