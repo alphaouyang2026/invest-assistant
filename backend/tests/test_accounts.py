@@ -3,6 +3,7 @@ what is checked then; listing, stopping and deleting."""
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
 from decimal import Decimal
 
@@ -107,3 +108,44 @@ def test_catching_up_with_the_latest_session_marks_the_data_it_was_backtested_on
     assert accounts.report(account).account["backtest_data_mark"] == {
         "latest_date": SESSIONS[-1].isoformat(), "bar_rows": 20,  # 10 × 13010 + 10 × TOPIX
     }
+
+
+def counting_reads(market):
+    """How many times the report reads market data — its costly part."""
+    reads = []
+    real = market.read
+    market.read = lambda *args, **kwargs: reads.append(args) or real(*args, **kwargs)
+    return reads
+
+
+def test_a_report_is_worked_out_once_until_the_account_changes(migrated_database) -> None:
+    """The account page asks for the detail, the NAV and the orders at once;
+    the report behind them is worked out once, and again only after the
+    account moves on."""
+    market = synced(migrated_database, {"13010": ["1000"] * 5 + ["1100"] * 5})
+    accounts = Accounts(migrated_database, market,
+                        build_strategy=lambda name, params: Script({SESSIONS[1]: {"13010": Disposition.HOLD}}))
+    account = accounts.create(AccountSpec(name="缓", strategy="script", start_date=SESSIONS[1]))
+    accounts.advance(account, through=SESSIONS[5])
+    reads = counting_reads(market)
+
+    first = accounts.report(account)
+    assert accounts.report(account) is first and len(reads) == 1
+
+    accounts.advance(account, through=SESSIONS[8])
+    moved_on = accounts.report(account)
+    assert moved_on.nav.index[-1] == SESSIONS[8]
+
+
+def test_reports_asked_for_together_are_worked_out_once(migrated_database) -> None:
+    market = synced(migrated_database, {"13010": ["1000"] * 5 + ["1100"] * 5})
+    accounts = Accounts(migrated_database, market,
+                        build_strategy=lambda name, params: Script({SESSIONS[1]: {"13010": Disposition.HOLD}}))
+    account = accounts.create(AccountSpec(name="并", strategy="script", start_date=SESSIONS[1]))
+    accounts.advance(account, through=SESSIONS[8])
+    reads = counting_reads(market)
+
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        reports = list(pool.map(lambda _: accounts.report(account), range(3)))
+
+    assert len(reads) == 1 and all(report is reports[0] for report in reports)

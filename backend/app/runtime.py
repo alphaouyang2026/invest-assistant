@@ -68,13 +68,14 @@ def advance_job(accounts: Accounts, account_id: int | None = None) -> Job:
 
 def _advance(accounts: Accounts, account_id: int | None, progress: Progress) -> tuple[list[dict], list[str]]:
     if account_id is not None:
-        targets = [(account_id, str(account_id))]
+        targets = [(account_id, f"账户 {account_id}")]
     else:
         targets = [(summary.id, summary.name) for summary in accounts.list(active_only=True)]
     advanced, warnings = [], []
     for done, (target, name) in enumerate(targets):
         progress({"account": name, "accounts_done": done, "accounts_total": len(targets)})
         report = accounts.advance(target)
+        name = report.name
         advanced.append({"id": target, "name": name, "sessions": len(report.sessions),
                          "through": report.sessions[-1].isoformat() if report.sessions else None})
         warnings += [f"{name}：{warning}" for warning in report.warnings]

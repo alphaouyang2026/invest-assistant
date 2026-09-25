@@ -7,6 +7,7 @@ and `ledger`.
 
 from __future__ import annotations
 
+import threading
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timedelta, timezone
@@ -45,7 +46,8 @@ class AccountSpec:
 
 @dataclass(frozen=True)
 class AdvanceReport:
-    sessions: list[date]
+    name: str             # the account's
+    sessions: list[date]  # advanced through this time, oldest first
     warnings: list[str]
 
 
@@ -95,6 +97,11 @@ class Accounts:
         self._engine = engine
         self._market = market
         self._build_strategy = build_strategy
+        # The latest report of each account, worked out once however many ask
+        # at the same time: the account page asks three times at once.
+        self._reports: dict[int, tuple[tuple, AccountReport]] = {}
+        self._report_locks: dict[int, threading.Lock] = {}
+        self._locks_guard = threading.Lock()
 
     def create(self, spec: AccountSpec) -> int:
         """Refused unless the strategy knows every parameter given, the start
@@ -133,7 +140,7 @@ class Accounts:
         days = [d for d in calendar.sessions()
                 if account["start_date"] <= d <= through and (done is None or d > done)]
         if not days:
-            return AdvanceReport([], [])
+            return AdvanceReport(account["name"], [], [])
 
         rules, costs, initial_cash = _rules(account)
         ledger = Ledger(initial_cash, self._records(account_id))
@@ -172,12 +179,25 @@ class Accounts:
         if days[-1] == overview.latest_date and account["backtest_data_mark"] is None:
             self._set(account_id, backtest_data_mark={"latest_date": overview.latest_date.isoformat(),
                                                       "bar_rows": overview.bar_rows})
-        return AdvanceReport(days, warnings)
+        return AdvanceReport(account["name"], days, warnings)
 
     def report(self, account_id: int) -> AccountReport:
-        account = self._account(account_id)
+        """Worked out when read (spec §7.4) — once, until the account moves
+        on, is stopped or gains a record."""
+        with self._locks_guard:
+            lock = self._report_locks.setdefault(account_id, threading.Lock())
+        with lock:
+            account = self._account(account_id)
+            records = self._records(account_id)
+            version = (account["advanced_through"], account["status"], str(account["backtest_data_mark"]),
+                       len(records), records[-1].id if records else None)
+            cached = self._reports.get(account_id)
+            if cached is None or cached[0] != version:
+                self._reports[account_id] = (version, self._work_out_report(account, records))
+            return self._reports[account_id][1]
+
+    def _work_out_report(self, account: dict, records: list[Record]) -> AccountReport:
         _, _, initial_cash = _rules(account)
-        records = self._records(account_id)
         ledger = Ledger(initial_cash, records)
         through = account["advanced_through"]
         if through is None:
@@ -229,6 +249,7 @@ class Accounts:
         with self._engine.begin() as connection:
             connection.execute(delete(tables.paper_orders).where(tables.paper_orders.c.account_id == account_id))
             connection.execute(delete(tables.paper_accounts).where(tables.paper_accounts.c.id == account_id))
+        self._reports.pop(account_id, None)
 
     # --- reading and writing ---------------------------------------------
 

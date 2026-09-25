@@ -38,6 +38,7 @@ def test_advance_on_the_command_line_moves_one_account_or_all_active_ones(migrat
 
     assert main(["advance", "--account", str(first)], today=lambda: SESSIONS[-1], **scripted) == 0
     assert accounts.report(first).account["advanced_through"] == SESSIONS[-1]
+    assert "完成：一" in capsys.readouterr().out  # its name, not its id
     assert accounts.report(second).account["advanced_through"] is None
 
     assert main(["advance"], today=lambda: SESSIONS[-1], **scripted) == 0
