@@ -365,6 +365,7 @@ API（前缀 `/api`）：
 - `GET /instruments?q=`、`GET /instruments/{code}/bars?from=&to=&strategy=`（研究价格 + 所选策略的指标 + 历史入场点）
 - `GET /signals?strategy=&date=`
 - `GET /accounts`、`POST /accounts`、`GET /accounts/{id}`、`GET /accounts/{id}/nav`、`GET /accounts/{id}/orders`、`POST /accounts/{id}/stop`、`DELETE /accounts/{id}`
+- `GET /strategies`（两个策略的参数与默认值，给新建账户页展示；即附录 A.3 的 `STRATEGY_DEFAULTS`）
 - `GET /jobs/current`
 
 ## 10. 工程与运行

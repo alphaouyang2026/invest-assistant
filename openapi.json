@@ -317,10 +317,638 @@
           }
         }
       }
+    },
+    "/api/strategies": {
+      "get": {
+        "tags": [
+          "accounts"
+        ],
+        "summary": "Strategies",
+        "description": "Each strategy's parameters with their defaults, for the new-account page.",
+        "operationId": "strategies_api_strategies_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/StrategyOut"
+                  },
+                  "type": "array",
+                  "title": "Response Strategies Api Strategies Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/accounts": {
+      "get": {
+        "tags": [
+          "accounts"
+        ],
+        "summary": "Accounts",
+        "operationId": "accounts_api_accounts_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AccountSummaryOut"
+                  },
+                  "type": "array",
+                  "title": "Response Accounts Api Accounts Get"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "accounts"
+        ],
+        "summary": "Create",
+        "description": "Creates the account and queues its backtest at once (spec §8).",
+        "operationId": "create_api_accounts_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AccountIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountCreated"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "参数不合规",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/accounts/{account_id}": {
+      "get": {
+        "tags": [
+          "accounts"
+        ],
+        "summary": "Detail",
+        "operationId": "detail_api_accounts__account_id__get",
+        "parameters": [
+          {
+            "name": "account_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Account Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountDetailOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "没有这个账户",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "accounts"
+        ],
+        "summary": "Delete",
+        "operationId": "delete_api_accounts__account_id__delete",
+        "parameters": [
+          {
+            "name": "account_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Account Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "没有这个账户",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/accounts/{account_id}/nav": {
+      "get": {
+        "tags": [
+          "accounts"
+        ],
+        "summary": "Nav",
+        "description": "The net asset value and TOPIX, both from 1 on the first session, and\nhow far the NAV stands below its highest so far.",
+        "operationId": "nav_api_accounts__account_id__nav_get",
+        "parameters": [
+          {
+            "name": "account_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Account Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/NavPointOut"
+                  },
+                  "title": "Response Nav Api Accounts  Account Id  Nav Get"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "没有这个账户",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/accounts/{account_id}/orders": {
+      "get": {
+        "tags": [
+          "accounts"
+        ],
+        "summary": "Orders",
+        "description": "Every order and account event, oldest first.",
+        "operationId": "orders_api_accounts__account_id__orders_get",
+        "parameters": [
+          {
+            "name": "account_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Account Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/OrderOut"
+                  },
+                  "title": "Response Orders Api Accounts  Account Id  Orders Get"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "没有这个账户",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/accounts/{account_id}/stop": {
+      "post": {
+        "tags": [
+          "accounts"
+        ],
+        "summary": "Stop",
+        "operationId": "stop_api_accounts__account_id__stop_post",
+        "parameters": [
+          {
+            "name": "account_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Account Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "没有这个账户",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
     "schemas": {
+      "AccountCreated": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "advance_job_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Advance Job Id"
+          },
+          "advance_refused": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Advance Refused"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "advance_job_id",
+          "advance_refused"
+        ],
+        "title": "AccountCreated"
+      },
+      "AccountDetailOut": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "strategy": {
+            "type": "string",
+            "title": "Strategy"
+          },
+          "strategy_params": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Strategy Params"
+          },
+          "rules": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "type": "object",
+            "title": "Rules"
+          },
+          "costs": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "type": "object",
+            "title": "Costs"
+          },
+          "start_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Start Date"
+          },
+          "advanced_through": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Advanced Through"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "backtest_data_mark": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Backtest Data Mark"
+          },
+          "figures": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FiguresOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "holdings": {
+            "items": {
+              "$ref": "#/components/schemas/HoldingOut"
+            },
+            "type": "array",
+            "title": "Holdings"
+          },
+          "pending": {
+            "items": {
+              "$ref": "#/components/schemas/OrderOut"
+            },
+            "type": "array",
+            "title": "Pending"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "strategy",
+          "strategy_params",
+          "rules",
+          "costs",
+          "start_date",
+          "advanced_through",
+          "status",
+          "backtest_data_mark",
+          "figures",
+          "holdings",
+          "pending"
+        ],
+        "title": "AccountDetailOut"
+      },
+      "AccountIn": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "strategy": {
+            "type": "string",
+            "title": "Strategy"
+          },
+          "start_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Start Date"
+          },
+          "strategy_params": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Strategy Params",
+            "default": {}
+          },
+          "initial_cash": {
+            "type": "number",
+            "title": "Initial Cash",
+            "default": 10000000
+          },
+          "max_positions": {
+            "type": "integer",
+            "title": "Max Positions",
+            "default": 10
+          },
+          "max_weight": {
+            "type": "number",
+            "title": "Max Weight",
+            "default": 0.1
+          },
+          "cash_floor": {
+            "type": "number",
+            "title": "Cash Floor",
+            "default": 0.05
+          },
+          "commission_rate": {
+            "type": "number",
+            "title": "Commission Rate",
+            "default": 0.0
+          },
+          "commission_min": {
+            "type": "number",
+            "title": "Commission Min",
+            "default": 0.0
+          },
+          "slippage": {
+            "type": "number",
+            "title": "Slippage",
+            "default": 0.001
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "strategy",
+          "start_date"
+        ],
+        "title": "AccountIn",
+        "description": "A new account (spec §3.5); anything left out takes its default."
+      },
+      "AccountSummaryOut": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "strategy": {
+            "type": "string",
+            "title": "Strategy"
+          },
+          "start_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Start Date"
+          },
+          "advanced_through": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Advanced Through"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "total_return": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Return"
+          },
+          "max_drawdown": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Drawdown"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "strategy",
+          "start_date",
+          "advanced_through",
+          "status",
+          "total_return",
+          "max_drawdown"
+        ],
+        "title": "AccountSummaryOut"
+      },
       "BarOut": {
         "properties": {
           "date": {
@@ -520,6 +1148,97 @@
         ],
         "title": "DataStatus"
       },
+      "FiguresOut": {
+        "properties": {
+          "total_return": {
+            "type": "number",
+            "title": "Total Return"
+          },
+          "annualised_return": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Annualised Return"
+          },
+          "max_drawdown": {
+            "type": "number",
+            "title": "Max Drawdown"
+          },
+          "sharpe": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sharpe"
+          },
+          "win_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Win Rate"
+          },
+          "average_holding_sessions": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Average Holding Sessions"
+          },
+          "annual_turnover": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Annual Turnover"
+          },
+          "excess_annualised_return": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Excess Annualised Return"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total_return",
+          "annualised_return",
+          "max_drawdown",
+          "sharpe",
+          "win_rate",
+          "average_holding_sessions",
+          "annual_turnover",
+          "excess_annualised_return"
+        ],
+        "title": "FiguresOut",
+        "description": "Spec §7.4. Dividends and tax are not included."
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -532,6 +1251,45 @@
         },
         "type": "object",
         "title": "HTTPValidationError"
+      },
+      "HoldingOut": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "quantity": {
+            "type": "integer",
+            "title": "Quantity"
+          },
+          "opened_on": {
+            "type": "string",
+            "format": "date",
+            "title": "Opened On"
+          },
+          "cost": {
+            "type": "number",
+            "title": "Cost"
+          },
+          "close": {
+            "type": "number",
+            "title": "Close"
+          },
+          "value": {
+            "type": "number",
+            "title": "Value"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "quantity",
+          "opened_on",
+          "cost",
+          "close",
+          "value"
+        ],
+        "title": "HoldingOut"
       },
       "InstrumentOut": {
         "properties": {
@@ -710,6 +1468,150 @@
         ],
         "title": "LinePoint"
       },
+      "NavPointOut": {
+        "properties": {
+          "date": {
+            "type": "string",
+            "format": "date",
+            "title": "Date"
+          },
+          "nav": {
+            "type": "number",
+            "title": "Nav"
+          },
+          "nav_curve": {
+            "type": "number",
+            "title": "Nav Curve"
+          },
+          "topix_curve": {
+            "type": "number",
+            "title": "Topix Curve"
+          },
+          "drawdown": {
+            "type": "number",
+            "title": "Drawdown"
+          }
+        },
+        "type": "object",
+        "required": [
+          "date",
+          "nav",
+          "nav_curve",
+          "topix_curve",
+          "drawdown"
+        ],
+        "title": "NavPointOut"
+      },
+      "OrderOut": {
+        "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "signal_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Signal Date"
+          },
+          "execution_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Execution Date"
+          },
+          "planned_quantity": {
+            "type": "integer",
+            "title": "Planned Quantity"
+          },
+          "priority": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Priority"
+          },
+          "reason": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Reason"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "outcome_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outcome Reason"
+          },
+          "filled_quantity": {
+            "type": "integer",
+            "title": "Filled Quantity"
+          },
+          "fill_price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fill Price"
+          },
+          "fees": {
+            "type": "number",
+            "title": "Fees"
+          },
+          "cash_delta": {
+            "type": "number",
+            "title": "Cash Delta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "code",
+          "signal_date",
+          "execution_date",
+          "planned_quantity",
+          "priority",
+          "reason",
+          "status",
+          "outcome_reason",
+          "filled_quantity",
+          "fill_price",
+          "fees",
+          "cash_delta"
+        ],
+        "title": "OrderOut",
+        "description": "An order or an account event (spec §3.6)."
+      },
       "PlotOut": {
         "properties": {
           "indicator": {
@@ -835,6 +1737,25 @@
           "candidates"
         ],
         "title": "SignalsOut"
+      },
+      "StrategyOut": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "defaults": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Defaults"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "defaults"
+        ],
+        "title": "StrategyOut"
       },
       "SyncAccepted": {
         "properties": {

@@ -126,10 +126,254 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/strategies": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Strategies
+         * @description Each strategy's parameters with their defaults, for the new-account page.
+         */
+        get: operations["strategies_api_strategies_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/accounts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Accounts */
+        get: operations["accounts_api_accounts_get"];
+        put?: never;
+        /**
+         * Create
+         * @description Creates the account and queues its backtest at once (spec §8).
+         */
+        post: operations["create_api_accounts_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/accounts/{account_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Detail */
+        get: operations["detail_api_accounts__account_id__get"];
+        put?: never;
+        post?: never;
+        /** Delete */
+        delete: operations["delete_api_accounts__account_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/accounts/{account_id}/nav": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Nav
+         * @description The net asset value and TOPIX, both from 1 on the first session, and
+         *     how far the NAV stands below its highest so far.
+         */
+        get: operations["nav_api_accounts__account_id__nav_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/accounts/{account_id}/orders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Orders
+         * @description Every order and account event, oldest first.
+         */
+        get: operations["orders_api_accounts__account_id__orders_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/accounts/{account_id}/stop": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Stop */
+        post: operations["stop_api_accounts__account_id__stop_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AccountCreated */
+        AccountCreated: {
+            /** Id */
+            id: number;
+            /** Advance Job Id */
+            advance_job_id: string | null;
+            /** Advance Refused */
+            advance_refused: string | null;
+        };
+        /** AccountDetailOut */
+        AccountDetailOut: {
+            /** Id */
+            id: number;
+            /** Name */
+            name: string;
+            /** Strategy */
+            strategy: string;
+            /** Strategy Params */
+            strategy_params: {
+                [key: string]: unknown;
+            };
+            /** Rules */
+            rules: {
+                [key: string]: number;
+            };
+            /** Costs */
+            costs: {
+                [key: string]: number;
+            };
+            /**
+             * Start Date
+             * Format: date
+             */
+            start_date: string;
+            /** Advanced Through */
+            advanced_through: string | null;
+            /** Status */
+            status: string;
+            /** Backtest Data Mark */
+            backtest_data_mark: {
+                [key: string]: unknown;
+            } | null;
+            figures: components["schemas"]["FiguresOut"] | null;
+            /** Holdings */
+            holdings: components["schemas"]["HoldingOut"][];
+            /** Pending */
+            pending: components["schemas"]["OrderOut"][];
+        };
+        /**
+         * AccountIn
+         * @description A new account (spec §3.5); anything left out takes its default.
+         */
+        AccountIn: {
+            /** Name */
+            name: string;
+            /** Strategy */
+            strategy: string;
+            /**
+             * Start Date
+             * Format: date
+             */
+            start_date: string;
+            /**
+             * Strategy Params
+             * @default {}
+             */
+            strategy_params: {
+                [key: string]: unknown;
+            };
+            /**
+             * Initial Cash
+             * @default 10000000
+             */
+            initial_cash: number;
+            /**
+             * Max Positions
+             * @default 10
+             */
+            max_positions: number;
+            /**
+             * Max Weight
+             * @default 0.1
+             */
+            max_weight: number;
+            /**
+             * Cash Floor
+             * @default 0.05
+             */
+            cash_floor: number;
+            /**
+             * Commission Rate
+             * @default 0
+             */
+            commission_rate: number;
+            /**
+             * Commission Min
+             * @default 0
+             */
+            commission_min: number;
+            /**
+             * Slippage
+             * @default 0.001
+             */
+            slippage: number;
+        };
+        /** AccountSummaryOut */
+        AccountSummaryOut: {
+            /** Id */
+            id: number;
+            /** Name */
+            name: string;
+            /** Strategy */
+            strategy: string;
+            /**
+             * Start Date
+             * Format: date
+             */
+            start_date: string;
+            /** Advanced Through */
+            advanced_through: string | null;
+            /** Status */
+            status: string;
+            /** Total Return */
+            total_return: number | null;
+            /** Max Drawdown */
+            max_drawdown: number | null;
+        };
         /**
          * BarOut
          * @description Research prices: comparable across splits. None on a halted day.
@@ -186,10 +430,50 @@ export interface components {
             /** Recent Jobs */
             recent_jobs: components["schemas"]["JobResultOut"][];
         };
+        /**
+         * FiguresOut
+         * @description Spec §7.4. Dividends and tax are not included.
+         */
+        FiguresOut: {
+            /** Total Return */
+            total_return: number;
+            /** Annualised Return */
+            annualised_return: number | null;
+            /** Max Drawdown */
+            max_drawdown: number;
+            /** Sharpe */
+            sharpe: number | null;
+            /** Win Rate */
+            win_rate: number | null;
+            /** Average Holding Sessions */
+            average_holding_sessions: number | null;
+            /** Annual Turnover */
+            annual_turnover: number | null;
+            /** Excess Annualised Return */
+            excess_annualised_return: number | null;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /** HoldingOut */
+        HoldingOut: {
+            /** Code */
+            code: string;
+            /** Quantity */
+            quantity: number;
+            /**
+             * Opened On
+             * Format: date
+             */
+            opened_on: string;
+            /** Cost */
+            cost: number;
+            /** Close */
+            close: number;
+            /** Value */
+            value: number;
         };
         /** InstrumentOut */
         InstrumentOut: {
@@ -259,6 +543,64 @@ export interface components {
             /** Value */
             value: number | null;
         };
+        /** NavPointOut */
+        NavPointOut: {
+            /**
+             * Date
+             * Format: date
+             */
+            date: string;
+            /** Nav */
+            nav: number;
+            /** Nav Curve */
+            nav_curve: number;
+            /** Topix Curve */
+            topix_curve: number;
+            /** Drawdown */
+            drawdown: number;
+        };
+        /**
+         * OrderOut
+         * @description An order or an account event (spec §3.6).
+         */
+        OrderOut: {
+            /** Id */
+            id: number | null;
+            /** Kind */
+            kind: string;
+            /** Code */
+            code: string;
+            /**
+             * Signal Date
+             * Format: date
+             */
+            signal_date: string;
+            /**
+             * Execution Date
+             * Format: date
+             */
+            execution_date: string;
+            /** Planned Quantity */
+            planned_quantity: number;
+            /** Priority */
+            priority: number | null;
+            /** Reason */
+            reason: {
+                [key: string]: unknown;
+            };
+            /** Status */
+            status: string;
+            /** Outcome Reason */
+            outcome_reason: string | null;
+            /** Filled Quantity */
+            filled_quantity: number;
+            /** Fill Price */
+            fill_price: number | null;
+            /** Fees */
+            fees: number;
+            /** Cash Delta */
+            cash_delta: number;
+        };
         /** PlotOut */
         PlotOut: {
             /** Indicator */
@@ -307,6 +649,15 @@ export interface components {
             date: string;
             /** Candidates */
             candidates: components["schemas"]["CandidateOut"][];
+        };
+        /** StrategyOut */
+        StrategyOut: {
+            /** Name */
+            name: string;
+            /** Defaults */
+            defaults: {
+                [key: string]: unknown;
+            };
         };
         /** SyncAccepted */
         SyncAccepted: {
@@ -521,6 +872,275 @@ export interface operations {
                 };
             };
             /** @description 没有这个策略，或还没有行情 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    strategies_api_strategies_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StrategyOut"][];
+                };
+            };
+        };
+    };
+    accounts_api_accounts_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountSummaryOut"][];
+                };
+            };
+        };
+    };
+    create_api_accounts_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AccountIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountCreated"];
+                };
+            };
+            /** @description 参数不合规 */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+        };
+    };
+    detail_api_accounts__account_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                account_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountDetailOut"];
+                };
+            };
+            /** @description 没有这个账户 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_api_accounts__account_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                account_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description 没有这个账户 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    nav_api_accounts__account_id__nav_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                account_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NavPointOut"][];
+                };
+            };
+            /** @description 没有这个账户 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    orders_api_accounts__account_id__orders_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                account_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrderOut"][];
+                };
+            };
+            /** @description 没有这个账户 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stop_api_accounts__account_id__stop_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                account_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description 没有这个账户 */
             404: {
                 headers: {
                     [name: string]: unknown;
