@@ -32,3 +32,35 @@ const REASONS: Record<string, string> = {
 };
 
 export const reason = (code: string) => REASONS[code] ?? code;
+
+export const strategyLabel = (name: string) => STRATEGIES.find((s) => s.name === name)?.label ?? name;
+
+/** 0.24918 → "24.92%"; null → "—". */
+export const percent = (value: number | null | undefined) =>
+  value === null || value === undefined ? "—" : `${(value * 100).toFixed(2)}%`;
+
+export const ORDER_KINDS: Record<string, string> = {
+  buy: "买入",
+  sell: "卖出",
+  split_adjustment: "拆合股调整",
+  delisting_settlement: "退市结清",
+};
+
+export const ORDER_STATUSES: Record<string, string> = {
+  pending: "待成交",
+  filled: "成交",
+  expired: "过期",
+  skipped: "放弃",
+};
+
+const OUTCOMES: Record<string, string> = {
+  untradable: "停牌或无成交",
+  limit_down_open: "开盘跌停，卖不掉",
+  limit_up_open: "开盘涨停，买不到",
+  insufficient_cash: "现金不足",
+  lot_unaffordable: "买不起一手",
+  delisted: "已退市",
+  split_rounding: "拆合股后不足一手",
+};
+
+export const outcome = (code: string | null | undefined) => (code ? (OUTCOMES[code] ?? code) : "");
