@@ -96,6 +96,19 @@ class Bars:
         return shifted
 
 
+@dataclass(frozen=True)
+class _WorkedOut:
+    """A frame's lines as arrays (a row per session, a column per code, in
+    `codes` order), with how many bars each code has had by each session and
+    whether it is tradable that day."""
+
+    codes: list[str]
+    rows: dict[date, int]
+    seen: np.ndarray
+    tradable: np.ndarray
+    lines: dict[str, np.ndarray]
+
+
 class IndicatorStrategy:
     """Works out a strategy's lines once per frame, then judges each code
     on the day from its readings. Subclasses give the lines and the rules."""
@@ -106,9 +119,7 @@ class IndicatorStrategy:
 
     def __init__(self, params: Mapping[str, Any]) -> None:
         self.params = params
-        self._lines_by_frame: weakref.WeakKeyDictionary[MarketFrame, dict[str, pd.DataFrame]] = (
-            weakref.WeakKeyDictionary()
-        )
+        self._worked_out: weakref.WeakKeyDictionary[MarketFrame, _WorkedOut] = weakref.WeakKeyDictionary()
 
     def lines(self, bars: Bars) -> dict[str, pd.DataFrame]:
         raise NotImplementedError
@@ -118,28 +129,38 @@ class IndicatorStrategy:
         raise NotImplementedError
 
     def evaluate(self, frame: MarketFrame, day: date, holdings: Sequence[Holding]) -> list[Signal]:
-        lines = self._lines_for(frame)
-        quality = frame.wide(QUALITY)
-        if day not in quality.index:
+        worked = self._worked_out_for(frame)
+        if day not in worked.rows:
             return []
-        seen = frame.wide(CLOSE).notna().loc[:day].sum()
-        judgeable = (seen >= self.warmup_sessions) & (quality.loc[day] != UNTRADABLE) & quality.loc[day].notna()
+        at = worked.rows[day]
+        judgeable = (worked.seen[at] >= self.warmup_sessions) & worked.tradable[at]
         held = {holding.code: holding for holding in holdings}
-        row = {name: line.loc[day] for name, line in lines.items()}
+        today = {name: values[at] for name, values in worked.lines.items()}
 
         signals = []
-        for code in quality.columns[judgeable]:
-            readings = {name: float(values[code]) for name, values in row.items()}
+        for column in np.flatnonzero(judgeable):
+            code = worked.codes[column]
+            readings = {name: float(values[column]) for name, values in today.items()}
             position = self._position(frame, held[code], day) if code in held else None
             judgement = self.judge(readings, position)
             signals.append(Signal(code, judgement.disposition, judgement.reason_codes, readings, judgement.priority))
-        return sorted(signals, key=lambda signal: signal.code)
+        return signals  # by code: the columns are
 
-    def _lines_for(self, frame: MarketFrame) -> dict[str, pd.DataFrame]:
-        if frame not in self._lines_by_frame:
+    def _worked_out_for(self, frame: MarketFrame) -> _WorkedOut:
+        """Everything that depends on the frame alone, once per frame."""
+        if frame not in self._worked_out:
             bars = Bars(*(frame.wide(column).astype(float) for column in (OPEN, HIGH, LOW, CLOSE, VOLUME)))
-            self._lines_by_frame[frame] = self.lines(bars)
-        return self._lines_by_frame[frame]
+            lines = self.lines(bars)
+            quality = frame.wide(QUALITY).reindex(index=bars.close.index, columns=bars.close.columns)
+            self._worked_out[frame] = _WorkedOut(
+                codes=list(bars.close.columns),
+                rows={day: n for n, day in enumerate(bars.close.index)},
+                seen=bars.close.notna().cumsum().to_numpy(),
+                tradable=(quality.notna() & (quality != UNTRADABLE)).to_numpy(),
+                lines={name: line.reindex(index=bars.close.index, columns=bars.close.columns).to_numpy(float)
+                       for name, line in lines.items()},
+            )
+        return self._worked_out[frame]
 
     @staticmethod
     def _position(frame: MarketFrame, holding: Holding, day: date) -> Position:

@@ -18,9 +18,13 @@ STRATEGY_DEFAULTS: Mapping[str, Mapping[str, Any]] = {
 
 
 def build_strategy(name: str, params: Mapping[str, Any]) -> Strategy:
-    """`params` override the defaults; anything left out keeps its default."""
+    """`params` override the defaults; anything left out keeps its default.
+    A name the strategy does not have is refused rather than ignored."""
     if name not in _STRATEGIES:
         raise ValueError(f"没有这个策略：{name}")
+    unknown = sorted(set(params) - set(STRATEGY_DEFAULTS[name]))
+    if unknown:
+        raise ValueError(f"{name} 没有这些参数：{', '.join(unknown)}")
     return _STRATEGIES[name](params)
 
 

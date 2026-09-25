@@ -32,7 +32,7 @@ def test_only_prime_common_stock_is_in_the_universe(migrated_database) -> None:
         [listed("13010", PRIME), listed("13020", STANDARD), listed("13030", PRIME, product="012")],
     )
 
-    assert market.universe(DAY) == ["13010"]
+    assert market.universe(DAY)[DAY] == ["13010"]
 
 
 def test_the_last_20_sessions_must_average_500_million_yen_counting_missing_and_untradable_days_as_nothing(
@@ -57,7 +57,7 @@ def test_the_last_20_sessions_must_average_500_million_yen_counting_missing_and_
     market = market_with(migrated_database, bars_for, [listed(code, PRIME) for code in
                                                        ("13010", "13020", "13030", "13040", "13050")])
 
-    assert market.universe(DAY) == ["13010", "13040", "13050"]
+    assert market.universe(DAY)[DAY] == ["13010", "13040", "13050"]
 
 
 def test_a_code_needs_a_tradable_bar_that_day(migrated_database) -> None:
@@ -74,7 +74,7 @@ def test_a_code_needs_a_tradable_bar_that_day(migrated_database) -> None:
 
     market = market_with(migrated_database, bars_for, [listed(code, PRIME) for code in ("13010", "13020", "13030", "13040")])
 
-    assert market.universe(DAY) == ["13010", "13040"]
+    assert market.universe(DAY)[DAY] == ["13010", "13040"]
 
 
 def test_the_segment_is_the_one_that_day_not_todays(migrated_database) -> None:
@@ -86,5 +86,32 @@ def test_the_segment_is_the_one_that_day_not_todays(migrated_database) -> None:
 
     market = market_with(migrated_database, lambda day: [bar(code, day, turnover=LIQUID) for code in ("13010", "13020")], roster)
 
-    assert market.universe(DAY) == ["13010"]
-    assert market.universe(SESSIONS[-4]) == ["13020"]
+    assert market.universe(DAY)[DAY] == ["13010"]
+    assert market.universe(SESSIONS[-4])[SESSIONS[-4]] == ["13020"]
+
+
+def test_a_range_gives_each_sessions_universe_in_one_go(migrated_database) -> None:
+    """What a backtest asks: hundreds of sessions at once (spec A.1)."""
+    thin_from, promoted_on = SESSIONS[22], SESSIONS[23]
+
+    def bars_for(day):
+        return [
+            bar("13010", day, turnover=LIQUID),
+            # 5.5 then nothing: 19 × 5.5 / 20 ≥ 5 on the first thin day, 18 × 5.5 / 20 < 5 on the next
+            bar("13020", day, turnover=Decimal("550000000") if day < thin_from else Decimal(0)),
+            bar("13030", day, turnover=LIQUID),
+        ]
+
+    def roster(day):
+        return [listed("13010", PRIME), listed("13020", PRIME),
+                listed("13030", PRIME if day >= promoted_on else STANDARD)]
+
+    market = market_with(migrated_database, bars_for, roster)
+
+    assert market.universe(SESSIONS[20], SESSIONS[24]) == {
+        SESSIONS[20]: ["13010", "13020"],
+        SESSIONS[21]: ["13010", "13020"],
+        SESSIONS[22]: ["13010", "13020"],
+        SESSIONS[23]: ["13010", "13030"],
+        SESSIONS[24]: ["13010", "13030"],
+    }

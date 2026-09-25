@@ -17,6 +17,7 @@ from collections.abc import Iterable, Mapping
 from datetime import date
 from typing import Any
 
+import numpy as np
 import pandas as pd
 
 CODE = "code"
@@ -37,11 +38,17 @@ TURNOVER = "turnover"  # yen, float: it feeds thresholds, not the books
 UPPER_LIMIT_HIT = "upper_limit_hit"
 LOWER_LIMIT_HIT = "lower_limit_hit"
 QUALITY = "quality_status"  # "ok" / "excluded" / "untradable" (spec §4.4)
+# As stored, for the accounts' split adjustment (spec §7.1): a `Decimal`,
+# 1 except on an ex-rights day; the type is 1 split, 2 reverse split,
+# 3 rights issue, None otherwise.
+ADJUSTMENT_FACTOR = "adjustment_factor"
+EX_RIGHTS_TYPE = "ex_rights_type"
 
 COLUMNS = [
     OPEN, HIGH, LOW, CLOSE, VOLUME,
     EXEC_OPEN, EXEC_HIGH, EXEC_LOW, EXEC_CLOSE,
     TURNOVER, UPPER_LIMIT_HIT, LOWER_LIMIT_HIT, QUALITY,
+    ADJUSTMENT_FACTOR, EX_RIGHTS_TYPE,
 ]
 
 _PRICES = [("open", OPEN, EXEC_OPEN), ("high", HIGH, EXEC_HIGH), ("low", LOW, EXEC_LOW), ("close", CLOSE, EXEC_CLOSE)]
@@ -49,8 +56,11 @@ _SPLIT_TYPES = (1, 2)  # ExRT split and reverse split; 3 (rights issue) leaves v
 
 
 class MarketFrame:
-    def __init__(self, data: pd.DataFrame) -> None:
+    def __init__(self, data: pd.DataFrame, listed_through: Mapping[str, date | None] | None = None) -> None:
         self.data = data
+        # code → its last session on the roster; None while it is still on
+        # it (and for TOPIX, which never is)
+        self.listed_through: dict[str, date | None] = dict(listed_through or {})
 
     def dates(self, code: str) -> list[date]:
         """The dates `code` has a bar on, oldest first."""
@@ -99,6 +109,8 @@ def build_frame(
     out[UPPER_LIMIT_HIT] = stored["upper_limit_hit"].astype(bool).to_numpy()
     out[LOWER_LIMIT_HIT] = stored["lower_limit_hit"].astype(bool).to_numpy()
     out[QUALITY] = stored["quality_status"].to_numpy()
+    out[ADJUSTMENT_FACTOR] = stored["adjustment_factor"].to_numpy()
+    out[EX_RIGHTS_TYPE] = np.array([None if pd.isna(kind) else int(kind) for kind in stored["ex_rights_type"]], dtype=object)
     return MarketFrame(out[COLUMNS])
 
 

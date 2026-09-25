@@ -25,7 +25,7 @@ class Candidate:
 def entry_candidates(market: MarketData, strategy: Strategy, day: date) -> list[Candidate]:
     """Who can be held from `day`'s close, seen from holding nothing:
     highest priority first, then by code."""
-    universe = market.universe(day)
+    universe = market.universe(day).get(day, [])
     if not universe:
         return []
     frame = market.read(universe, _warm_up_start(market, strategy, day), day)
