@@ -48,18 +48,39 @@ let asked: string[];
 beforeEach(() => {
   asked = [];
   drawn.data = null;
+  stubBackend(BARS);
+});
+
+function stubBackend(bars: typeof BARS) {
   vi.stubGlobal("fetch", vi.fn(async (input: Request) => {
     const url = new URL(input.url);
     asked.push(url.pathname + url.search);
-    return new Response(JSON.stringify(BARS), { headers: { "Content-Type": "application/json" } });
+    const body = url.pathname === "/api/instruments"
+      ? [{ code: "72030", name: "トヨタ自動車", name_en: "TOYOTA MOTOR", market: "0111" }]
+      : bars;
+    return new Response(JSON.stringify(body), { headers: { "Content-Type": "application/json" } });
   }));
-});
+}
 
 afterEach(() => {
   vi.unstubAllGlobals();
 });
 
 describe("证券详情页", () => {
+  it("标题是 4 位代码、名称和市场", async () => {
+    render(<SecurityDetail code="72030" strategy="trend_pullback_v1" />);
+
+    expect(await screen.findByRole("heading", { level: 1, name: /7203.*トヨタ自動車.*Prime/ })).toBeInTheDocument();
+  });
+
+  it("连续几天都是入场信号时，只在第一天标出来", async () => {
+    stubBackend({ ...BARS, entries: ["2026-09-17", "2026-09-18"] });
+    render(<SecurityDetail code="72030" strategy="trend_pullback_v1" />);
+
+    await screen.findByTestId("chart");
+    expect(drawn.data?.entries).toEqual(["2026-09-17"]);
+  });
+
   it("把研究价格 K 线、成交量、策略的指标和历史入场点交给图表", async () => {
     render(<SecurityDetail code="72030" strategy="trend_pullback_v1" />);
 

@@ -5,13 +5,14 @@ from __future__ import annotations
 
 from dataclasses import asdict
 from decimal import Decimal
+from typing import Literal
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 
 from app.accounts import AccountSpec, Costs, PortfolioRules
 from app.api.schemas import (
     AccountCreated, AccountDetailOut, AccountIn, AccountSummaryOut, FiguresOut, HoldingOut, NavPointOut, OrderOut,
-    Refusal, StrategyOut,
+    OrdersPageOut, Refusal, StrategyOut,
 )
 from app.jobs import JobsBusy
 from app.runtime import advance_job
@@ -59,6 +60,7 @@ def create(request: Request, body: AccountIn) -> AccountCreated:
 def detail(request: Request, account_id: int) -> AccountDetailOut:
     report = _report(request, account_id)
     account = report.account
+    names = _names(request, [h.code for h in report.holdings] + [r.code for r in report.pending])
     return AccountDetailOut(
         id=account["id"], name=account["name"], strategy=account["strategy"],
         strategy_params=account["strategy_params"],
@@ -68,9 +70,10 @@ def detail(request: Request, account_id: int) -> AccountDetailOut:
         backtest_data_mark=account["backtest_data_mark"],
         figures=None if report.figures is None else FiguresOut(
             **{name: getattr(report.figures, name) for name in FiguresOut.model_fields}),
-        holdings=[HoldingOut(code=h.code, quantity=h.quantity, opened_on=h.opened_on, cost=float(h.cost),
-                             close=float(h.close), value=float(h.value)) for h in report.holdings],
-        pending=[_order(record) for record in report.pending],
+        holdings=[HoldingOut(code=h.code, name=names.get(h.code), quantity=h.quantity, opened_on=h.opened_on,
+                             cost=float(h.cost), close=float(h.close), value=float(h.value))
+                  for h in report.holdings],
+        pending=[_order(record, names) for record in report.pending],
     )
 
 
@@ -89,9 +92,20 @@ def nav(request: Request, account_id: int) -> list[NavPointOut]:
 
 
 @router.get("/accounts/{account_id}/orders", responses=NOT_FOUND)
-def orders(request: Request, account_id: int) -> list[OrderOut]:
-    """Every order and account event, oldest first."""
-    return [_order(record) for record in _report(request, account_id).orders]
+def orders(request: Request, account_id: int, page: int = Query(1, ge=1),
+           page_size: int = Query(50, ge=1, le=200),
+           kind: Literal["all", "buy", "sell", "skipped", "events"] = "all") -> OrdersPageOut:
+    """The orders and account events so far, newest first; tomorrow's orders
+    are on the account itself, as `pending`."""
+    history = [record for record in reversed(_report(request, account_id).orders) if record.status != "pending"]
+    counts = {"all": len(history), "buy": 0, "sell": 0, "skipped": 0, "events": 0}
+    for record in history:
+        counts[_group(record)] += 1
+    chosen = history if kind == "all" else [record for record in history if _group(record) == kind]
+    shown = chosen[(page - 1) * page_size:page * page_size]
+    names = _names(request, [record.code for record in shown])
+    return OrdersPageOut(total=len(chosen), page=page, page_size=page_size, counts=counts,
+                         orders=[_order(record, names) for record in shown])
 
 
 @router.post("/accounts/{account_id}/stop", status_code=204, responses=NOT_FOUND)
@@ -115,9 +129,22 @@ def _found(call):
         raise HTTPException(status_code=404, detail=str(missing)) from None
 
 
-def _order(record) -> OrderOut:
+def _group(record) -> str:
+    if record.status == "skipped":
+        return "skipped"
+    return record.kind if record.kind in ("buy", "sell") else "events"
+
+
+def _names(request: Request, codes: list[str]) -> dict[str, str]:
+    if not codes:
+        return {}
+    return {found.code: found.name for found in request.app.state.market.instruments(codes=sorted(set(codes)))}
+
+
+def _order(record, names: dict[str, str]) -> OrderOut:
     return OrderOut(**{
         **asdict(record),
+        "name": names.get(record.code),
         "fill_price": None if record.fill_price is None else float(record.fill_price),
         "fees": float(record.fees),
         "cash_delta": float(record.cash_delta),

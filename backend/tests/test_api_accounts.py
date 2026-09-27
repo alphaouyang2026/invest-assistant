@@ -9,6 +9,7 @@ lists come through — not the rules behind them, which are tested on
 from __future__ import annotations
 
 import time
+from contextlib import contextmanager
 from datetime import timedelta
 
 import pytest
@@ -22,13 +23,19 @@ from tests.account_market import SESSIONS, Script, fake_client
 PLAN = {SESSIONS[1]: {"13010": Disposition.HOLD}, SESSIONS[-1]: {"13020": Disposition.HOLD}}
 
 
-@pytest.fixture
-def api(migrated_database):
+@contextmanager
+def serving(plan):
     client = fake_client({"13010": ["1000"] * 5 + ["1100"] * 5, "13020": ["500"] * 10})
     app = create_app(Settings(_env_file=None), client=client, today=lambda: SESSIONS[-1],
-                     strategies=lambda name, params: Script(PLAN))
+                     strategies=lambda name, params: Script(plan))
     with TestClient(app) as test_client:
         app.state.market.sync()
+        yield test_client
+
+
+@pytest.fixture
+def api(migrated_database):
+    with serving(PLAN) as test_client:
         yield test_client
 
 
@@ -55,16 +62,37 @@ def test_creating_an_account_backtests_it_and_its_pages_can_be_read(api) -> None
     detail = api.get(f"/api/accounts/{account}").json()
     assert detail["rules"]["max_positions"] == 10 and detail["figures"]["total_return"] == pytest.approx(
         listed["total_return"])
-    assert [(h["code"], h["quantity"]) for h in detail["holdings"]] == [("13010", 900)]
+    assert [(h["code"], h["name"], h["quantity"]) for h in detail["holdings"]] == [("13010", "会社13010", 900)]
     tomorrow = (SESSIONS[-1] + timedelta(days=1)).isoformat()
-    assert [(o["kind"], o["code"], o["execution_date"]) for o in detail["pending"]] == [("buy", "13020", tomorrow)]
+    assert [(o["kind"], o["code"], o["name"], o["execution_date"]) for o in detail["pending"]] == [
+        ("buy", "13020", "会社13020", tomorrow)]
 
     nav = api.get(f"/api/accounts/{account}/nav").json()
     assert [point["date"] for point in nav] == [day.isoformat() for day in SESSIONS[1:]]
     assert nav[0]["nav_curve"] == 1.0 and nav[0]["topix_curve"] == 1.0 and "drawdown" in nav[0]
 
-    orders = api.get(f"/api/accounts/{account}/orders").json()
-    assert [(o["kind"], o["code"], o["status"]) for o in orders][:1] == [("buy", "13010", "filled")]
+    history = api.get(f"/api/accounts/{account}/orders").json()
+    assert [(o["kind"], o["code"], o["name"], o["status"]) for o in history["orders"]] == [
+        ("buy", "13010", "会社13010", "filled")]  # tomorrow's order is not history yet
+
+
+def test_the_order_history_comes_newest_first_a_page_at_a_time_and_by_kind(migrated_database) -> None:
+    bought_sold_bought = {SESSIONS[1]: {"13010": Disposition.HOLD}, SESSIONS[3]: {"13010": Disposition.EXIT},
+                          SESSIONS[5]: {"13010": Disposition.HOLD}}
+    with serving(bought_sold_bought) as api:
+        account = api.post("/api/accounts", json=NEW).json()["id"]
+        wait_for_idle(api)
+        orders = f"/api/accounts/{account}/orders"
+
+        first = api.get(orders, params={"page_size": 2}).json()
+        second = api.get(orders, params={"page_size": 2, "page": 2}).json()
+        sells = api.get(orders, params={"kind": "sell"}).json()
+
+    assert (first["total"], first["page"], first["page_size"]) == (3, 1, 2)
+    assert first["counts"] == {"all": 3, "buy": 2, "sell": 1, "skipped": 0, "events": 0}
+    assert [(o["kind"], o["execution_date"]) for o in first["orders"] + second["orders"]] == [
+        ("buy", SESSIONS[6].isoformat()), ("sell", SESSIONS[4].isoformat()), ("buy", SESSIONS[2].isoformat())]
+    assert sells["total"] == 1 and [o["kind"] for o in sells["orders"]] == ["sell"]
 
 
 def test_an_account_that_cannot_be_created_is_a_422_with_the_reason(api) -> None:

@@ -88,7 +88,10 @@ def test_listing_stopping_and_deleting(migrated_database) -> None:
     assert [(a.id, a.name, a.status, a.advanced_through) for a in listed] == [
         (kept, "留", "active", SESSIONS[6]), (stopped, "停", "stopped", SESSIONS[6]),
     ]
-    assert listed[0].total_return == pytest.approx(accounts.report(kept).figures.total_return)
+    figures = accounts.report(kept).figures
+    assert (listed[0].total_return, listed[0].annualised_return, listed[0].excess_annualised_return) == (
+        pytest.approx(figures.total_return), pytest.approx(figures.annualised_return),
+        pytest.approx(figures.excess_annualised_return))
     assert [a.id for a in accounts.list(active_only=True)] == [kept]
     with pytest.raises(LookupError):
         accounts.report(gone)

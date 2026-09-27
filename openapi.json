@@ -567,7 +567,7 @@
           "accounts"
         ],
         "summary": "Orders",
-        "description": "Every order and account event, oldest first.",
+        "description": "The orders and account events so far, newest first; tomorrow's orders\nare on the account itself, as `pending`.",
         "operationId": "orders_api_accounts__account_id__orders_get",
         "parameters": [
           {
@@ -578,6 +578,46 @@
               "type": "integer",
               "title": "Account Id"
             }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 50,
+              "title": "Page Size"
+            }
+          },
+          {
+            "name": "kind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "all",
+                "buy",
+                "sell",
+                "skipped",
+                "events"
+              ],
+              "type": "string",
+              "default": "all",
+              "title": "Kind"
+            }
           }
         ],
         "responses": {
@@ -586,11 +626,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/OrderOut"
-                  },
-                  "title": "Response Orders Api Accounts  Account Id  Orders Get"
+                  "$ref": "#/components/schemas/OrdersPageOut"
                 }
               }
             }
@@ -924,6 +960,17 @@
             ],
             "title": "Total Return"
           },
+          "annualised_return": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Annualised Return"
+          },
           "max_drawdown": {
             "anyOf": [
               {
@@ -934,6 +981,17 @@
               }
             ],
             "title": "Max Drawdown"
+          },
+          "excess_annualised_return": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Excess Annualised Return"
           }
         },
         "type": "object",
@@ -945,7 +1003,9 @@
           "advanced_through",
           "status",
           "total_return",
-          "max_drawdown"
+          "annualised_return",
+          "max_drawdown",
+          "excess_annualised_return"
         ],
         "title": "AccountSummaryOut"
       },
@@ -1191,6 +1251,10 @@
             ],
             "title": "Win Rate"
           },
+          "closed_positions": {
+            "type": "integer",
+            "title": "Closed Positions"
+          },
           "average_holding_sessions": {
             "anyOf": [
               {
@@ -1232,6 +1296,7 @@
           "max_drawdown",
           "sharpe",
           "win_rate",
+          "closed_positions",
           "average_holding_sessions",
           "annual_turnover",
           "excess_annualised_return"
@@ -1258,6 +1323,17 @@
             "type": "string",
             "title": "Code"
           },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
           "quantity": {
             "type": "integer",
             "title": "Quantity"
@@ -1283,6 +1359,7 @@
         "type": "object",
         "required": [
           "code",
+          "name",
           "quantity",
           "opened_on",
           "cost",
@@ -1523,6 +1600,17 @@
             "type": "string",
             "title": "Code"
           },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
           "signal_date": {
             "type": "string",
             "format": "date",
@@ -1597,6 +1685,7 @@
           "id",
           "kind",
           "code",
+          "name",
           "signal_date",
           "execution_date",
           "planned_quantity",
@@ -1611,6 +1700,46 @@
         ],
         "title": "OrderOut",
         "description": "An order or an account event (spec §3.6)."
+      },
+      "OrdersPageOut": {
+        "properties": {
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "page": {
+            "type": "integer",
+            "title": "Page"
+          },
+          "page_size": {
+            "type": "integer",
+            "title": "Page Size"
+          },
+          "counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Counts"
+          },
+          "orders": {
+            "items": {
+              "$ref": "#/components/schemas/OrderOut"
+            },
+            "type": "array",
+            "title": "Orders"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total",
+          "page",
+          "page_size",
+          "counts",
+          "orders"
+        ],
+        "title": "OrdersPageOut",
+        "description": "One page of an account's history, newest first. The groups do not\noverlap: a skipped order counts as skipped, not as a buy or a sell."
       },
       "PlotOut": {
         "properties": {

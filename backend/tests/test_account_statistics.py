@@ -32,6 +32,7 @@ def test_each_figure_on_a_small_account_worked_by_hand() -> None:
     mean, std = sum(returns) / 3, math.sqrt(sum((r - 1 / 30) ** 2 for r in returns) / 2)
     assert figures.sharpe == pytest.approx(mean / std * math.sqrt(245))
     assert figures.win_rate == pytest.approx(0.5)                          # A made money, B lost
+    assert figures.closed_positions == 2
     assert figures.average_holding_sessions == pytest.approx(2.0)          # A: D1, D2; B: D2, D3
     assert figures.annual_turnover == pytest.approx((60 + 40) / 2 / nav.mean() * 245 / 3)
     assert figures.excess_annualised_return == pytest.approx(

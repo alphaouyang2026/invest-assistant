@@ -215,7 +215,8 @@ export interface paths {
         };
         /**
          * Orders
-         * @description Every order and account event, oldest first.
+         * @description The orders and account events so far, newest first; tomorrow's orders
+         *     are on the account itself, as `pending`.
          */
         get: operations["orders_api_accounts__account_id__orders_get"];
         put?: never;
@@ -371,8 +372,12 @@ export interface components {
             status: string;
             /** Total Return */
             total_return: number | null;
+            /** Annualised Return */
+            annualised_return: number | null;
             /** Max Drawdown */
             max_drawdown: number | null;
+            /** Excess Annualised Return */
+            excess_annualised_return: number | null;
         };
         /**
          * BarOut
@@ -445,6 +450,8 @@ export interface components {
             sharpe: number | null;
             /** Win Rate */
             win_rate: number | null;
+            /** Closed Positions */
+            closed_positions: number;
             /** Average Holding Sessions */
             average_holding_sessions: number | null;
             /** Annual Turnover */
@@ -461,6 +468,8 @@ export interface components {
         HoldingOut: {
             /** Code */
             code: string;
+            /** Name */
+            name: string | null;
             /** Quantity */
             quantity: number;
             /**
@@ -570,6 +579,8 @@ export interface components {
             kind: string;
             /** Code */
             code: string;
+            /** Name */
+            name: string | null;
             /**
              * Signal Date
              * Format: date
@@ -600,6 +611,25 @@ export interface components {
             fees: number;
             /** Cash Delta */
             cash_delta: number;
+        };
+        /**
+         * OrdersPageOut
+         * @description One page of an account's history, newest first. The groups do not
+         *     overlap: a skipped order counts as skipped, not as a buy or a sell.
+         */
+        OrdersPageOut: {
+            /** Total */
+            total: number;
+            /** Page */
+            page: number;
+            /** Page Size */
+            page_size: number;
+            /** Counts */
+            counts: {
+                [key: string]: number;
+            };
+            /** Orders */
+            orders: components["schemas"]["OrderOut"][];
         };
         /** PlotOut */
         PlotOut: {
@@ -1084,7 +1114,11 @@ export interface operations {
     };
     orders_api_accounts__account_id__orders_get: {
         parameters: {
-            query?: never;
+            query?: {
+                page?: number;
+                page_size?: number;
+                kind?: "all" | "buy" | "sell" | "skipped" | "events";
+            };
             header?: never;
             path: {
                 account_id: number;
@@ -1099,7 +1133,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["OrderOut"][];
+                    "application/json": components["schemas"]["OrdersPageOut"];
                 };
             };
             /** @description 没有这个账户 */
