@@ -118,3 +118,10 @@ def test_the_indicators_are_worked_out_once_per_frame(monkeypatch) -> None:
         strategy.evaluate(frame, day, [])
 
     assert len(calls) == 1
+
+
+def test_a_parameter_the_strategy_does_not_know_is_refused() -> None:
+    """A misspelt name would otherwise leave the default in place without a word."""
+    with pytest.raises(ValueError, match="rsi_oversld"):
+        build_strategy("trend_pullback_v1", {"rsi_oversld": 25})
+    assert build_strategy("technical_rating_v1", {"entry_above": 0.6}).params["entry_above"] == 0.6

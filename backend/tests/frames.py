@@ -15,7 +15,7 @@ from decimal import Decimal
 import pandas as pd
 
 from app.market_data import (
-    CLOSE, EXEC_CLOSE, EXEC_HIGH, EXEC_LOW, EXEC_OPEN, HIGH, LOW, LOWER_LIMIT_HIT, OPEN, QUALITY,
+    ADJUSTMENT_FACTOR, EX_RIGHTS_TYPE, CLOSE, EXEC_CLOSE, EXEC_HIGH, EXEC_LOW, EXEC_OPEN, HIGH, LOW, LOWER_LIMIT_HIT, OPEN, QUALITY,
     TURNOVER, UPPER_LIMIT_HIT, VOLUME, MarketFrame,
 )
 from app.market_data.frame import CODE, COLUMNS, DATE
@@ -57,4 +57,5 @@ def _bar(code: str, day: date, close: float | None) -> dict:
                      EXEC_LOW: Decimal(str(close * 0.99)), EXEC_CLOSE: Decimal(str(close))}
         quality = "ok"
     return {CODE: code, DATE: day, **research, **execution, TURNOVER: 1e9,
-            UPPER_LIMIT_HIT: False, LOWER_LIMIT_HIT: False, QUALITY: quality}
+            UPPER_LIMIT_HIT: False, LOWER_LIMIT_HIT: False, QUALITY: quality,
+            ADJUSTMENT_FACTOR: Decimal(1), EX_RIGHTS_TYPE: None}

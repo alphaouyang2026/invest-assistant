@@ -10,6 +10,7 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
+import pandas as pd
 from sqlalchemy import Connection, Engine, Float, cast, delete, func, insert, select, update
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
@@ -208,32 +209,47 @@ class MarketData:
             quality=QualityReport(missing, gaps, untradable_rows, untradable_on_latest),
         )
 
-    def universe(self, day: date) -> list[str]:
-        """Codes that may be newly bought on `day` (spec §6.1): Prime common
-        stock that day, averaging ¥500M turnover over the last 20 sessions
-        with a missing or untradable day counting as nothing, and with a
-        bar that day that is not untradable."""
+    def universe(self, start: date, end: date | None = None) -> dict[date, list[str]]:
+        """Each session from `start` to `end` (default: `start` alone) → the
+        codes that may be newly bought on it (spec §6.1): Prime common stock
+        that day, averaging ¥500M turnover over the last 20 sessions with a
+        missing or untradable day counting as nothing, and with a bar that
+        day that is not untradable. One read for the whole range."""
+        end = end or start
+        sessions = [session for session in self._sessions() if session <= end]
+        days = [session for session in sessions if session >= start]
+        if not days:
+            return {}
+        window = sessions[max(0, sessions.index(days[0]) - (TURNOVER_SESSIONS - 1)):]
         segments, bars = tables.segment_periods, tables.daily_bars
-        sessions = [session for session in self._sessions() if session <= day][-TURNOVER_SESSIONS:]
-        on_day = (segments.c.valid_from <= day) & (segments.c.valid_to.is_(None) | (segments.c.valid_to >= day))
         with self._engine.connect() as connection:
-            prime = select(segments.c.code).where(
-                on_day, segments.c.market_code == PRIME, segments.c.product_category == COMMON_STOCK,
-            )
-            rows = connection.execute(
-                select(bars.c.code, bars.c.date, bars.c.turnover).where(
-                    bars.c.code.in_(prime), bars.c.date.in_(sessions), bars.c.quality_status != UNTRADABLE,
+            periods = connection.execute(
+                select(segments.c.code, segments.c.valid_from, segments.c.valid_to).where(
+                    segments.c.market_code == PRIME, segments.c.product_category == COMMON_STOCK,
+                    segments.c.valid_from <= end, segments.c.valid_to.is_(None) | (segments.c.valid_to >= start),
                 )
             ).all()
-        turnover: dict[str, Decimal] = {}
-        tradable_that_day = set()
-        for code, session, amount in rows:
-            turnover[code] = turnover.get(code, Decimal(0)) + (amount or Decimal(0))
-            if session == day:
-                tradable_that_day.add(code)
-        return sorted(
-            code for code in tradable_that_day if turnover[code] >= MIN_AVERAGE_TURNOVER * TURNOVER_SESSIONS
-        )
+            codes = sorted({period.code for period in periods})
+            rows = connection.execute(
+                select(bars.c.code, bars.c.date, bars.c.turnover, bars.c.quality_status).where(
+                    bars.c.code.in_(codes), bars.c.date.between(window[0], end),
+                )
+            ).all()
+
+        table = pd.DataFrame(rows, columns=["code", "date", "turnover", "quality"])
+        tradable = table["quality"] != UNTRADABLE
+        table["counted"] = [float(amount or 0) if ok else 0.0 for amount, ok in zip(table["turnover"], tradable)]
+        table["tradable"] = tradable
+        counted = table.pivot(index="date", columns="code", values="counted").reindex(index=window, columns=codes)
+        averaged = counted.fillna(0.0).rolling(TURNOVER_SESSIONS, min_periods=1).sum() / TURNOVER_SESSIONS
+        can_trade = table.pivot(index="date", columns="code", values="tradable").reindex(index=window, columns=codes)
+        can_trade = can_trade.fillna(False).astype(bool)
+
+        in_segment = pd.DataFrame(False, index=days, columns=codes)
+        for period in periods:
+            in_segment.loc[period.valid_from:period.valid_to or end, period.code] = True
+        chosen = (in_segment & can_trade.loc[days] & (averaged.loc[days] >= float(MIN_AVERAGE_TURNOVER))).to_numpy()
+        return {day: [codes[i] for i in chosen[row].nonzero()[0]] for row, day in enumerate(days)}
 
     def instruments(self, *, query: str | None = None, codes: Sequence[str] | None = None) -> list[Instrument]:
         """Stocks by code, or searched: `query` matches the start of a code
@@ -279,7 +295,27 @@ class MarketData:
         with self._engine.connect() as connection:
             rows = connection.execute(in_range).mappings().all()
             later_factors = connection.execute(later).mappings().all()
-        return build_frame(rows, later_factors)
+            frame = build_frame(rows, later_factors)
+            frame.listed_through = self._listed_through(connection, frame.data.index.unique("code"))
+        return frame
+
+    @staticmethod
+    def _listed_through(connection: Connection, codes) -> dict[str, date | None]:
+        """A code's last session on the roster: the end of its last segment
+        period, or None while one is still open."""
+        segments = tables.segment_periods
+        last: dict[str, date | None] = {code: None for code in codes}
+        ended: dict[str, date] = {}
+        still_listed: set[str] = set()
+        for code, valid_to in connection.execute(
+            select(segments.c.code, segments.c.valid_to).where(segments.c.code.in_(list(codes)))
+        ):
+            if valid_to is None:
+                still_listed.add(code)
+            else:
+                ended[code] = max(valid_to, ended.get(code, valid_to))
+        last.update({code: day for code, day in ended.items() if code not in still_listed})
+        return last
 
     def _store_calendar(self) -> None:
         days = self._client.calendar()

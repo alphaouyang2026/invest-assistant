@@ -22,7 +22,7 @@ import pandas as pd
 import pytest
 
 from app.market_data import (
-    CLOSE, EXEC_CLOSE, EXEC_HIGH, EXEC_LOW, EXEC_OPEN, HIGH, LOW, LOWER_LIMIT_HIT, OPEN, QUALITY,
+    ADJUSTMENT_FACTOR, EX_RIGHTS_TYPE, CLOSE, EXEC_CLOSE, EXEC_HIGH, EXEC_LOW, EXEC_OPEN, HIGH, LOW, LOWER_LIMIT_HIT, OPEN, QUALITY,
     TURNOVER, UPPER_LIMIT_HIT, VOLUME, MarketFrame,
 )
 from app.market_data.frame import COLUMNS
@@ -39,7 +39,8 @@ def signals():
     rows["date"] = rows["date"].dt.date
     data = rows.rename(columns={"open": OPEN, "high": HIGH, "low": LOW, "close": CLOSE, "volume": VOLUME})
     data = data.assign(**{EXEC_OPEN: None, EXEC_HIGH: None, EXEC_LOW: None, EXEC_CLOSE: None, TURNOVER: 1e9,
-                          UPPER_LIMIT_HIT: False, LOWER_LIMIT_HIT: False, QUALITY: "ok"})
+                          UPPER_LIMIT_HIT: False, LOWER_LIMIT_HIT: False, QUALITY: "ok",
+                          ADJUSTMENT_FACTOR: 1, EX_RIGHTS_TYPE: None})
     frame = MarketFrame(data.set_index(["code", "date"]).sort_index()[COLUMNS])
     day = max(rows["date"])
     return {signal.code: signal for signal in build_strategy("technical_rating_v1", {}).evaluate(frame, day, [])}
