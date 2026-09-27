@@ -83,7 +83,7 @@ describe("数据页", () => {
 
     const quality = await screen.findByRole("region", { name: "质量警告" });
     expect(within(quality).getByText(/2026-09-22/)).toBeInTheDocument();
-    expect(within(quality).getByText(/13020/)).toBeInTheDocument();
+    expect(within(quality).getByText(/1302（缺 3 天）/)).toBeInTheDocument();
     expect(within(quality).getByText(/不可交易.*17/)).toBeInTheDocument();
   });
 

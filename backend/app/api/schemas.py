@@ -138,7 +138,9 @@ class AccountSummaryOut(BaseModel):
     advanced_through: date | None
     status: str  # "active" / "stopped"
     total_return: float | None
+    annualised_return: float | None
     max_drawdown: float | None
+    excess_annualised_return: float | None  # over TOPIX
 
 
 class FiguresOut(BaseModel):
@@ -149,6 +151,7 @@ class FiguresOut(BaseModel):
     max_drawdown: float
     sharpe: float | None
     win_rate: float | None
+    closed_positions: int  # the positions the win rate is over
     average_holding_sessions: float | None
     annual_turnover: float | None
     excess_annualised_return: float | None  # over TOPIX
@@ -156,6 +159,7 @@ class FiguresOut(BaseModel):
 
 class HoldingOut(BaseModel):
     code: str
+    name: str | None  # None if the stock is not in the instruments table
     quantity: int
     opened_on: date
     cost: float
@@ -169,6 +173,7 @@ class OrderOut(BaseModel):
     id: int | None
     kind: str  # buy / sell / split_adjustment / delisting_settlement
     code: str
+    name: str | None
     signal_date: date
     execution_date: date
     planned_quantity: int
@@ -180,6 +185,17 @@ class OrderOut(BaseModel):
     fill_price: float | None
     fees: float
     cash_delta: float
+
+
+class OrdersPageOut(BaseModel):
+    """One page of an account's history, newest first. The groups do not
+    overlap: a skipped order counts as skipped, not as a buy or a sell."""
+
+    total: int                # in the group asked for
+    page: int
+    page_size: int
+    counts: dict[str, int]    # all / buy / sell / skipped / events
+    orders: list[OrderOut]
 
 
 class AccountDetailOut(BaseModel):

@@ -60,7 +60,9 @@ class AccountSummary:
     advanced_through: date | None
     status: str                    # "active" / "stopped"
     total_return: float | None
+    annualised_return: float | None
     max_drawdown: float | None
+    excess_annualised_return: float | None  # over TOPIX
 
 
 @dataclass(frozen=True)
@@ -235,7 +237,8 @@ class Accounts:
             account, figures = report.account, report.figures
             summaries.append(AccountSummary(
                 account_id, account["name"], account["strategy"], account["start_date"], account["advanced_through"],
-                account["status"], figures.total_return if figures else None, figures.max_drawdown if figures else None,
+                account["status"], *((figures.total_return, figures.annualised_return, figures.max_drawdown,
+                                     figures.excess_annualised_return) if figures else (None,) * 4),
             ))
         return summaries
 

@@ -35,6 +35,7 @@ class Figures:
     max_drawdown: float
     sharpe: float | None                  # None without a spread of returns to divide by
     win_rate: float | None                # None before any position has closed
+    closed_positions: int                 # what the win rate is over
     average_holding_sessions: float | None
     annual_turnover: float | None
     excess_annualised_return: float | None  # over TOPIX, the same sessions
@@ -67,6 +68,7 @@ def statistics(nav: pd.Series, topix: pd.Series, closed: Sequence[ClosedPosition
         max_drawdown=drawdown,
         sharpe=sharpe,
         win_rate=None if not closed else sum(1 for p in closed if p.profit > 0) / len(closed),
+        closed_positions=len(closed),
         average_holding_sessions=None if not closed else sum(held) / len(held),
         annual_turnover=None if periods == 0 else
         float((bought + sold) / 2) / float(nav.mean()) * SESSIONS_A_YEAR / periods,

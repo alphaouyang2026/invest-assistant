@@ -50,12 +50,12 @@ describe("信号页", () => {
 
     const table = await screen.findByRole("table", { name: "入场候选" });
     const [, row] = within(table).getAllByRole("row");
-    expect(within(row).getByRole("link", { name: "72030" })).toHaveAttribute("href", "/signals/72030?strategy=trend_pullback_v1");
+    expect(within(row).getByRole("link", { name: "7203" })).toHaveAttribute("href", "/signals/72030?strategy=trend_pullback_v1");
     expect(within(row).getByText("トヨタ自動車")).toBeInTheDocument();
     expect(within(row).getByText("Prime")).toBeInTheDocument();
     expect(within(row).getByText("0.27")).toBeInTheDocument();
     expect(within(row).getByText(/EMA20 在 EMA60 之上/)).toBeInTheDocument();
-    expect(screen.getByLabelText("日期")).toHaveValue("2026-09-24");
+    expect(screen.getByLabelText("收盘日")).toHaveValue("2026-09-24");
     expect(backend.asked[0]).toBe("/api/signals?strategy=trend_pullback_v1");
   });
 
@@ -64,15 +64,15 @@ describe("信号页", () => {
     render(<SignalBoard />);
     await screen.findByRole("table", { name: "入场候选" });
 
-    await user.selectOptions(screen.getByLabelText("策略"), "技术评级 v1");
-    expect(await screen.findByRole("link", { name: "67580" })).toHaveAttribute(
+    await user.click(screen.getByRole("button", { name: "技术评级 v1" }));
+    expect(await screen.findByRole("link", { name: "6758" })).toHaveAttribute(
       "href", "/signals/67580?strategy=technical_rating_v1",
     );
     expect(screen.getByText("强烈买入")).toBeInTheDocument();
 
     // A date input takes a whole date at once; typing it digit by digit
     // passes through invalid values, which the input throws away.
-    fireEvent.change(screen.getByLabelText("日期"), { target: { value: "2026-09-18" } });
+    fireEvent.change(screen.getByLabelText("收盘日"), { target: { value: "2026-09-18" } });
     await waitFor(() => expect(backend.asked.at(-1)).toBe("/api/signals?strategy=technical_rating_v1&date=2026-09-18"));
   });
 
@@ -81,13 +81,34 @@ describe("信号页", () => {
     render(<SignalBoard />);
     await screen.findByRole("table", { name: "入场候选" });
 
-    await user.type(screen.getByLabelText("搜索证券"), "トヨタ");
+    await user.type(screen.getByLabelText("查证券"), "トヨタ");
     await user.click(screen.getByRole("button", { name: "搜索" }));
 
     const results = await screen.findByRole("list", { name: "搜索结果" });
-    expect(within(results).getByRole("link", { name: /72030.*トヨタ自動車/ })).toHaveAttribute(
+    expect(within(results).getByRole("link", { name: /7203.*トヨタ自動車/ })).toHaveAttribute(
       "href", "/signals/72030?strategy=trend_pullback_v1",
     );
     expect(decodeURIComponent(backend.asked.at(-1) ?? "")).toBe("/api/instruments?q=トヨタ");
+  });
+
+  it("候选多于 50 只时分页，序号接着上一页", async () => {
+    const many = Array.from({ length: 120 }, (_, n) => ({
+      code: String(10000 + n * 10), name: `会社${n}`, market: "0111", priority: 1 - n / 200, reason_codes: ["buy"],
+    }));
+    vi.stubGlobal("fetch", vi.fn(async () =>
+      new Response(JSON.stringify({ strategy: "trend_pullback_v1", date: "2026-09-24", candidates: many }),
+                   { headers: { "Content-Type": "application/json" } })));
+    const user = userEvent.setup();
+    render(<SignalBoard />);
+
+    const table = await screen.findByRole("table", { name: "入场候选" });
+    expect(within(table).getAllByRole("row")).toHaveLength(51);
+    expect(screen.getByText(/第 1–50 只，共 120 只/)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "末页" }));
+    const rows = within(screen.getByRole("table", { name: "入场候选" })).getAllByRole("row");
+    expect(rows).toHaveLength(21);
+    expect(within(rows[1]).getByText("101")).toBeInTheDocument();
+    expect(within(rows[1]).getByText("会社100")).toBeInTheDocument();
   });
 });

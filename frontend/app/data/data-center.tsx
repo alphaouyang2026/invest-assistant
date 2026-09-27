@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { api, type Schemas } from "@/lib/api/client";
+import { displayCode } from "@/lib/format";
 
 type Status = Schemas["DataStatus"];
 type Quality = Schemas["DataQuality"];
@@ -14,7 +15,7 @@ const STATE_LABELS: Record<string, string> = {
   running: "进行中",
 };
 
-const KIND_LABELS: Record<string, string> = { sync: "同步" };
+const KIND_LABELS: Record<string, string> = { sync: "同步", advance: "推进账户" };
 
 const GAPS_SHOWN = 20;
 
@@ -73,36 +74,57 @@ export function DataCenter({ pollMs = 2000 }: { pollMs?: number }) {
   };
 
   return (
-    <section>
-      <h1>数据</h1>
+    <section className="page">
+      <div className="head">
+        <div>
+          <h1>数据</h1>
+          <div className="meta">
+            <span>日线行情来自 J-Quants；信号和账户都只用这里已经同步的数据</span>
+          </div>
+        </div>
+        <div className="actions">
+          <button type="button" className="btn primary" onClick={syncNow} disabled={current !== null}>
+            立即同步
+          </button>
+        </div>
+      </div>
       {error && <p role="alert">{error}</p>}
-
-      <dl className="figures">
-        <dt>数据到</dt>
-        <dd>{status?.latest_date ?? "尚无数据"}</dd>
-        <dt>证券数</dt>
-        <dd>{count(status?.securities ?? 0)}</dd>
-        <dt>日线行数</dt>
-        <dd>{count(status?.bar_rows ?? 0)}</dd>
-      </dl>
-
-      <p>
-        <button type="button" onClick={syncNow} disabled={current !== null}>
-          立即同步
-        </button>
-      </p>
       {current && <CurrentJob job={current} />}
 
-      <section aria-label="最近任务">
-        <h2>最近任务</h2>
-        {status && status.recent_jobs.length === 0 && <p>还没有运行过任务。</p>}
-        <ul>
-          {status?.recent_jobs.map((job) => <JobLine key={job.id} job={job} />)}
-        </ul>
+      <section className="card" aria-label="概况">
+        <dl className="kpis three">
+          <div className="kpi">
+            <dt className="l">数据到</dt>
+            <dd className="v">{status ? (status.latest_date ?? "尚无数据") : "…"}</dd>
+          </div>
+          <div className="kpi">
+            <dt className="l">证券数</dt>
+            <dd className="v">{status ? count(status.securities) : "…"}</dd>
+          </div>
+          <div className="kpi">
+            <dt className="l">日线行数</dt>
+            <dd className="v">{status ? count(status.bar_rows) : "…"}</dd>
+          </div>
+        </dl>
       </section>
 
-      <section aria-label="质量警告">
-        <h2>质量警告</h2>
+      <section className="card" aria-labelledby="jobs">
+        <div className="card-h">
+          <h2 id="jobs">最近任务</h2>
+        </div>
+        {status && status.recent_jobs.length === 0 && <div className="empty">还没有运行过任务</div>}
+        {status && status.recent_jobs.length > 0 && (
+          <ul className="list">
+            {status.recent_jobs.map((job) => <JobLine key={job.id} job={job} />)}
+          </ul>
+        )}
+      </section>
+
+      <section className="card" aria-labelledby="quality">
+        <div className="card-h">
+          <h2 id="quality">质量警告</h2>
+          <span className="aside">每次打开时现算</span>
+        </div>
         {quality && <QualityWarnings quality={quality} />}
       </section>
     </section>
@@ -111,11 +133,19 @@ export function DataCenter({ pollMs = 2000 }: { pollMs?: number }) {
 
 function CurrentJob({ job }: { job: NonNullable<Current> }) {
   const progress = job.progress as { sessions_done?: number; sessions_total?: number; current_session?: string } | null;
+  const share = progress?.sessions_total ? (progress.sessions_done ?? 0) / progress.sessions_total : null;
   return (
-    <p>
-      {KIND_LABELS[job.kind] ?? job.kind}{STATE_LABELS[job.state] ?? job.state}
-      {progress?.sessions_total ? `：${progress.sessions_done} / ${progress.sessions_total} 个开市日（${progress.current_session}）` : ""}
-    </p>
+    <div className="card card-body" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      <p style={{ margin: 0 }}>
+        {KIND_LABELS[job.kind] ?? job.kind}{STATE_LABELS[job.state] ?? job.state}
+        {progress?.sessions_total ? `：${progress.sessions_done} / ${progress.sessions_total} 个开市日（${progress.current_session}）` : ""}
+      </p>
+      {share !== null && (
+        <div className="progress" aria-hidden="true">
+          <i style={{ width: `${share * 100}%` }} />
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -127,13 +157,16 @@ function JobLine({ job }: { job: JobResult }) {
     not_published_yet?: boolean;
   };
   const range = summary.first_session ? `${summary.first_session} → ${summary.last_session}，` : "";
+  const succeeded = job.status === "succeeded";
   return (
     <li>
-      <p>
-        {minute(job.finished_at)} {KIND_LABELS[job.kind] ?? job.kind} · {job.status === "succeeded" ? "成功" : "失败"}
-        {job.status === "succeeded" && ` · ${range}写入 ${count(summary.rows_written ?? 0)} 行`}
+      <p className="actions">
+        <span className="num">{minute(job.finished_at)}</span>
+        <span>{KIND_LABELS[job.kind] ?? job.kind}</span>
+        <span className={succeeded ? "badge ok" : "badge down"}>{succeeded ? "成功" : "失败"}</span>
+        {succeeded && job.kind === "sync" && <span className="sub">{range}写入 {count(summary.rows_written ?? 0)} 行</span>}
       </p>
-      {job.error && <p>错误：{job.error}</p>}
+      {job.error && <p className="down">错误：{job.error}</p>}
       {job.warnings.length > 0 && (
         <ul>
           {job.warnings.map((warning, index) => (
@@ -148,15 +181,18 @@ function JobLine({ job }: { job: JobResult }) {
 function QualityWarnings({ quality }: { quality: Quality }) {
   const { missing_sessions, gaps, untradable_rows, untradable_on_latest } = quality;
   if (missing_sessions.length === 0 && gaps.length === 0 && untradable_rows === 0) {
-    return <p>没有发现问题。</p>;
+    return <div className="empty">没有发现问题</div>;
   }
   return (
-    <ul>
+    <ul className="list">
       {missing_sessions.length > 0 && <li>全市场都没有日线的开市日：{missing_sessions.join("、")}</li>}
       {gaps.length > 0 && (
         <li>
           上市期间缺日线的证券 {gaps.length} 只：
-          {gaps.slice(0, GAPS_SHOWN).map((gap) => `${gap.code}（缺 ${gap.missing_sessions} 天）`).join("、")}
+          {gaps
+            .slice(0, GAPS_SHOWN)
+            .map((gap) => `${displayCode(gap.code)}（缺 ${gap.missing_sessions} 天）`)
+            .join("、")}
           {gaps.length > GAPS_SHOWN ? " 等" : ""}
         </li>
       )}
