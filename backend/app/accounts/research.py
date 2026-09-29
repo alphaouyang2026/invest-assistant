@@ -5,12 +5,10 @@ the exact same function used by Accounts.advance.
 """
 from __future__ import annotations
 
-import hashlib
-import json
 import math
 import uuid
 from dataclasses import asdict, replace
-from datetime import date, datetime, timezone
+from datetime import date
 from decimal import Decimal
 from pathlib import Path
 
@@ -23,29 +21,10 @@ from app.accounts import research_tables as db
 from app.accounts.accounts import _Prices, _rules, replay_day
 from app.accounts.ledger import Ledger
 from app.accounts.records import FILLED
+from app.accounts.research_jobs import code_version, find_request, now, plain_json, submit_once
 from app.jobs import Job, JobOutcome, LOCK_FILE, Progress
 from app.market_data import EXEC_CLOSE
 from app.strategies import STRATEGY_DEFAULTS, build_strategy
-
-
-def _now():
-    return datetime.now(timezone.utc).isoformat()
-
-
-def _json(value):
-    return json.loads(json.dumps(value, default=str, allow_nan=False))
-
-
-def _code_version():
-    root = Path(__file__).resolve().parents[1]
-    digest = hashlib.sha256()
-    for path in sorted(root.rglob("*.py")):
-        digest.update(str(path.relative_to(root)).encode())
-        digest.update(path.read_bytes())
-    lock = root.parent / "uv.lock"
-    if lock.exists():
-        digest.update(lock.read_bytes())
-    return "sha256:" + digest.hexdigest()
 
 
 class Research:
@@ -62,7 +41,7 @@ class Research:
 
     @staticmethod
     def _config(source):
-        return _json({key: source[key] for key in
+        return plain_json({key: source[key] for key in
                       ("name", "strategy", "strategy_params", "portfolio_rules", "costs", "start_date")})
 
     def recover(self):
@@ -78,22 +57,13 @@ class Research:
         """Under the writer lock nothing runs, so whatever still says it does was cut off."""
         with self._engine.begin() as con:
             con.execute(update(db.runs).where(db.runs.c.status.in_(["queued", "running"])).values(
-                status="failed", error="服务中断，结果未完成；请显式重试（将创建新运行）", finished_at=_now()))
+                status="failed", error="服务中断，结果未完成；请显式重试（将创建新运行）", finished_at=now()))
             con.execute(update(db.discoveries).where(db.discoveries.c.status.in_(["queued", "running"])).values(
-                status="failed", error="服务中断，区间发现未完成；请重新发现", finished_at=_now()))
-
-    def _existing(self, key, request):
-        with self._engine.connect() as con:
-            row = con.execute(select(db.runs).where(db.runs.c.request_key == key)).mappings().one_or_none()
-        if row:
-            if row["request"] != request:
-                raise ValueError("请求标识已用于不同参数，请重新提交")
-            return row["id"]
-        return None
+                status="failed", error="服务中断，区间发现未完成；请重新发现", finished_at=now()))
 
     def submit(self, request, key, *, retry_of=None):
         try:
-            request = _json(request)
+            request = plain_json(request)
         except ValueError:
             raise ValueError("策略参数必须是有限数值") from None
         if retry_of:
@@ -105,8 +75,6 @@ class Research:
                         db.batch_attempts.c.run_id == retry_of)).first():
                     raise ValueError("该运行属于研究批次，请在批次中重试此段")
             request = {"retry_of": retry_of}
-        if existing := self._existing(key, request):
-            return existing
         run_id = uuid.uuid4().hex
 
         def prepare():
@@ -121,8 +89,9 @@ class Research:
             with self._engine.begin() as con:
                 self._insert_run(con, run_id, key, request, config, retry_of)
 
-        self._jobs.submit(Job("research", lambda progress: self._execute(run_id, progress)), prepare=prepare)
-        return run_id
+        return submit_once(self._jobs, Job("research", lambda progress: self._execute(run_id, progress)),
+                           prepare=prepare, find=lambda: find_request(self._engine, db.runs, key, request),
+                           new_id=run_id)
 
     def frozen_config(self, source_account_id: int, entry_above: float, exit_below: float,
                       start_date: str | None, end_date: str | None) -> dict:
@@ -149,7 +118,7 @@ class Research:
         """A queued run row, inside the caller's transaction."""
         con.execute(insert(db.runs).values(
             id=run_id, request_key=key, request=request, config=config, retry_of=retry_of,
-            status="queued", created_at=_now(), progress={}, code_version=_code_version()))
+            status="queued", created_at=now(), progress={}, code_version=code_version()))
 
     def _validate(self, config):
         for name in ("entry_above", "exit_below"):
@@ -195,11 +164,13 @@ class Research:
             prior = [d for d in calendar.sessions() if d < start]
             identity_start = min(warmup, prior[max(0, len(prior) - 19)] if prior else start)
             identity = self._market.research_identity(identity_start, end)
-            self._set(run_id, input_identity=identity)
-            if expect_identity is not None and identity["sha256"] != expect_identity:
-                raise ValueError("该区间的行情自本批首次运行后已变化，请重新发现并新建批次")
             if identity["missing_stock_sessions"]:
                 raise ValueError("回测／预热区间缺少股票行情：" + ", ".join(identity["missing_stock_sessions"][:5]))
+            if expect_identity is not None and identity["sha256"] != expect_identity:
+                raise ValueError("该区间的行情自本批首次运行后已变化，请重新发现并新建批次")
+            # Stored only once the input is accepted: it is what this run replayed, and
+            # what a batch segment's retry compares with — never data that was refused.
+            self._set(run_id, input_identity=identity)
             universes = self._market.universe(start, end)
             codes = sorted({code for listed in universes.values() for code in listed})
             prices = _Prices(self._market.read(codes, warmup, end))
@@ -247,10 +218,10 @@ class Research:
                     con.execute(insert(db.orders), [{"run_id": run_id, "sequence": r.id, "record": _record(r)}
                                                     for r in ledger.records])
                 con.execute(update(db.runs).where(db.runs.c.id == run_id).values(
-                    status="completed", result=result, finished_at=_now()))
+                    status="completed", result=result, finished_at=now()))
             return JobOutcome({"run_id": run_id, "sessions": len(days)}, result["warnings"])
         except Exception as error:
-            self._set(run_id, status="failed", error=str(error), finished_at=_now())
+            self._set(run_id, status="failed", error=str(error), finished_at=now())
             raise
 
     def get(self, run_id):
@@ -281,6 +252,6 @@ class Research:
 
 
 def _record(record):
-    return {**_json(asdict(record)), "name": None, "fees": float(record.fees),
+    return {**plain_json(asdict(record)), "name": None, "fees": float(record.fees),
             "fill_price": None if record.fill_price is None else float(record.fill_price),
             "cash_delta": float(record.cash_delta)}

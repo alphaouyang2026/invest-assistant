@@ -169,6 +169,31 @@ def test_idempotency_busy_restart_and_retry(setup, migrated_database, tmp_path):
     assert research.get(run_id)["status"] == "failed"
 
 
+def rival_first(monkeypatch, jobs, rival, *, finished):
+    """The same request sent twice at once: `rival` gets the writer lock
+    between this call's request-key lookup and its own submit, and is still
+    running then unless `finished`."""
+    real = jobs.submit
+
+    def submit(job, *, prepare=None):
+        monkeypatch.setattr(jobs, "submit", real)
+        rival()
+        if finished:
+            assert jobs.wait_until_idle()
+        return real(job, prepare=prepare)
+    monkeypatch.setattr(jobs, "submit", submit)
+
+
+@pytest.mark.parametrize("finished", [True, False], ids=["rival-finished", "rival-running"])
+def test_same_request_sent_twice_at_once_is_one_run(setup, monkeypatch, finished):
+    research, jobs, _, source, _ = setup
+    request, key, first = payload(source), str(uuid4()), []
+    rival_first(monkeypatch, jobs, lambda: first.append(research.submit(request, key)), finished=finished)
+    assert research.submit(request, key) == first[0]
+    assert jobs.wait_until_idle()
+    assert research.history()["total"] == 1
+
+
 def test_shared_writer_lock_and_live_run_not_recovered(setup, tmp_path):
     from threading import Event
     research, jobs, _, source, _ = setup

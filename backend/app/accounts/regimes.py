@@ -52,10 +52,15 @@ class Definition:
         if self.full_min_closes != self.rv_sessions + 1 + self.rv_history:
             raise ValueError("full_min_closes must be rv_sessions + 1 + rv_history")
 
+    def rules(self) -> dict[str, Any]:
+        """The version and the numbers, JSON-ready: all that decides a label."""
+        rules: dict[str, Any] = asdict(self)
+        rules["gap_threshold"] = str(self.gap_threshold)
+        return rules
+
     def as_dict(self) -> dict[str, Any]:
-        """JSON-ready, with the formulas spelled out for the page."""
-        shown: dict[str, Any] = asdict(self)
-        shown["gap_threshold"] = str(self.gap_threshold)
+        """The rules, with the formulas spelled out for the page."""
+        shown = self.rules()
         percent = format((self.gap_threshold * 100).normalize(), "f")
         ma = f"MA{self.ma_sessions}"
         rv = f"RV{self.rv_sessions}"
@@ -278,7 +283,7 @@ def discover(sessions: Sequence[date], closes: Mapping[date, Decimal | float | N
 
 def fingerprint(sessions: Sequence[date], closes: Mapping[date, Decimal | float | None],
                 d: Definition = DEFINITION) -> dict[str, Any]:
-    """What a discovery was worked out from — the definition plus each
+    """What a discovery was worked out from — the definition's rules plus each
     session's close — so running it later can tell whether TOPIX changed.
     Sessions the caller leaves out (those after the search end) never
     count, and a close hashes the same whether it came as float or Decimal."""
@@ -286,7 +291,8 @@ def fingerprint(sessions: Sequence[date], closes: Mapping[date, Decimal | float 
         raise ValueError("没有开市日可以记录")
     _check_order(sessions)
     rows = [[day.isoformat(), _text(closes.get(day))] for day in sessions]
-    body = json.dumps({"definition": d.as_dict(), "closes": rows}, ensure_ascii=False, sort_keys=True,
+    # The rules, not their wording: rephrasing a formula for the page leaves every discovery valid.
+    body = json.dumps({"definition": d.rules(), "closes": rows}, ensure_ascii=False, sort_keys=True,
                       separators=(",", ":"))
     return {"sha256": hashlib.sha256(body.encode()).hexdigest(), "definition_version": d.version,
             "from": sessions[0].isoformat(), "through": sessions[-1].isoformat(), "sessions": len(sessions)}

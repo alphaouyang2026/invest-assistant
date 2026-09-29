@@ -19,7 +19,8 @@ from typing import Any
 from sqlalchemy import Engine, func, insert, select
 
 from app.accounts import research_tables as db
-from app.accounts.research import Research, _code_version, _json, _now
+from app.accounts.research import Research
+from app.accounts.research_jobs import KEY_REUSED, code_version, find_request, now, plain_json, submit_once
 from app.jobs import Job, JobOutcome, Jobs, Progress
 
 MAX_BATCH_RUNS = 20
@@ -53,7 +54,7 @@ class ResearchBatches:
         if len(segments) > MAX_BATCH_RUNS:
             raise ValueError(f"所选 {len(segments)} 段超过单批上限 {MAX_BATCH_RUNS}，请减少勾选")
         try:
-            request = _json({
+            request = plain_json({
                 "source_account_id": source_account_id, "entry_above": entry_above, "exit_below": exit_below,
                 "discovery_id": discovery_id,
                 "segments": [{"start_date": s.start.isoformat(), "end_date": s.end.isoformat(),
@@ -61,13 +62,6 @@ class ResearchBatches:
             })
         except ValueError:
             raise ValueError("策略参数必须是有限数值") from None
-        with self._engine.connect() as con:
-            row = con.execute(select(db.batches.c.id, db.batches.c.request)
-                              .where(db.batches.c.request_key == key)).one_or_none()
-        if row:
-            if row.request != request:
-                raise ValueError("请求标识已用于不同参数，请重新提交")
-            return row.id
         batch_id = uuid.uuid4().hex
         run_ids: list[str] = []
 
@@ -88,12 +82,12 @@ class ResearchBatches:
                 configs.append(segment_config)
             if problems:
                 raise ValueError("以下区间无法运行，请取消勾选后重试：" + "；".join(problems))
-            created = _now()
+            created = now()
             with self._engine.begin() as con:
                 con.execute(insert(db.batches).values(
                     id=batch_id, request_key=key, request=request, config=base, discovery_id=discovery_id,
-                    selection=_json(selection or {}), input_check=_json(input_check),
-                    code_version=_code_version(), created_at=created))
+                    selection=plain_json(selection or {}), input_check=plain_json(input_check),
+                    code_version=code_version(), created_at=created))
                 for position, (s, segment_config) in enumerate(zip(request["segments"], configs), 1):
                     con.execute(insert(db.batch_segments).values(
                         batch_id=batch_id, position=position, interval_id=s["interval_id"],
@@ -106,22 +100,25 @@ class ResearchBatches:
                         batch_id=batch_id, position=position, attempt=1, run_id=run_id, created_at=created))
                     run_ids.append(run_id)
 
-        self._jobs.submit(Job("research_batch", lambda progress: self._run(batch_id, run_ids, progress)),
-                          prepare=prepare)
-        return batch_id
+        return submit_once(self._jobs, Job("research_batch", lambda progress: self._run(batch_id, run_ids, progress)),
+                           prepare=prepare, find=lambda: find_request(self._engine, db.batches, key, request),
+                           new_id=batch_id)
 
     def retry(self, batch_id: str, position: int, key: str, *,
               precheck: Callable[[], None] | None = None) -> str:
         """A new attempt at one failed segment, with the same configuration.
         It refuses to replay if the segment's data changed since its first
         run; the new run's id."""
-        with self._engine.connect() as con:
-            found = con.execute(select(db.batch_attempts).where(
-                db.batch_attempts.c.request_key == key)).mappings().one_or_none()
-        if found:
-            if (found["batch_id"], found["position"]) != (batch_id, position):
-                raise ValueError("请求标识已用于不同参数，请重新提交")
-            return found["run_id"]
+        def find() -> str | None:
+            with self._engine.connect() as con:
+                found = con.execute(select(db.batch_attempts).where(
+                    db.batch_attempts.c.request_key == key)).mappings().one_or_none()
+            if found and (found["batch_id"], found["position"]) != (batch_id, position):
+                raise ValueError(KEY_REUSED)
+            return found and found["run_id"]
+
+        if (found := find()) is not None:
+            return found
         self._attempts(batch_id, position, failed_only=True)
         run_id = uuid.uuid4().hex
         expected: list[str | None] = []
@@ -141,11 +138,10 @@ class ResearchBatches:
                     latest["config"], latest["run_id"])
                 con.execute(insert(db.batch_attempts).values(
                     batch_id=batch_id, position=position, attempt=attempt, run_id=run_id, request_key=key,
-                    created_at=_now()))
+                    created_at=now()))
 
-        self._jobs.submit(Job("research_batch", lambda progress: self._run(
-            batch_id, [run_id], progress, expect_identity=expected[0])), prepare=prepare)
-        return run_id
+        return submit_once(self._jobs, Job("research_batch", lambda progress: self._run(
+            batch_id, [run_id], progress, expect_identity=expected[0])), prepare=prepare, find=find, new_id=run_id)
 
     def _attempts(self, batch_id: str, position: int, *, failed_only: bool = False) -> list[dict]:
         """The segment's attempts, oldest first, with their runs."""

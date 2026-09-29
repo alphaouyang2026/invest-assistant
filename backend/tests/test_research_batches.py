@@ -16,7 +16,7 @@ from app.accounts.research_batches import MAX_BATCH_RUNS, ResearchBatches, Segme
 from app.jobs import Job, JobOutcome, Jobs, JobsBusy
 from app.market_data import tables as market_tables
 from tests.account_market import SESSIONS, Script, synced
-from tests.test_research import PLAN, PRICES, later_sync, payload
+from tests.test_research import PLAN, PRICES, later_sync, payload, rival_first
 
 S = SESSIONS
 SEGMENTS = [SegmentSpec(S[1], S[2], 1), SegmentSpec(S[3], S[5], 2), SegmentSpec(S[6], S[8], 3)]
@@ -179,6 +179,35 @@ def test_retry_after_a_later_sync_runs_but_a_correction_in_range_fails_it(env):
     assert "已变化" in segment["error"]
 
 
+def test_a_segment_failed_for_missing_bars_runs_once_they_are_filled(env):
+    bars = market_tables.daily_bars
+    with env.engine.begin() as con:
+        gone = [dict(r) for r in con.execute(select(bars).where(bars.c.code != "TOPIX", bars.c.date == S[4]))
+                .mappings()]
+        con.execute(bars.delete().where(bars.c.code != "TOPIX", bars.c.date == S[4]))
+    batch_id = submit(env, SEGMENTS[:2])
+    segment = env.batches.get(batch_id)["segments"][1]
+    assert segment["status"] == "failed" and "缺少股票行情" in segment["error"]
+    with env.engine.begin() as con:  # the sync fills the missing session
+        con.execute(bars.insert(), gone)
+    env.batches.retry(batch_id, 2, str(uuid4()))
+    assert env.jobs.wait_until_idle()
+    segment = env.batches.get(batch_id)["segments"][1]
+    assert segment["status"] == "completed", segment["error"]
+    # From now on the filled data is what this segment was run on.
+    with env.engine.begin() as con:
+        con.execute(update(bars).where(bars.c.code == "13010", bars.c.date == S[3]).values(close=Decimal("1111")))
+    env.boom.add(S[4])
+    batch_id = submit(env, SEGMENTS[:2])
+    env.boom.clear()
+    with env.engine.begin() as con:
+        con.execute(update(bars).where(bars.c.code == "13010", bars.c.date == S[3]).values(close=Decimal("1100")))
+    env.batches.retry(batch_id, 2, str(uuid4()))
+    assert env.jobs.wait_until_idle()
+    segment = env.batches.get(batch_id)["segments"][1]
+    assert segment["status"] == "failed" and "已变化" in segment["error"]
+
+
 def test_rejected_batches_write_nothing(env):
     empty = rows(env.engine)
     too_many = [SegmentSpec(S[1], S[1])] * (MAX_BATCH_RUNS + 1)
@@ -221,6 +250,25 @@ def test_busy_lock_and_request_keys(env):
     assert submit(env, key=key) == batch_id
     with pytest.raises(ValueError, match="请求标识"):
         submit(env, SEGMENTS[:1], key=key)
+
+
+@pytest.mark.parametrize("finished", [True, False], ids=["rival-finished", "rival-running"])
+def test_same_batch_or_retry_sent_twice_at_once_is_accepted_once(env, monkeypatch, finished):
+    env.boom.add(S[4])
+    key, first = str(uuid4()), []
+    rival_first(monkeypatch, env.jobs, lambda: first.append(env.batches.submit(
+        source_account_id=env.source, entry_above=.5, exit_below=-.1, segments=SEGMENTS, key=key)),
+        finished=finished)
+    batch_id = submit(env, key=key)
+    assert batch_id == first[0]
+    assert rows(env.engine)[:3] == [1, 3, 3]
+
+    env.boom.clear()
+    key, first = str(uuid4()), []
+    rival_first(monkeypatch, env.jobs, lambda: first.append(env.batches.retry(batch_id, 2, key)), finished=finished)
+    assert env.batches.retry(batch_id, 2, key) == first[0]
+    assert env.jobs.wait_until_idle()
+    assert [a["run_id"] for a in env.batches.get(batch_id)["segments"][1]["attempts"]][1:] == first
 
 
 def test_batches_remember_their_discovery_and_selection(env):

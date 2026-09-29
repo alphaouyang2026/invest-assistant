@@ -23,7 +23,8 @@ from sqlalchemy import Engine, insert, select, update
 
 from app.accounts import regimes
 from app.accounts import research_tables as db
-from app.accounts.research import Research, _code_version, _json, _now
+from app.accounts.research import Research
+from app.accounts.research_jobs import code_version, find_request, now, plain_json, submit_once
 from app.accounts.research_batches import MAX_BATCH_RUNS, ResearchBatches, SegmentSpec, StaleInput
 from app.jobs import Job, JobOutcome, Jobs, Progress
 from app.market_data import EXEC_CLOSE, MarketData
@@ -44,15 +45,8 @@ class RegimeDiscoveries:
 
     def submit(self, request: dict, key: str) -> str:
         """Accept a discovery; the id to poll. Idempotent on `key`."""
-        parameters = _json({name: request.get(name) for name in ("search_from", "search_to", "trend", "volatility")})
+        parameters = plain_json({name: request.get(name) for name in ("search_from", "search_to", "trend", "volatility")})
         regimes.RegimeFilter(parameters["trend"], parameters["volatility"])  # names a real trend and level
-        with self._engine.connect() as con:
-            row = con.execute(select(db.discoveries.c.id, db.discoveries.c.request)
-                              .where(db.discoveries.c.request_key == key)).one_or_none()
-        if row:
-            if row.request != parameters:
-                raise ValueError("请求标识已用于不同参数，请重新提交")
-            return row.id
         discovery_id = uuid.uuid4().hex
 
         def prepare() -> None:
@@ -63,11 +57,11 @@ class RegimeDiscoveries:
                 con.execute(insert(db.discoveries).values(
                     id=discovery_id, request_key=key, request=parameters,
                     definition_version=regimes.DEFINITION.version, definition=regimes.DEFINITION.as_dict(),
-                    parameters=parameters, status="queued", code_version=_code_version(), created_at=_now()))
+                    parameters=parameters, status="queued", code_version=code_version(), created_at=now()))
 
-        self._jobs.submit(Job("regime_discovery", lambda progress: self._run(discovery_id, progress)),
-                          prepare=prepare)
-        return discovery_id
+        return submit_once(self._jobs, Job("regime_discovery", lambda progress: self._run(discovery_id, progress)),
+                           prepare=prepare, find=lambda: find_request(self._engine, db.discoveries, key, parameters),
+                           new_id=discovery_id)
 
     def _run(self, discovery_id: str, progress: Progress) -> JobOutcome:
         self._set(discovery_id, status="running")
@@ -85,12 +79,12 @@ class RegimeDiscoveries:
                          "end_date": i.end.isoformat(), "sessions": i.sessions, "data": _interval(i)}
                         for n, i in enumerate(found.intervals, 1)])
                 con.execute(update(db.discoveries).where(db.discoveries.c.id == discovery_id).values(
-                    status="completed", fingerprint=fingerprint, diagnostics=_json(asdict(found.diagnostics)),
-                    finished_at=_now()))
+                    status="completed", fingerprint=fingerprint, diagnostics=plain_json(asdict(found.diagnostics)),
+                    finished_at=now()))
             progress({"discovery_id": discovery_id, "intervals": len(found.intervals)})
             return JobOutcome({"discovery_id": discovery_id, "intervals": len(found.intervals)})
         except Exception as error:
-            self._set(discovery_id, status="failed", error=str(error), finished_at=_now())
+            self._set(discovery_id, status="failed", error=str(error), finished_at=now())
             raise
 
     def get(self, discovery_id: str) -> dict:

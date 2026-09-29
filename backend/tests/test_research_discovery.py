@@ -21,6 +21,7 @@ from app.market_data.jquants import IndexBar
 from app.strategies import Disposition
 from tests.account_market import LIQUID, Script
 from tests.fakes import FakeJQuants, bar, listed
+from tests.test_research import rival_first
 
 
 def weekdays(start: date, count: int) -> list[date]:
@@ -302,6 +303,20 @@ def test_failed_segment_retried_alone_unless_topix_changed_or_busy(env):
     assert batch["status"] == "completed"
     assert batch["segments"][0]["run_id"] == accepted.json()["run_id"]
     assert [a["status"] for a in batch["segments"][0]["attempts"]] == ["failed", "completed"]
+
+
+@pytest.mark.parametrize("finished", [True, False], ids=["rival-finished", "rival-running"])
+def test_same_discovery_sent_twice_at_once_is_one_discovery(env, monkeypatch, finished):
+    ready(env)
+    key, first = str(uuid4()), []
+    rival_first(monkeypatch, env.jobs, lambda: first.append(post_discovery(env, key=key).json()["id"]),
+                finished=finished)
+    response = post_discovery(env, key=key)
+    assert response.status_code == 202, response.text
+    assert response.json()["id"] == first[0]
+    assert env.jobs.wait_until_idle()
+    with env.engine.connect() as con:
+        assert con.execute(select(func.count()).select_from(research_tables.discoveries)).scalar_one() == 1
 
 
 def test_discoveries_survive_a_restart_and_unfinished_ones_are_failed(migrated_database):

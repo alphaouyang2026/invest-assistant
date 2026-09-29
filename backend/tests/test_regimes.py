@@ -7,7 +7,7 @@ from decimal import Decimal
 import pytest
 
 from app.accounts.regimes import (
-    DEFINITION, DEFINITION_VERSION, RegimeFilter, classify, discover, fingerprint, lookback_start,
+    DEFINITION, DEFINITION_VERSION, Definition, RegimeFilter, classify, discover, fingerprint, lookback_start,
 )
 
 
@@ -323,6 +323,21 @@ def test_fingerprint_changes_with_one_close_and_ignores_later_sessions():
     assert fingerprint([d for d in more if d <= sessions[299]][50:], grown) == base
     as_floats = {day: float(value) for day, value in closes.items()}
     assert fingerprint(scope, as_floats) == base
+
+
+def test_fingerprint_follows_the_rules_not_how_the_page_words_them():
+    sessions = weekdays(300)
+    closes = closes_on(sessions, rising(300))
+    base = fingerprint(sessions, closes)
+
+    class Reworded(Definition):
+        def as_dict(self):
+            shown = super().as_dict()
+            shown["formulas"] = {name: text + "（措辞调整）" for name, text in shown["formulas"].items()}
+            return shown
+
+    assert fingerprint(sessions, closes, Reworded()) == base
+    assert fingerprint(sessions, closes, Definition(gap_threshold=Decimal("0.02")))["sha256"] != base["sha256"]
 
 
 def test_definition_is_json_ready_with_its_formulas():
