@@ -52,7 +52,22 @@ export function ResearchWorkspace({ sourceId = "", initialRun = "", initialMode 
     return () => controller.abort();
   }, []);
 
-  useEffect(() => { if (config) setStart(config.start_date); }, [config]);
+  // The source's start date is only a default: a restored run's own dates win, whichever arrives first.
+  useEffect(() => { if (config) setStart(current => current || config.start_date); }, [config]);
+
+  // An opened run (a restore, a history row, a new submission) puts its own inputs back into the form.
+  const shown = run?.config;
+  useEffect(() => {
+    if (!shown) return;
+    if (shown.source_account_id != null) setSource(String(shown.source_account_id));
+    setStart(shown.start_date); setEnd(shown.end_date ?? "");
+    setEntry(String(shown.strategy_params.entry_above)); setExit(String(shown.strategy_params.exit_below));
+  }, [run?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  function chooseSource(id: string) {
+    setSource(id);
+    setStart(sources.find(s => String(s.id) === id)?.config.start_date ?? "");
+  }
 
   useEffect(() => {
     const controller = new AbortController();
@@ -144,7 +159,7 @@ export function ResearchWorkspace({ sourceId = "", initialRun = "", initialMode 
       <div className="card-h"><h2>区间与策略参数</h2><span>technical_rating_v1</span></div>
       <div className="form">
         <div className="field wide"><label htmlFor="research-source">来源账户</label>
-          <select id="research-source" className="input" value={source} required onChange={e => setSource(e.target.value)}>
+          <select id="research-source" className="input" value={source} required onChange={e => chooseSource(e.target.value)}>
             <option value="">请选择</option>{sources.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select></div>
         <div className="field"><label htmlFor="research-start">起始日</label>

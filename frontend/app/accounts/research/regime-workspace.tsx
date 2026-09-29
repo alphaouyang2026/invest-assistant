@@ -229,7 +229,9 @@ export function RegimeWorkspace({ sources, sourceId = "", initialDiscovery = "",
       onDiscovery={id => { if (!discoveryId) { setDiscoveryId(id); setQuery({ discovery: id, batch: batchId }); } }}
       onRediscover={discovery ? () => void discover(discovery.parameters) : undefined} />}
 
-    <BatchHistory key={batchId} onOpen={(id, discoveryOf) => {
+    {/* Re-read whenever another batch opens; its key must differ from the BatchView beside it,
+        or React loses track of that view and its polling outlives it. */}
+    <BatchHistory key={`history:${batchId}`} onOpen={(id, discoveryOf) => {
       if (discoveryOf && discoveryOf !== discoveryId) { setDiscoveryId(discoveryOf); setChecked([]); }
       setBatchId(id); setQuery({ discovery: discoveryOf ?? "", batch: id });
     }} />

@@ -54,10 +54,12 @@ const batch = {
 
 let posts: { path: string; body: Record<string, unknown> }[];
 let discoveries: Record<string, ReturnType<typeof discovery>>;
-let batchRefusal: { status: number; detail: string } | null;
+let batchRefusal: { status: number; detail: unknown } | null;
+let discoveryRefusal: string | null;
+let batchOverride: typeof batch | null;
 
 beforeEach(() => {
-  posts = []; batchRefusal = null;
+  posts = []; batchRefusal = null; discoveryRefusal = null; batchOverride = null;
   discoveries = {
     "disc-1": discovery("disc-1", [
       interval(1, "2023-01-05", "2023-02-20", { truncated_start: true }),
@@ -74,7 +76,7 @@ beforeEach(() => {
     const response = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
     if (request.method === "POST") {
       posts.push({ path, body: await request.json() });
-      if (path.endsWith("/discoveries")) return response({ id: "disc-1" }, 202);
+      if (path.endsWith("/discoveries")) return discoveryRefusal ? response({ detail: discoveryRefusal }, 422) : response({ id: "disc-1" }, 202);
       if (path.endsWith("/retry")) return response({ id: "batch-1", run_id: "run-3b" }, 202);
       if (batchRefusal) return response({ detail: batchRefusal.detail }, batchRefusal.status);
       return response({ id: "batch-1" }, 202);
@@ -86,7 +88,7 @@ beforeEach(() => {
     if (path.endsWith("/batches")) return response({ total: 1, page: 1, page_size: 10, batches: [{ id: "batch-1",
       created_at: "2026-09-29T00:00:02", discovery_id: "disc-1", source_account_id: 1, source_name: "技术账户",
       entry_above: .5, exit_below: -.1, status: "partial", segments: 3, completed: 2, failed: 1 }] });
-    if (path.includes("/batches/")) return response(batch);
+    if (path.includes("/batches/")) return response(batchOverride ?? batch);
     return response({ detail: "未知路径" }, 404);
   }));
 });
@@ -198,6 +200,45 @@ it("发现后行情变化时提示并可重新发现，忙时显示服务端原�
   fireEvent.click(screen.getByRole("button", { name: "对所选区间运行" }));
   expect(await screen.findByRole("alert")).toHaveTextContent("另一个任务正在运行");
   expect(screen.getByRole("button", { name: "对所选区间运行" })).not.toBeDisabled();
+});
+
+it("服务端逐字段的 422 错误按字段显示；搜索日期被拒时说明原因", async () => {
+  batchRefusal = { status: 422, detail: [
+    { type: "greater_than_equal", loc: ["body", "exit_below"], msg: "Input should be greater than or equal to -1", input: -2, ctx: { ge: -1 } },
+    { type: "too_short", loc: ["body", "interval_ids"], msg: "List should have at least 1 item after validation, not 0", input: [] },
+  ] };
+  render(<RegimeWorkspace sources={sources} sourceId="1" initialDiscovery="disc-1" />);
+  fireEvent.click(await screen.findByRole("checkbox", { name: /#1 / }));
+  fireEvent.click(screen.getByRole("button", { name: "对所选区间运行" }));
+  const alert = await screen.findByRole("alert");
+  expect(alert).toHaveTextContent("退出阈值：不能小于 -1");
+  expect(alert).toHaveTextContent("所选区间：至少要有一项");
+  expect(alert).not.toHaveTextContent("网络");
+
+  discoveryRefusal = "搜索结束日超出已有行情（TOPIX 到 2026-09-28）";
+  fireEvent.click(screen.getByRole("button", { name: "查找区间" }));
+  await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("搜索结束日超出已有行情"));
+});
+
+it("离开页面后不再轮询区间发现和批次", async () => {
+  discoveries["disc-1"] = { ...discoveries["disc-1"], status: "running" };
+  const running = { ...batch, status: "running", segments: [segment(1, "running", { progress: { sessions_done: 3, sessions_total: 30 } })] };
+  batchOverride = running;
+  const reads = (part: string) => vi.mocked(fetch).mock.calls
+    .filter(([r]) => (r as Request).method === "GET" && new URL((r as Request).url).pathname.endsWith(part)).length;
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  try {
+    const { unmount } = render(<RegimeWorkspace sources={sources} sourceId="1" initialDiscovery="disc-1" initialBatch="batch-1" />);
+    await screen.findByText("正在按 TOPIX 行情划分区间…");
+    await screen.findByText("3 / 30");
+    const first = [reads("/disc-1"), reads("/batch-1")];
+    await vi.advanceTimersByTimeAsync(1600);
+    await waitFor(() => expect([reads("/disc-1"), reads("/batch-1")].every((n, i) => n > first[i])).toBe(true));
+    unmount();
+    const seen = [reads("/disc-1"), reads("/batch-1")];
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect([reads("/disc-1"), reads("/batch-1")]).toEqual(seen);
+  } finally { vi.useRealTimers(); }
 });
 
 it("刷新时凭地址里的批次编号恢复批次和它的候选区间，不重新提交", async () => {
