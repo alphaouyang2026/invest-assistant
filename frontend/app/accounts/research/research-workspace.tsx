@@ -7,16 +7,18 @@ import { signedPercent, yen, signedYen } from "@/lib/format";
 import { ORDER_KINDS, ORDER_STATUSES, outcome, reason } from "@/lib/labels";
 import { NavChart } from "../nav-chart";
 import { Pager } from "../../pager";
+import { RegimeWorkspace } from "./regime-workspace";
+import { Configuration, message, STATES } from "./research-shared";
 
 type Run = Schemas["ResearchDetail"];
-type Config = Schemas["ResearchConfig"];
-const STATES = { queued: "排队中", running: "运行中", completed: "已完成", failed: "失败" };
-const message = (error: unknown) => {
-  if (error && typeof error === "object" && "detail" in error && typeof error.detail === "string") return error.detail;
-  return "请求失败，请检查网络和后端服务后重试";
-};
+export type Mode = "manual" | "regime";
 
-export function ResearchWorkspace({ sourceId = "", initialRun = "" }: { sourceId?: string; initialRun?: string }) {
+export function ResearchWorkspace({ sourceId = "", initialRun = "", initialMode = "manual", initialDiscovery = "", initialBatch = "" }: {
+  sourceId?: string; initialRun?: string; initialMode?: Mode; initialDiscovery?: string; initialBatch?: string;
+}) {
+  const [mode, setMode] = useState<Mode>(initialMode);
+  // Mounted on first use and then kept, so switching back and forth loses neither side's inputs.
+  const [regimeOpened, setRegimeOpened] = useState(initialMode === "regime");
   const [sources, setSources] = useState<Schemas["ResearchSource"][]>([]);
   const [loaded, setLoaded] = useState(false);
   const [source, setSource] = useState(sourceId);
@@ -86,6 +88,14 @@ export function ResearchWorkspace({ sourceId = "", initialRun = "" }: { sourceId
     return () => { controller.abort(); clearTimeout(timer); };
   }, [selected, version]);
 
+  function switchMode(next: Mode) {
+    setMode(next);
+    if (next === "regime") setRegimeOpened(true);
+    const url = new URL(window.location.href);
+    if (next === "regime") url.searchParams.set("mode", "regime"); else url.searchParams.delete("mode");
+    window.history.replaceState(null, "", url);
+  }
+
   function choose(id: string) {
     setSelected(id);
     const url = new URL(window.location.href);
@@ -120,8 +130,16 @@ export function ResearchWorkspace({ sourceId = "", initialRun = "" }: { sourceId
     <div className="crumb"><Link href="/accounts">账户</Link> / 指定区间回测</div>
     <h1>指定区间策略回测</h1>
     <p className="meta">独立空仓启动，不复制当前持仓、不修改来源账户。收盘信号最早次日开盘成交。</p>
-    {error && <div role="alert">{error} <button className="btn" onClick={() => { setError(null); setVersion(v => v + 1); }}>重新读取结果</button></div>}
+    <div className="seg" role="group" aria-label="区间选择方式">
+      <button type="button" aria-pressed={mode === "manual"} onClick={() => switchMode("manual")}>手动指定区间</button>
+      <button type="button" aria-pressed={mode === "regime"} onClick={() => switchMode("regime")}>按市场形势选择区间</button>
+    </div>
     {loaded && sources.length === 0 && <p>没有技术评级来源账户，请先<Link href="/accounts/new">新建账户</Link>。已有研究仍可查看。</p>}
+    {regimeOpened && <div className="stack" hidden={mode !== "regime"}>
+      <RegimeWorkspace sources={sources} sourceId={source} initialDiscovery={initialDiscovery} initialBatch={initialBatch} />
+    </div>}
+    <div className="stack" hidden={mode !== "manual"}>
+    {error && <div role="alert">{error} <button className="btn" onClick={() => { setError(null); setVersion(v => v + 1); }}>重新读取结果</button></div>}
     <form className="card" onSubmit={e => { e.preventDefault(); void submit(); }}>
       <div className="card-h"><h2>区间与策略参数</h2><span>technical_rating_v1</span></div>
       <div className="form">
@@ -160,16 +178,9 @@ export function ResearchWorkspace({ sourceId = "", initialRun = "" }: { sourceId
       {history?.total === 0 && <p className="empty">尚无研究运行</p>}
       <Pager page={historyPage} pages={Math.max(1, Math.ceil((history?.total ?? 0) / 10))} onPage={setHistoryPage} />
     </section>
+    </div>
     <p className="meta">探索性历史结果，不代表未来有效；不含分红、不含税。期末按市值估值，未强制清仓，挂单不在区间外执行。</p>
   </section>;
-}
-
-function Configuration({ config }: { config: Config }) {
-  const rules = config.portfolio_rules;
-  return <p className="meta">来源：{config.name} · 初始资金 ¥{yen(Number(rules.initial_cash))} ·
-    最多 {String(rules.max_positions)} 只 · 单股上限 {Number(rules.max_weight) * 100}% ·
-    现金底线 {Number(rules.cash_floor) * 100}% · 手续费率 {Number(config.costs.commission_rate) * 100}% ·
-    最低手续费 ¥{config.costs.commission_min} · 每边滑点 {Number(config.costs.slippage) * 100}%</p>;
 }
 
 function Result({ run }: { run: Run }) {
