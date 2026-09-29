@@ -5,11 +5,6 @@ import type { NextConfig } from "next";
 const BACKEND_URL = process.env.BACKEND_URL ?? "http://localhost:8000";
 
 const nextConfig: NextConfig = {
-  experimental: {
-    // Freezing a research snapshot can take longer than Next's 30-second
-    // development proxy default.
-    proxyTimeout: 300_000,
-  },
   // The dev server serves its scripts only to origins it counts as its own;
   // the README opens the app at 127.0.0.1, which it does not, and without
   // this every page would render its outline and never load its data.
