@@ -1,6 +1,6 @@
 # 04b-B — 按市场形势提取区间，逐段回测并展示
 
-**状态：** blocked-by-04b-a。
+**状态：** done（所依赖的 04b-A 已于 2026-09-29 验收；本步验收记录见文末）。
 **依赖：** [04b-A](04b-a-manual-range-backtest.md) 已能在页面运行手选区间并查看实际结果。
 **父任务：** [04b](04b-research-backtest-account-ui.md)。**规则依据：** [调查](../../market-regime-backtesting-research.md)。
 
