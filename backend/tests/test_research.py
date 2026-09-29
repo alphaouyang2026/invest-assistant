@@ -1,0 +1,195 @@
+"""Isolated research uses the paper execution rules but never its ledger."""
+from uuid import uuid4
+from datetime import timedelta
+from decimal import Decimal
+
+import pytest
+from fastapi.testclient import TestClient
+from sqlalchemy import select, update
+
+from app.accounts import Accounts, AccountSpec
+from app.accounts import tables
+from app.accounts import research_tables
+from app.accounts.research import Research
+from app.config import Settings
+from app.jobs import Jobs, Job, JobOutcome, JobsBusy
+from app.main import create_app
+from app.market_data import tables as market_tables
+from app.strategies import Disposition
+from tests.account_market import SESSIONS, Script, synced, fake_client
+
+
+PLAN = {SESSIONS[1]: {"13010": Disposition.HOLD}, SESSIONS[4]: {"13010": Disposition.EXIT},
+        SESSIONS[5]: {"13020": Disposition.HOLD}}
+PRICES = {"13010": ["1000"] * 3 + ["1100", "1200"] + ["1150"] * 5, "13020": ["500"] * 10}
+
+
+def payload(source, end=SESSIONS[5], start=SESSIONS[1], **params):
+    return {"source_account_id": source, "start_date": start.isoformat(), "end_date": end.isoformat(),
+            "entry_above": 0.5, "exit_below": -0.1, **params}
+
+
+@pytest.fixture
+def setup(migrated_database, tmp_path):
+    market = synced(migrated_database, PRICES)
+    build = lambda name, params: Script(PLAN if params.get("entry_above", .5) < .6 else {})
+    accounts = Accounts(migrated_database, market, build_strategy=build)
+    source = accounts.create(AccountSpec("来源", "technical_rating_v1", SESSIONS[1]))
+    jobs = Jobs(tmp_path)
+    research = Research(migrated_database, market, jobs, tmp_path, strategies=build)
+    jobs.start()
+    yield research, jobs, accounts, source, market
+    jobs.stop()
+
+
+def run(research, jobs, request):
+    key = str(uuid4())
+    run_id = research.submit(request, key)
+    assert jobs.wait_until_idle()
+    result = research.get(run_id)
+    assert result["status"] == "completed", result["error"]
+    return run_id, result
+
+
+def test_research_matches_paper_and_does_not_change_source(setup, migrated_database):
+    research, jobs, accounts, source, market = setup
+    accounts.advance(source, through=SESSIONS[5])
+    baseline = accounts.report(source)
+    with migrated_database.connect() as con:
+        before = list(con.execute(select(tables.paper_orders)))
+    run_id, result = run(research, jobs, payload(source))
+    r = result["result"]
+    assert [p["nav"] for p in r["nav"]] == [float(v) for v in baseline.nav]
+    assert r["total_return"] == pytest.approx(baseline.figures.total_return)
+    assert r["realised_pnl"] == pytest.approx(133065)
+    assert r["unrealised_pnl"] == 0
+    stored = research.orders(run_id, page_size=200)["orders"]
+    assert [(o["code"], o["status"], o["execution_date"]) for o in reversed(stored)] == [
+        (o.code, o.status, o.execution_date.isoformat()) for o in baseline.orders]
+    with migrated_database.connect() as con:
+        assert list(con.execute(select(tables.paper_orders))) == before
+    _, changed = run(research, jobs, payload(source, entry_above=.6))
+    assert changed["result"]["trades"] == 0
+    assert changed["input_identity"] == result["input_identity"]
+
+
+def test_single_day_and_end_holdings_pending_are_not_liquidated(setup):
+    research, jobs, accounts, source, _ = setup
+    _, one = run(research, jobs, payload(source, end=SESSIONS[1]))
+    assert one["result"]["trades"] == 0
+    assert one["result"]["total_return"] == 0
+    assert one["result"]["pending"][0]["execution_date"] == SESSIONS[2].isoformat()
+    _, held = run(research, jobs, payload(source, end=SESSIONS[4]))
+    assert held["result"]["trades"] == 1
+    assert held["result"]["unrealised_pnl"] == pytest.approx(179100)
+    assert held["result"]["realised_pnl"] == 0
+    assert held["result"]["pending"][0]["kind"] == "sell"
+    assert held["result"]["holdings"][0]["quantity"] == 900
+
+
+def test_saved_results_survive_source_deletion_and_market_correction(setup, migrated_database):
+    research, jobs, accounts, source, market = setup
+    run_id, old = run(research, jobs, payload(source))
+    with migrated_database.begin() as con:
+        con.execute(update(market_tables.daily_bars).where(market_tables.daily_bars.c.code == "13010",
+                    market_tables.daily_bars.c.date == SESSIONS[3]).values(close=Decimal("1111")))
+    _, new = run(research, jobs, payload(source))
+    assert new["input_identity"]["sha256"] != old["input_identity"]["sha256"]
+    assert new["input_identity"]["rows"] == old["input_identity"]["rows"]
+    accounts.delete(source)
+    assert research.get(run_id) == old
+
+
+@pytest.mark.parametrize("changes,match", [
+    ({"start_date": "2026-08-31"}, "开市日"),
+    ({"start_date": SESSIONS[6].isoformat()}, "晚于"),
+    ({"start_date": SESSIONS[0].isoformat()}, "预热期"),
+    ({"end_date": (SESSIONS[-1] + timedelta(days=1)).isoformat()}, "缺失"),
+    ({"entry_above": float("inf")}, "有限数值"),
+    ({"exit_below": -1.01}, "有限数值"),
+])
+def test_validation_leaves_no_run(setup, changes, match):
+    research, jobs, _, source, _ = setup
+    with pytest.raises(ValueError, match=match):
+        research.submit(payload(source, **changes), str(uuid4()))
+    assert research.history()["total"] == 0
+    assert jobs.current() is None
+
+
+def test_idempotency_busy_restart_and_retry(setup, migrated_database, tmp_path):
+    research, jobs, accounts, source, market = setup
+    request, key = payload(source), str(uuid4())
+    run_id = research.submit(request, key)
+    assert research.submit(request, key) == run_id
+    assert jobs.wait_until_idle()
+    assert research.submit(request, key) == run_id
+    with pytest.raises(ValueError, match="请求标识"):
+        research.submit(payload(source, entry_above=.7), key)
+    # Simulate a run left in progress by a crashed service.
+    with migrated_database.begin() as con:
+        con.execute(update(research_tables.runs).where(research_tables.runs.c.id == run_id)
+                    .values(status="running", result=None))
+    research.recover()
+    assert research.get(run_id)["status"] == "failed"
+    accounts.delete(source)
+    retry = research.submit({}, str(uuid4()), retry_of=run_id)
+    assert jobs.wait_until_idle()
+    assert research.get(retry)["status"] == "completed"
+    assert research.get(retry)["retry_of"] == run_id
+    assert research.get(run_id)["status"] == "failed"
+
+
+def test_shared_writer_lock_and_live_run_not_recovered(setup, tmp_path):
+    from threading import Event
+    research, jobs, _, source, _ = setup
+    release = Event()
+    jobs.submit(Job("sync", lambda _: (release.wait(3), JobOutcome())[1]))
+    try:
+        with pytest.raises(JobsBusy):
+            research.submit(payload(source), str(uuid4()))
+        research.recover()
+        assert research.history()["total"] == 0
+    finally:
+        release.set()
+        assert jobs.wait_until_idle()
+
+
+def test_http_submit_poll_page_and_invalid_input(migrated_database):
+    app = create_app(Settings(_env_file=None), client=fake_client(PRICES), today=lambda: SESSIONS[-1],
+                     strategies=lambda name, params: Script(PLAN))
+    with TestClient(app) as client:
+        app.state.market.sync()
+        source = app.state.accounts.create(AccountSpec("来源", "technical_rating_v1", SESSIONS[1]))
+        assert client.get("/api/research/sources").json()[0]["id"] == source
+        body = {**payload(source), "request_key": str(uuid4())}
+        response = client.post("/api/research/runs", json=body)
+        assert response.status_code == 202, response.text
+        run_id = response.json()["id"]
+        assert app.state.jobs.wait_until_idle()
+        assert client.post("/api/research/runs", json=body).json()["id"] == run_id
+        detail = client.get(f"/api/research/runs/{run_id}").json()
+        assert detail["status"] == "completed", detail
+        assert "request_key" not in detail
+        page = client.get(f"/api/research/runs/{run_id}/orders?page_size=1").json()
+        assert page["total"] == 3 and len(page["orders"]) == 1
+        assert client.get("/api/research/runs").json()["total"] == 1
+        assert client.get("/api/research/runs/missing").status_code == 404
+        assert client.post("/api/research/runs", json={**body, "entry_above": 2}).status_code == 422
+        assert client.post(f"/api/research/runs/{run_id}/retry", json={"request_key": str(uuid4())}).status_code == 422
+
+
+def test_legacy_0004_tables_are_preserved_on_upgrade(tmp_path, monkeypatch):
+    import sqlite3
+    from app.migrate import upgrade_to_head
+    path = tmp_path / "legacy.db"
+    with sqlite3.connect(path) as con:
+        con.execute("CREATE TABLE alembic_version (version_num VARCHAR(32) PRIMARY KEY)")
+        con.execute("INSERT INTO alembic_version VALUES ('0004')")
+        con.execute("CREATE TABLE research_runs (id INTEGER PRIMARY KEY, result TEXT)")
+        con.execute("INSERT INTO research_runs VALUES (1, 'legacy-result')")
+    monkeypatch.setenv("DATABASE_PATH", str(path))
+    upgrade_to_head()
+    with sqlite3.connect(path) as con:
+        assert con.execute("SELECT * FROM research_runs").fetchall() == [(1, "legacy-result")]
+        assert con.execute("SELECT COUNT(*) FROM manual_research_runs").fetchone() == (0,)
+        assert con.execute("SELECT * FROM alembic_version").fetchone() == ("0005",)

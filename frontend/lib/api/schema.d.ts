@@ -244,6 +244,92 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/research/sources": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Sources */
+        get: operations["sources_api_research_sources_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/research/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** History */
+        get: operations["history_api_research_runs_get"];
+        put?: never;
+        /** Submit */
+        post: operations["submit_api_research_runs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/research/runs/{run_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Detail */
+        get: operations["detail_api_research_runs__run_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/research/runs/{run_id}/orders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Orders */
+        get: operations["orders_api_research_runs__run_id__orders_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/research/runs/{run_id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Retry */
+        post: operations["retry_api_research_runs__run_id__retry_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -645,6 +731,213 @@ export interface components {
         Refusal: {
             /** Detail */
             detail: string;
+        };
+        /** ResearchAccepted */
+        ResearchAccepted: {
+            /** Id */
+            id: string;
+        };
+        /** ResearchConfig */
+        ResearchConfig: {
+            /** Name */
+            name: string;
+            /** Strategy */
+            strategy: string;
+            /** Strategy Params */
+            strategy_params: {
+                [key: string]: unknown;
+            };
+            /** Portfolio Rules */
+            portfolio_rules: {
+                [key: string]: unknown;
+            };
+            /** Costs */
+            costs: {
+                [key: string]: string;
+            };
+            /**
+             * Start Date
+             * Format: date
+             */
+            start_date: string;
+            /** End Date */
+            end_date?: string | null;
+            /** Source Account Id */
+            source_account_id?: number | null;
+        };
+        /** ResearchDetail */
+        ResearchDetail: {
+            /** Id */
+            id: string;
+            config: components["schemas"]["ResearchConfig"];
+            /** Retry Of */
+            retry_of: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "queued" | "running" | "completed" | "failed";
+            /** Created At */
+            created_at: string;
+            /** Finished At */
+            finished_at: string | null;
+            /** Progress */
+            progress: {
+                [key: string]: unknown;
+            };
+            /** Input Identity */
+            input_identity: {
+                [key: string]: unknown;
+            } | null;
+            /** Code Version */
+            code_version: string;
+            /** Error */
+            error: string | null;
+            result: components["schemas"]["ResearchResult"] | null;
+        };
+        /** ResearchHistory */
+        ResearchHistory: {
+            /** Total */
+            total: number;
+            /** Page */
+            page: number;
+            /** Page Size */
+            page_size: number;
+            /** Runs */
+            runs: components["schemas"]["ResearchSummary"][];
+        };
+        /** ResearchHolding */
+        ResearchHolding: {
+            /** Code */
+            code: string;
+            /** Quantity */
+            quantity: number;
+            /**
+             * Opened On
+             * Format: date
+             */
+            opened_on: string;
+            /** Cost */
+            cost: number;
+            /** Close */
+            close: number;
+            /** Value */
+            value: number;
+        };
+        /** ResearchIn */
+        ResearchIn: {
+            /**
+             * Request Key
+             * Format: uuid
+             */
+            request_key: string;
+            /** Source Account Id */
+            source_account_id: number;
+            /**
+             * Start Date
+             * Format: date
+             */
+            start_date: string;
+            /**
+             * End Date
+             * Format: date
+             */
+            end_date: string;
+            /**
+             * Entry Above
+             * @default 0.5
+             */
+            entry_above: number;
+            /**
+             * Exit Below
+             * @default -0.1
+             */
+            exit_below: number;
+        };
+        /** ResearchOrders */
+        ResearchOrders: {
+            /** Total */
+            total: number;
+            /** Page */
+            page: number;
+            /** Page Size */
+            page_size: number;
+            /** Orders */
+            orders: components["schemas"]["OrderOut"][];
+        };
+        /** ResearchResult */
+        ResearchResult: {
+            /** Nav */
+            nav: components["schemas"]["NavPointOut"][];
+            /** Holdings */
+            holdings: components["schemas"]["ResearchHolding"][];
+            /** Pending */
+            pending: components["schemas"]["OrderOut"][];
+            /** Warnings */
+            warnings: string[];
+            /** Total Return */
+            total_return: number;
+            /** Topix Return */
+            topix_return: number;
+            /** Excess Return */
+            excess_return: number;
+            /** Max Drawdown */
+            max_drawdown: number;
+            /** Trades */
+            trades: number;
+            /** Fees */
+            fees: number;
+            /** Cash */
+            cash: number;
+            /** Realised Pnl */
+            realised_pnl: number;
+            /** Unrealised Pnl */
+            unrealised_pnl: number;
+        };
+        /** ResearchRetryIn */
+        ResearchRetryIn: {
+            /**
+             * Request Key
+             * Format: uuid
+             */
+            request_key: string;
+        };
+        /** ResearchSource */
+        ResearchSource: {
+            /** Id */
+            id: number;
+            /** Name */
+            name: string;
+            config: components["schemas"]["ResearchConfig"];
+        };
+        /** ResearchSummary */
+        ResearchSummary: {
+            /** Id */
+            id: string;
+            config: components["schemas"]["ResearchConfig"];
+            /** Retry Of */
+            retry_of: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "queued" | "running" | "completed" | "failed";
+            /** Created At */
+            created_at: string;
+            /** Finished At */
+            finished_at: string | null;
+            /** Progress */
+            progress: {
+                [key: string]: unknown;
+            };
+            /** Input Identity */
+            input_identity: {
+                [key: string]: unknown;
+            } | null;
+            /** Code Version */
+            code_version: string;
+            /** Error */
+            error: string | null;
         };
         /** SecurityBarsOut */
         SecurityBarsOut: {
@@ -1190,6 +1483,263 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    sources_api_research_sources_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResearchSource"][];
+                };
+            };
+        };
+    };
+    history_api_research_runs_get: {
+        parameters: {
+            query?: {
+                page?: number;
+                page_size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResearchHistory"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    submit_api_research_runs_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResearchIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResearchAccepted"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+        };
+    };
+    detail_api_research_runs__run_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResearchDetail"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+        };
+    };
+    orders_api_research_runs__run_id__orders_get: {
+        parameters: {
+            query?: {
+                page?: number;
+                page_size?: number;
+            };
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResearchOrders"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+        };
+    };
+    retry_api_research_runs__run_id__retry_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResearchRetryIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResearchAccepted"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
                 };
             };
         };

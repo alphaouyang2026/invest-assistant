@@ -119,7 +119,7 @@ class Jobs:
         if self._thread is not None:
             self._thread.join(timeout=10)
 
-    def submit(self, job: Job) -> str:
+    def submit(self, job: Job, *, prepare: Callable[[], None] | None = None) -> str:
         """Accept `job` and start it, or raise `JobsBusy` at once if a job
         is already running here or another process holds the lock."""
         with self._changed:
@@ -130,6 +130,12 @@ class Jobs:
                 self._lock.acquire(timeout=0)
             except Timeout:
                 raise JobsBusy(LOCK_HELD) from None
+            try:
+                if prepare is not None:
+                    prepare()  # durable submission, under the same writer lock as execution
+            except BaseException:
+                self._lock.release()
+                raise
             self._current = _Entry(uuid.uuid4().hex[:12], job, self._clock())
             self._changed.notify_all()
             return self._current.id

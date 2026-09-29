@@ -152,30 +152,9 @@ class Accounts:
 
         warnings: list[str] = []
         for day in days:
-            session = prices.session(day)
-            next_day = calendar.next(day)
-
-            events, found = corporate_actions(ledger, session)
+            records, found = replay_day(ledger, prices, strategy, universes, day, calendar.next(day), rules, costs)
             warnings += found
-            after_events = ledger.apply(events)
-            fills = open_session(after_events.pending, session, cash=after_events.cash, costs=costs)
-            again = replace_sells(fills, day=day, execution_day=next_day)
-            morning = after_events.apply(fills).apply(again)
-
-            holdings = [Holding(p.code, p.quantity, p.opened_on) for p in morning.positions.values()]
-            signals = strategy.evaluate(prices.frame, day, holdings)
-            selling_again = {record.code for record in again}
-            exits = [s for s in signals if s.disposition is Disposition.EXIT
-                     and s.code in morning.positions and s.code not in selling_again]
-            candidates = [s for s in signals if s.disposition is Disposition.HOLD
-                          and s.code not in morning.positions and s.code in set(universes.get(day, []))]
-            closes = prices.closes(day, [*morning.positions, *(s.code for s in candidates)])
-            nav = morning.cash + sum((Decimal(p.quantity) * closes[p.code] for p in morning.positions.values()),
-                                     Decimal(0))
-            orders = plan_orders(day=day, execution_day=next_day, positions=morning.positions, exits=exits,
-                                 candidates=candidates, closes=closes, cash=morning.cash, nav=nav, rules=rules)
-
-            stored = self._store(account_id, day, [*events, *fills, *again, *orders])
+            stored = self._store(account_id, day, records)
             ledger = ledger.apply(stored)
 
         if days[-1] == overview.latest_date and account["backtest_data_mark"] is None:
@@ -323,6 +302,34 @@ class Accounts:
         opened = [p.opened_on for p in ledger.positions.values()]
         start = min([start, *opened])
         return _Prices(self._market.read(sorted(codes), start, days[-1]))
+
+
+def replay_day(ledger: Ledger, prices: _Prices, strategy: Strategy, universes: Mapping[date, list[str]],
+               day: date, next_day: date, rules: PortfolioRules, costs: Costs) -> tuple[list[Record], list[str]]:
+    """The same daily trading rules for paper accounts and isolated research."""
+    session = prices.session(day)
+
+    events, found = corporate_actions(ledger, session)
+    warnings = found
+    after_events = ledger.apply(events)
+    fills = open_session(after_events.pending, session, cash=after_events.cash, costs=costs)
+    again = replace_sells(fills, day=day, execution_day=next_day)
+    morning = after_events.apply(fills).apply(again)
+
+    holdings = [Holding(p.code, p.quantity, p.opened_on) for p in morning.positions.values()]
+    signals = strategy.evaluate(prices.frame, day, holdings)
+    selling_again = {record.code for record in again}
+    exits = [s for s in signals if s.disposition is Disposition.EXIT
+             and s.code in morning.positions and s.code not in selling_again]
+    candidates = [s for s in signals if s.disposition is Disposition.HOLD
+                  and s.code not in morning.positions and s.code in set(universes.get(day, []))]
+    closes = prices.closes(day, [*morning.positions, *(s.code for s in candidates)])
+    nav = morning.cash + sum((Decimal(p.quantity) * closes[p.code] for p in morning.positions.values()),
+                             Decimal(0))
+    orders = plan_orders(day=day, execution_day=next_day, positions=morning.positions, exits=exits,
+                         candidates=candidates, closes=closes, cash=morning.cash, nav=nav, rules=rules)
+
+    return [*events, *fills, *again, *orders], warnings
 
 
 class _Prices:

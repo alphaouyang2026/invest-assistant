@@ -276,6 +276,42 @@ class MarketData:
     def calendar(self) -> Calendar:
         return Calendar(self._sessions())
 
+    def research_identity(self, start: date, end: date) -> dict:
+        """Content identity, not an archive. Conservatively covers all stocks,
+        roster periods and later adjustment factors used by read/universe.
+        Call under the shared job lock, like sync and research execution."""
+        import hashlib
+        import json
+
+        digest = hashlib.sha256()
+        bars = tables.daily_bars
+        queries = {
+            "bars": select(bars).where(bars.c.date.between(start, end)).order_by(bars.c.code, bars.c.date),
+            "later_factors": select(bars.c.code, bars.c.date, bars.c.adjustment_factor, bars.c.ex_rights_type)
+                .where(bars.c.date > end, cast(bars.c.adjustment_factor, Float) != 1.0)
+                .order_by(bars.c.code, bars.c.date),
+            "segments": select(tables.segment_periods).order_by(
+                tables.segment_periods.c.code, tables.segment_periods.c.valid_from),
+            "calendar": select(tables.trading_calendar).order_by(tables.trading_calendar.c.date),
+        }
+        counts = {}
+        with self._engine.connect() as connection:
+            stock_dates = set(connection.execute(select(bars.c.date).where(
+                bars.c.code != TOPIX, bars.c.date.between(start, end)).distinct()).scalars())
+            for name, query in queries.items():
+                digest.update(name.encode())
+                count = 0
+                for row in connection.execute(query):
+                    digest.update(json.dumps(list(row), default=str, ensure_ascii=False,
+                                             separators=(",", ":")).encode())
+                    digest.update(b"\n")
+                    count += 1
+                counts[name] = count
+        return {"sha256": digest.hexdigest(), "from": start.isoformat(), "through": end.isoformat(),
+                "rows": counts, "missing_stock_sessions": [d.isoformat() for d in self._sessions()
+                    if start <= d <= end and d not in stock_dates],
+                "scope": "all stocks in range; all roster/calendar; later adjustment factors"}
+
     def read(self, codes: Sequence[str] | None, start: date, end: date) -> MarketFrame:
         """Every bar of `codes` (all securities when None) from `start` to
         `end`, in one query, with research prices worked out."""

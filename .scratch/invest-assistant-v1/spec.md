@@ -1,9 +1,10 @@
 # invest-assistant v1 系统设计
 
 - 状态：Proposed
-- 日期：2026-09-23
+- 日期：2026-09-23（04b 场景研究修订：2026-09-29）
 - 术语：[CONTEXT.md](../../CONTEXT.md)——本文所有领域名词都按其中的定义使用
-- 架构决定：[ADR-0001](../../docs/adr/0001-store-bars-by-security-and-date-without-point-in-time.md) 覆盖存储、不做时点可复现 · [ADR-0002](../../docs/adr/0002-use-sqlite-single-file.md) SQLite 单文件 · [ADR-0003](../../docs/adr/0003-compute-research-prices-from-adjustment-factors.md) 研究价格本地计算 · [ADR-0004](../../docs/adr/0004-backtest-and-paper-trading-are-one-account.md) 回测与模拟交易是同一个账户
+- 架构决定：[ADR-0001](../../docs/adr/0001-store-bars-by-security-and-date-without-point-in-time.md) 生产日线覆盖存储 · [ADR-0002](../../docs/adr/0002-use-sqlite-single-file.md) SQLite 单文件 · [ADR-0003](../../docs/adr/0003-compute-research-prices-from-adjustment-factors.md) 研究价格本地计算 · [ADR-0005](../../docs/adr/0005-freeze-data-per-research-experiment.md) 研究输入指纹与同批输入一致性 · [ADR-0006](../../docs/adr/0006-separate-research-runs-from-paper-accounts.md) 阈值研究独立保存、复用账户交易规则
+- 研究扩展：[04b 账户页面：technical_rating 策略场景研究](issues/04b-research-backtest-account-ui.md)。按 A 手选区间可见闭环、B 市场形势自动选段顺序交付；§7.5 记录 A 实现契约，B 尚未实现，账户状态分析明确延后。
 - 来历：my-invest 的简化版。取舍过程见 my-invest 会话中的架构评审与两轮追问（Q1–Q32），结论已全部写进本文、CONTEXT.md 和 ADR。
 
 ## 1. 做什么，不做什么
@@ -13,8 +14,9 @@
 1. 从 J-Quants（Light 套餐）抓取东证全部证券的日线行情、上市名册、交易日历和 TOPIX，存进 6 张 SQLite 表；
 2. 用两种借鉴 TradingView / QuantConnect 的技术策略，每个交易日收盘后给出信号；
 3. 模拟账户按信号在下一交易日开盘模拟成交，从过去的起始日一路推进到今天（回测），之后随每日同步继续推进（模拟交易）。
+4. 从已有 `technical_rating_v1` 账户复制初始配置，手选区间运行一组阈值并在页面查看结果（04b-A）；随后按市场形势提取区间批量运行（04b-B）。普通账户的两种策略继续保留。
 
-不做：时点可复现、原始响应存档、机器学习、Qlib、分红、融资融券、做空、盘中数据、实盘下单、登录。
+不做：生产行情的全局点时版本管理、原始响应存档、财务 point-in-time 因子、机器学习、Qlib、分红、融资融券、做空、盘中数据、实盘下单、登录。研究保存输入指纹、配置及观察结果，首期不要求永久行情快照；不自动选冠军参数、按场景切换阈值或强制三阶段时间切分。
 
 ## 2. 模块与 seam
 
@@ -52,9 +54,10 @@
 - 只有行情数据模块读写 `instruments`、`segment_periods`、`daily_bars`、`trading_calendar`；别的模块只调用它的读取函数，不写 SQL 访问这四张表。
 - 只有模拟账户模块读写 `paper_accounts`、`paper_orders`。
 - 指标模块和策略不碰数据库：输入是 DataFrame 和持仓事实，输出是信号。它们的测试只需要合成 K 线。
-- 两个 seam 都各有两个真实适配器（J-Quants：HTTP / 假数据；策略：两种策略），不再额外加 seam。
+- 两个基线 seam 各有两个真实适配器（J-Quants：HTTP / 假数据；策略：两种策略）。04b 在账户模块内增加研究入口与观察/报告能力，按需要抽取共享逐日逻辑，不要求先引入特定 `SimulationEngine` interface。
+- 研究配置、信号观察和模拟账本由账户模块独立保存；API 只提交任务或读取报告，不复制交易规则，也不直接调用内部账本/成交函数。
 
-## 3. 数据模型（6 张表）
+## 3. 数据模型（基线 6 张表，研究扩展另存）
 
 金额与价格在 Python 中一律用 `Decimal`，在 SQLite 中存成文本；指标计算用 float（pandas）。日期存 ISO 文本 `YYYY-MM-DD`。
 
@@ -139,7 +142,17 @@
 | `fees` | 手续费 |
 | `cash_delta` | 本记录对现金的影响（买为负、卖为正、合股零股折现为正） |
 
-**持仓、现金、净值都不单独存**：持仓 = 按时间累加已成交和已记账的记录；现金 = `initial_cash + Σ cash_delta`；每日净值 = 现金 + Σ 持仓股数 × 当日收盘成交价格（当天无收盘价则用最近一个）。
+**PaperAccount 的持仓、现金、净值都不单独存**：持仓 = 按时间累加已成交和已记账的记录；现金 = `initial_cash + Σ cash_delta`；每日净值 = 现金 + Σ 持仓股数 × 当日收盘成交价格（当天无收盘价则用最近一个）。研究另存观察值，不改变这份账户事实来源。
+
+### 3.7 独立区间研究记录（04b-A）
+
+迁移 0005 新增 `manual_research_runs`、`manual_research_orders`，不复用／删除旧实装留下的 `research_*` 表。0004 是兼容已升级数据库的历史标记；全新库不建立旧研究表。
+
+- runs：UUID、唯一 request_key、原请求、冻结来源配置及手选范围、retry_of、queued/running/completed/failed、创建／完成时间、逐日进度、错误、输入身份、代码身份和完成报告。
+- orders：运行 ID + 局部序号，保存订单／成交／公司行动及费用；支持分页。来源账户 ID 仅作追溯，不级联删除研究。
+- 完成报告保存每日 NAV／TOPIX 归一值／回撤、期末现金／持仓／挂单、收益差、成交数、费用及已实现／未实现盈亏；GET 不再访问生产行情重估旧结果。
+- 配置修改／显式重试追加运行，已完成配置和报告不覆盖。A 不保存全合格池逐证券观察，也不提供账户状态分组。
+- 输入 SHA256 覆盖含预热和流动性窗口的行情内容、TOPIX、全部历史分类／日历和后续调整系数；范围保守地含全股票，不仅成交股票。保存覆盖与行数用于解释，但指纹本身不是行情备份。代码身份为 app Python 源码及 uv.lock 的 SHA256。
 
 ## 4. 行情数据模块
 
@@ -282,8 +295,8 @@ RSI14[t−1] ≤ 30      且  RSI14[t] > 30
 
 每项给出 −1/0/+1；当天算不出的项不计入平均。组内取平均，总评是两组的平均（各占 50%）。官方说明页 <https://www.tradingview.com/support/solutions/43000614331-technical-ratings/> 的文字与源码有一处不一致（ADX 的卖出条件），按源码。五档：`> 0.5` 强烈买入、`(0.1, 0.5]` 买入、`[−0.1, 0.1]` 中性、`[−0.5, −0.1)` 卖出、`< −0.5` 强烈卖出。
 
-- 入场：总评 > 0.5；排序值 = 总评。
-- 持仓退出：总评 < −0.1。
+- 入场：总评 > `entry_above`（默认 0.5）；排序值 = 总评。
+- 持仓退出：总评 < `exit_below`（默认 −0.1）。04b 两个阈值均允许 −1 到 +1，拒绝非有限数字和越界值；评分五档定义不随交易阈值改变。
 - 预热期 260 个交易日。长周期 EMA 的数值会因起算点不同与 TradingView 页面略有差异，属于已知局限。
 
 ## 7. 模拟账户
@@ -301,7 +314,7 @@ RSI14[t−1] ≤ 30      且  RSI14[t] > 30
 
 每个交易日在**一个事务**里提交：这一天写下的全部记录和 `advanced_through = t` 一起提交或一起放弃，所以推进中途被打断，重跑会从断点接着推进，不会多写或漏写一天。同一账户、同一份数据推进两次，得到逐行相同的记录：记录里不写墙上时间，金额全用 `Decimal`，同分按代码排序。
 
-回测 = 从 `start_date` 到最新交易日逐日推进；追上后写 `backtest_data_mark`。之后每次同步成功，每个 `active` 账户推进新出现的交易日。已成交记录不因日线后来被修正而改写（ADR-0004）。
+PaperAccount 从 `start_date` 逐日推进到最新交易日，追上后写 `backtest_data_mark`，之后每次同步成功继续推进新的交易日。研究运行使用复制的账户配置、同批一致的行情输入和独立账本，复用本节的交易规则，不随行情同步继续推进（ADR-0006）。已成交的 paper account 记录不因生产日线后来被修正而改写。
 
 新建账户时校验：`start_date` 必须是开市日，且之前至少有该策略预热期那么多个开市日的数据。
 
@@ -337,13 +350,24 @@ RSI14[t−1] ≤ 30      且  RSI14[t] > 30
 
 由逐日净值序列与成交记录计算：总收益、年化收益、最大回撤、夏普比率（日收益均值 ÷ 标准差 × √245，无风险利率 0）、胜率（已结束的持仓里扣除费用后盈利的比例）、平均持有交易日数、年化换手率（（买入成交额 + 卖出成交额）÷ 2 ÷ 平均净值，按年折算）、相对 TOPIX 的超额年化收益；净值曲线与 TOPIX 曲线在起始日归一为 1 后对比。报表注明「不含分红、不含税」。
 
+### 7.5 指定区间策略回测（04b-A）
+
+来源账户仅提供 technical_rating_v1 的初始资金、组合限制、费用和其他策略参数，用户手选 [s,e] 并指定 entry_above / exit_below（默认 0.5 / -0.1，有限数值且在 [-1,1]）。每次提交只跑一个配置。来源当前持仓、待单及已推进日期不进入研究。
+
+s/e 都必须是已知开市日且 s≤e，TOPIX 需覆盖完整预热至结束日；全市场缺行情日明确报错，不静默改日期。为末日计划需要已知的下一开市日。每个区间相同初始资金、空仓、无挂单启动；预热只计算指标。s 收盘信号最早在下一开市日开盘成交，运行至 e 收盘估值，不强平或执行 e 之后的挂单。
+
+研究与普通账户共用逐日交易函数及公司行动／组合／成交规则。报告展示 s 收盘到 e 收盘净收益、同范围 TOPIX 价格收益及差值、最大回撤、成交数、实际手续费、每日曲线、交易记录和期末未平仓情况。已实现盈亏为总货币盈亏减期末浮盈亏，包含实际已记账公司行动现金。单日／零成交明确说明，不用短段年化或 Sharpe 排名。不含分红、税；结果为探索性，不宣称策略泛化有效。
+
+下一步 B 添加 TOPIX 市场形势自动提取区间，调用同一个独立回放。多阈值批量比较、全候选诊断和连续账户状态归因均延后，不是 A 的验收前置。不强制开发／验证／盲测三阶段，也不通过统计回归生成交易。
+
 ## 8. 后台任务
 
-- FastAPI 进程内一个任务线程、一个任务队列，同一时刻只执行一个任务（同步 / 账户推进）。SQLite 只允许一个写入者（ADR-0002），这条规则由此而来。
+- FastAPI 一个任务线程、一项待处理槽位；同步／推进／研究共用文件锁。忙时立即拒绝（研究 API 返回 409），不承诺多任务排队。queued 仅表示已接受、尚未开始。
 - 跨进程互斥：任务开始前取得 `var/job.lock` 文件锁；命令行入口也取这把锁，因此命令行回填与服务里的同步不会同时写库。
 - 定时器（按日本时间）：每个开市日 18:00 排入同步；同步报告「当天数据未出」时，30 分钟后再排一次，最晚到 21:00。同步成功后，排入「推进所有 active 账户」。
 - 新建账户后立即排入「推进该账户」。
-- 当前任务的进度保存在内存；每个任务结束时把结果追加到 `var/jobs.jsonl`。服务重启时丢失进行中的任务可以接受——重跑即可。
+- 研究接受前在任务锁内校验并持久化配置，线程在同一把锁下读数据、执行、写结果。重启仅在能取得锁时标记旧 queued/running 为失败，不误判其他进程的活跃运行。失败重试复制冻结配置并创建新运行，重新记录实际输入，旧结果不覆盖；A 尚无批次。
+- 通用任务的即时进度保存在内存；每个任务结束时把结果追加到 `var/jobs.jsonl`。同步与账户推进可在服务重启后重跑；研究另有持久化运行记录，重启后须将中断运行标为失败并注明原因，重试创建新运行，不能丢失已提交的配置或把部分结果当成完成结果。
 - 命令行：`python -m app.cli sync`（前台执行同一个同步函数，用于首次回填）、`python -m app.cli advance [--account ID]`。
 
 ## 9. 界面与 API
@@ -355,9 +379,10 @@ RSI14[t−1] ≤ 30      且  RSI14[t] > 30
 | 数据页 `/data` | 最大日期、证券数、行数；当前任务进度；「立即同步」按钮；最近任务结果与警告；现算的质量警告 |
 | 信号页 `/signals` | 选择策略和日期（默认最新交易日），列出入场候选（代码、名称、市场、排序值、理由）；搜索证券 |
 | 证券详情 `/signals/[code]` | lightweight-charts 画 K 线（研究价格）、成交量、所选策略的指标，以及历史入场点 |
-| 账户列表 `/accounts` | 各账户的策略、起始日、推进到哪天、总收益、最大回撤、状态 |
+| 账户列表 `/accounts` | 模拟账户概览；技术评级账户提供「回测此策略」入口，带入来源账户配置 |
 | 新建账户 `/accounts/new` | 名称、策略、策略参数、组合规则、费用、起始日；提交后开始推进 |
-| 账户详情 `/accounts/[id]` | 统计指标；净值 vs TOPIX 曲线；回撤曲线；当前持仓；明天开盘要执行的订单与理由；历史订单与账户事件；停用 / 删除 |
+| 账户详情 `/accounts/[id]` | 模拟账户统计、净值 vs 基准、回撤、持仓、待执行订单、历史账本 |
+| 指定区间研究 `/accounts/research` | 来源账户、手选起止日、一组阈值、异步状态、净值／基准／回撤、交易与期末持仓、全部运行历史；URL 的 run 参数恢复结果 |
 
 API（前缀 `/api`）：
 
@@ -367,6 +392,14 @@ API（前缀 `/api`）：
 - `GET /accounts`、`POST /accounts`、`GET /accounts/{id}`、`GET /accounts/{id}/nav`、`GET /accounts/{id}/orders`、`POST /accounts/{id}/stop`、`DELETE /accounts/{id}`
 - `GET /strategies`（两个策略的参数与默认值，给新建账户页展示；即附录 A.3 的 `STRATEGY_DEFAULTS`）
 - `GET /jobs/current`
+
+04b-A API（前缀 `/api/research`）：
+
+- `GET /sources`：技术评级来源配置，不触发账户报告重算。
+- `POST /runs`：request_key（UUID）、source_account_id、start_date、end_date、entry_above、exit_below；返回 202 + id。同 request_key 同请求返回原 id，不同请求拒绝。
+- `GET /runs?page=&page_size=`：历史分页；`GET /runs/{run_id}`：持久状态、配置、完整报告与版本；`GET /runs/{run_id}/orders?page=&page_size=`：账本分页。
+- `POST /runs/{run_id}/retry`：新 request_key，只允许失败运行，追加新尝试。来源已删除仍可使用冻结配置。
+- 404 表示记录不存在，409 表示任务忙，422 表示参数／日历／预热不合规。执行中问题写 failed/error。没有修改来源账户或阶段晋级接口。
 
 ## 10. 工程与运行
 
@@ -388,7 +421,7 @@ backend/
     market_data/       # 4 张行情表、J-Quants 适配器、同步、研究价格、质量标记、读取
     indicators.py
     strategies/        # 策略 seam、entry_candidates / history、trend_pullback.py、technical_rating.py
-    accounts/          # 2 张账户表、组合规则、开盘成交、推进、统计
+    accounts/          # paper 账本、交易规则、推进/统计；04b 独立研究运行、观察和报告
     api/
   migrations/
   tests/
@@ -404,10 +437,13 @@ docker-compose.yml
 2. [02 J-Quants 行情同步与数据页](issues/02-jquants-market-data-sync.md)——依赖 01
 3. [03 指标、两个策略与信号页](issues/03-indicators-strategies-signals.md)——依赖 02
 4. [04 模拟账户：回测、模拟交易与账户页](issues/04-paper-accounts.md)——依赖 03
+5. [04b 账户页面：technical_rating 策略场景研究](issues/04b-research-backtest-account-ui.md)——依赖 04；A 手选区间并显示结果，B 自动提取市场区间；账户状态分析延后
+6. [05 三类 OHLCV 策略候选研究](issues/05-three-ohclv-strategy-candidates.md)——后续候选议题；其对旧研究流程的依赖需另行评估，不属于 04b 验收范围
 
 ## 12. 已知局限
 
-- 不可复现：J-Quants 修正历史数据后，新建的同参数账户可能和旧账户结果不同；`backtest_data_mark` 只用于发现这种差异（ADR-0001）。
+- PaperAccount 使用生产日线，J-Quants 后续修正不会回写已成交订单，但会影响新建账户及重新估值。研究保留配置、观察、结果和输入指纹，保证同批比较输入一致；指纹无法恢复已覆盖行情，因此不保证跨数据修正的精确重放（ADR-0001、ADR-0005）。
+- 场景分组和阈值比较仍可能受小样本、状态路径差异和反复挑选影响；报告是探索性条件绩效，不自动证明泛化或因果关系。
 - 不含分红和税，高股息股的收益被低估（ADR-0003）。
 - 只用日线：跟踪止损是「收盘确认、次日开盘卖出」，跳空时按真实开盘价成交，不按止损线成交。
 - 开盘即涨停的买单一律视为买不到，现实中可能在收盘按比例分到少量；开盘即跌停的卖单同理。
@@ -519,7 +555,7 @@ class Accounts:
     def delete(self, account_id: AccountId) -> None: ...
 ```
 
-`advance` 是这个模块的全部分量：拆合股调整、退市结清、开盘成交、卖单重下、出信号、组合规则、写订单，全在它后面。它从 `advanced_through` 的下一个开市日推进到 `through`（默认最新交易日）；重复调用不会重复推进。回测和模拟交易都是它（ADR-0004），没有第二个入口。
+`advance` 是模拟账户推进的入口：拆合股调整、退市结清、开盘成交、卖单重下、出信号、组合规则、写订单，全在它后面。它从 `advanced_through` 的下一个开市日推进到 `through`（默认最新交易日）；重复调用不会重复推进。paper account 的历史追赶和后续模拟交易都使用它；04b 增加独立研究入口，复用这些规则而不写 paper 账本（ADR-0006）。
 
 `advance` 自己只做读库、写库和逐日循环：一次读出整段所需的行情（`MarketData.read` 取整段股票池的并集加上持仓）和整段股票池（`MarketData.universe(start, end)`），然后每个交易日分开盘、收盘两段——收盘段要先拿到开盘成交之后的持仓，才能问策略 `evaluate(frame, t, holdings)`。
 
@@ -540,6 +576,8 @@ def plan_orders(exits, candidates, closes, cash, nav, rules) -> list[Record]   #
 
 **删除测试**：删掉 `Ledger`，「持仓、现金由订单记录推出」会在 `advance` 和 `report` 里各写一份，迟早不一致；把 `open_session` 拆回逐单的 `fill`，先卖后买与现金流转就只能经由 `advance` 测。
 
+04b 的研究能力由账户模块提供提交配置、执行比较、读取状态/报告和逐日观察的公开入口，签名随实现确定；调用方不读取内部表或直接拼装 `Ledger`、`plan_orders`、`open_session`。研究记录、调度和报告可独立组织，交易规则仍由账户模块内的共享实现负责。
+
 ### A.5 任务模块 `jobs`
 
 ```python
@@ -552,6 +590,8 @@ class Jobs:
 藏住单线程队列、`var/job.lock` 文件锁、定时器和 `var/jobs.jsonl`。API、定时器和命令行都只看见这三个方法。
 
 ### A.6 调用关系
+
+下图展示现有基线。04b 的研究提交、查询与任务执行也经由账户模块的公开入口，研究任务通过 Jobs 排队；账户模块内部复用交易规则并写入独立研究记录，不经 paper account 的账本写入路径。
 
 ```text
 API / 命令行 / 定时器

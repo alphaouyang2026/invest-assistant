@@ -81,6 +81,9 @@ export function AccountList() {
                             {a.name}
                           </Link>
                           <div className="sub">{strategyLabel(a.strategy)}</div>
+                          {a.strategy === "technical_rating_v1" && (
+                            <Link href={`/accounts/research?source=${a.id}`} className="code">回测此策略</Link>
+                          )}
                         </td>
                         <td className="num">{a.start_date}</td>
                         <td className="num">{a.advanced_through ?? <span className="sub">尚未推进</span>}</td>
