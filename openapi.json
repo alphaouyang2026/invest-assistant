@@ -1057,6 +1057,428 @@
           }
         }
       }
+    },
+    "/api/research/regimes/definition": {
+      "get": {
+        "tags": [
+          "research"
+        ],
+        "summary": "Definition",
+        "operationId": "definition_api_research_regimes_definition_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegimeDefinition"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/research/discoveries": {
+      "post": {
+        "tags": [
+          "research"
+        ],
+        "summary": "Discover",
+        "operationId": "discover_api_research_discoveries_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DiscoveryIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResearchAccepted"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Entity",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/research/discoveries/{discovery_id}": {
+      "get": {
+        "tags": [
+          "research"
+        ],
+        "summary": "Discovery",
+        "operationId": "discovery_api_research_discoveries__discovery_id__get",
+        "parameters": [
+          {
+            "name": "discovery_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Discovery Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscoveryDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        }
+      }
+    },
+    "/api/research/batches": {
+      "post": {
+        "tags": [
+          "research"
+        ],
+        "summary": "Submit Batch",
+        "operationId": "submit_batch_api_research_batches_post",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BatchIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResearchAccepted"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "412": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            },
+            "description": "Precondition Failed"
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "research"
+        ],
+        "summary": "Batches",
+        "operationId": "batches_api_research_batches_get",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Page Size"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchHistory"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/research/batches/{batch_id}": {
+      "get": {
+        "tags": [
+          "research"
+        ],
+        "summary": "Batch",
+        "operationId": "batch_api_research_batches__batch_id__get",
+        "parameters": [
+          {
+            "name": "batch_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Batch Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        }
+      }
+    },
+    "/api/research/batches/{batch_id}/segments/{position}/retry": {
+      "post": {
+        "tags": [
+          "research"
+        ],
+        "summary": "Retry Segment",
+        "operationId": "retry_segment_api_research_batches__batch_id__segments__position__retry_post",
+        "parameters": [
+          {
+            "name": "batch_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Batch Id"
+            }
+          },
+          {
+            "name": "position",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Position"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BatchRetryIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchRetryAccepted"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "412": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            },
+            "description": "Precondition Failed"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1443,6 +1865,472 @@
         "title": "BarOut",
         "description": "Research prices: comparable across splits. None on a halted day."
       },
+      "BatchConfig": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "strategy": {
+            "type": "string",
+            "title": "Strategy"
+          },
+          "strategy_params": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Strategy Params"
+          },
+          "portfolio_rules": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Portfolio Rules"
+          },
+          "costs": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Costs"
+          },
+          "source_account_id": {
+            "type": "integer",
+            "title": "Source Account Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "strategy",
+          "strategy_params",
+          "portfolio_rules",
+          "costs",
+          "source_account_id"
+        ],
+        "title": "BatchConfig",
+        "description": "The source's configuration frozen for every segment; each run adds its own range."
+      },
+      "BatchDetail": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          },
+          "discovery_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Discovery Id"
+          },
+          "selection": {
+            "$ref": "#/components/schemas/BatchSelection"
+          },
+          "config": {
+            "$ref": "#/components/schemas/BatchConfig"
+          },
+          "input_check": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input Check"
+          },
+          "code_version": {
+            "type": "string",
+            "title": "Code Version"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "running",
+              "completed",
+              "partial",
+              "failed"
+            ],
+            "title": "Status"
+          },
+          "max_batch_runs": {
+            "type": "integer",
+            "title": "Max Batch Runs"
+          },
+          "segments": {
+            "items": {
+              "$ref": "#/components/schemas/BatchSegment"
+            },
+            "type": "array",
+            "title": "Segments"
+          },
+          "distribution": {
+            "$ref": "#/components/schemas/Distribution"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "created_at",
+          "discovery_id",
+          "selection",
+          "config",
+          "input_check",
+          "code_version",
+          "status",
+          "max_batch_runs",
+          "segments",
+          "distribution"
+        ],
+        "title": "BatchDetail"
+      },
+      "BatchHistory": {
+        "properties": {
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "page": {
+            "type": "integer",
+            "title": "Page"
+          },
+          "page_size": {
+            "type": "integer",
+            "title": "Page Size"
+          },
+          "batches": {
+            "items": {
+              "$ref": "#/components/schemas/BatchSummary"
+            },
+            "type": "array",
+            "title": "Batches"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total",
+          "page",
+          "page_size",
+          "batches"
+        ],
+        "title": "BatchHistory"
+      },
+      "BatchIn": {
+        "properties": {
+          "request_key": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Request Key"
+          },
+          "discovery_id": {
+            "type": "string",
+            "title": "Discovery Id"
+          },
+          "interval_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Interval Ids"
+          },
+          "source_account_id": {
+            "type": "integer",
+            "exclusiveMinimum": 0.0,
+            "title": "Source Account Id"
+          },
+          "entry_above": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": -1.0,
+            "title": "Entry Above",
+            "default": 0.5
+          },
+          "exit_below": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": -1.0,
+            "title": "Exit Below",
+            "default": -0.1
+          }
+        },
+        "type": "object",
+        "required": [
+          "request_key",
+          "discovery_id",
+          "interval_ids",
+          "source_account_id"
+        ],
+        "title": "BatchIn"
+      },
+      "BatchRef": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          },
+          "selection": {
+            "$ref": "#/components/schemas/BatchSelection"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "running",
+              "completed",
+              "partial",
+              "failed"
+            ],
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "created_at",
+          "selection",
+          "status"
+        ],
+        "title": "BatchRef"
+      },
+      "BatchRetryAccepted": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "run_id"
+        ],
+        "title": "BatchRetryAccepted"
+      },
+      "BatchRetryIn": {
+        "properties": {
+          "request_key": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Request Key"
+          }
+        },
+        "type": "object",
+        "required": [
+          "request_key"
+        ],
+        "title": "BatchRetryIn"
+      },
+      "BatchSegment": {
+        "properties": {
+          "position": {
+            "type": "integer",
+            "title": "Position"
+          },
+          "interval_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Interval Id"
+          },
+          "start_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Start Date"
+          },
+          "end_date": {
+            "type": "string",
+            "format": "date",
+            "title": "End Date"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "running",
+              "completed",
+              "failed"
+            ],
+            "title": "Status"
+          },
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "progress": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Progress"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "attempts": {
+            "items": {
+              "$ref": "#/components/schemas/SegmentAttempt"
+            },
+            "type": "array",
+            "title": "Attempts"
+          },
+          "metrics": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SegmentMetrics"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "position",
+          "interval_id",
+          "start_date",
+          "end_date",
+          "status",
+          "run_id",
+          "progress",
+          "error",
+          "attempts",
+          "metrics"
+        ],
+        "title": "BatchSegment"
+      },
+      "BatchSelection": {
+        "properties": {
+          "interval_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Interval Ids",
+            "default": []
+          },
+          "candidate_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Candidate Count"
+          }
+        },
+        "type": "object",
+        "title": "BatchSelection"
+      },
+      "BatchSummary": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          },
+          "discovery_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Discovery Id"
+          },
+          "source_account_id": {
+            "type": "integer",
+            "title": "Source Account Id"
+          },
+          "source_name": {
+            "type": "string",
+            "title": "Source Name"
+          },
+          "entry_above": {
+            "type": "number",
+            "title": "Entry Above"
+          },
+          "exit_below": {
+            "type": "number",
+            "title": "Exit Below"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "running",
+              "completed",
+              "partial",
+              "failed"
+            ],
+            "title": "Status"
+          },
+          "segments": {
+            "type": "integer",
+            "title": "Segments"
+          },
+          "completed": {
+            "type": "integer",
+            "title": "Completed"
+          },
+          "failed": {
+            "type": "integer",
+            "title": "Failed"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "created_at",
+          "discovery_id",
+          "source_account_id",
+          "source_name",
+          "entry_above",
+          "exit_below",
+          "status",
+          "segments",
+          "completed",
+          "failed"
+        ],
+        "title": "BatchSummary"
+      },
       "CandidateOut": {
         "properties": {
           "code": {
@@ -1492,6 +2380,101 @@
           "reason_codes"
         ],
         "title": "CandidateOut"
+      },
+      "ClassificationFingerprint": {
+        "properties": {
+          "sha256": {
+            "type": "string",
+            "title": "Sha256"
+          },
+          "definition_version": {
+            "type": "string",
+            "title": "Definition Version"
+          },
+          "from": {
+            "type": "string",
+            "format": "date",
+            "title": "From"
+          },
+          "through": {
+            "type": "string",
+            "format": "date",
+            "title": "Through"
+          },
+          "sessions": {
+            "type": "integer",
+            "title": "Sessions"
+          }
+        },
+        "type": "object",
+        "required": [
+          "sha256",
+          "definition_version",
+          "from",
+          "through",
+          "sessions"
+        ],
+        "title": "ClassificationFingerprint",
+        "description": "The TOPIX closes a discovery read (from its look-back start through the search end)."
+      },
+      "Coverage": {
+        "properties": {
+          "sessions": {
+            "type": "integer",
+            "title": "Sessions"
+          },
+          "first": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First"
+          },
+          "last": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last"
+          },
+          "ranges": {
+            "items": {
+              "prefixItems": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "string",
+                  "format": "date"
+                }
+              ],
+              "type": "array",
+              "maxItems": 2,
+              "minItems": 2
+            },
+            "type": "array",
+            "title": "Ranges"
+          }
+        },
+        "type": "object",
+        "required": [
+          "sessions",
+          "first",
+          "last",
+          "ranges"
+        ],
+        "title": "Coverage"
       },
       "DataQuality": {
         "properties": {
@@ -1566,6 +2549,455 @@
           "recent_jobs"
         ],
         "title": "DataStatus"
+      },
+      "DiscoveryDetail": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "running",
+              "completed",
+              "failed"
+            ],
+            "title": "Status"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "definition_version": {
+            "type": "string",
+            "title": "Definition Version"
+          },
+          "definition": {
+            "$ref": "#/components/schemas/RegimeRules"
+          },
+          "parameters": {
+            "$ref": "#/components/schemas/DiscoveryParameters"
+          },
+          "fingerprint": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ClassificationFingerprint"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "diagnostics": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DiscoveryDiagnostics"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "intervals": {
+            "items": {
+              "$ref": "#/components/schemas/IntervalOut"
+            },
+            "type": "array",
+            "title": "Intervals"
+          },
+          "max_batch_runs": {
+            "type": "integer",
+            "title": "Max Batch Runs"
+          },
+          "batches": {
+            "items": {
+              "$ref": "#/components/schemas/BatchRef"
+            },
+            "type": "array",
+            "title": "Batches"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "status",
+          "error",
+          "created_at",
+          "finished_at",
+          "definition_version",
+          "definition",
+          "parameters",
+          "fingerprint",
+          "diagnostics",
+          "intervals",
+          "max_batch_runs",
+          "batches"
+        ],
+        "title": "DiscoveryDetail"
+      },
+      "DiscoveryDiagnostics": {
+        "properties": {
+          "search_sessions": {
+            "type": "integer",
+            "title": "Search Sessions"
+          },
+          "matched_sessions": {
+            "type": "integer",
+            "title": "Matched Sessions"
+          },
+          "warmup_unknown": {
+            "items": {
+              "prefixItems": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "string",
+                  "format": "date"
+                }
+              ],
+              "type": "array",
+              "maxItems": 2,
+              "minItems": 2
+            },
+            "type": "array",
+            "title": "Warmup Unknown"
+          },
+          "gap_unknown": {
+            "items": {
+              "prefixItems": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "string",
+                  "format": "date"
+                }
+              ],
+              "type": "array",
+              "maxItems": 2,
+              "minItems": 2
+            },
+            "type": "array",
+            "title": "Gap Unknown"
+          },
+          "gaps": {
+            "items": {
+              "type": "string",
+              "format": "date"
+            },
+            "type": "array",
+            "title": "Gaps"
+          },
+          "trend_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Trend Counts"
+          },
+          "vol_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Vol Counts"
+          }
+        },
+        "type": "object",
+        "required": [
+          "search_sessions",
+          "matched_sessions",
+          "warmup_unknown",
+          "gap_unknown",
+          "gaps",
+          "trend_counts",
+          "vol_counts"
+        ],
+        "title": "DiscoveryDiagnostics"
+      },
+      "DiscoveryIn": {
+        "properties": {
+          "request_key": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Request Key"
+          },
+          "search_from": {
+            "type": "string",
+            "format": "date",
+            "title": "Search From"
+          },
+          "search_to": {
+            "type": "string",
+            "format": "date",
+            "title": "Search To"
+          },
+          "trend": {
+            "type": "string",
+            "enum": [
+              "up",
+              "down",
+              "neutral"
+            ],
+            "title": "Trend"
+          },
+          "volatility": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "high",
+                  "low"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Volatility"
+          }
+        },
+        "type": "object",
+        "required": [
+          "request_key",
+          "search_from",
+          "search_to",
+          "trend"
+        ],
+        "title": "DiscoveryIn"
+      },
+      "DiscoveryParameters": {
+        "properties": {
+          "search_from": {
+            "type": "string",
+            "format": "date",
+            "title": "Search From"
+          },
+          "search_to": {
+            "type": "string",
+            "format": "date",
+            "title": "Search To"
+          },
+          "trend": {
+            "type": "string",
+            "enum": [
+              "up",
+              "down",
+              "neutral"
+            ],
+            "title": "Trend"
+          },
+          "volatility": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "high",
+                  "low"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Volatility"
+          }
+        },
+        "type": "object",
+        "required": [
+          "search_from",
+          "search_to",
+          "trend",
+          "volatility"
+        ],
+        "title": "DiscoveryParameters"
+      },
+      "Distribution": {
+        "properties": {
+          "weighting": {
+            "type": "string",
+            "const": "equal_per_completed_segment",
+            "title": "Weighting"
+          },
+          "selected": {
+            "type": "integer",
+            "title": "Selected"
+          },
+          "completed": {
+            "type": "integer",
+            "title": "Completed"
+          },
+          "failed": {
+            "type": "integer",
+            "title": "Failed"
+          },
+          "unfinished": {
+            "type": "integer",
+            "title": "Unfinished"
+          },
+          "denominator": {
+            "type": "integer",
+            "title": "Denominator"
+          },
+          "returns": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Returns"
+          },
+          "excess_returns": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Excess Returns"
+          },
+          "median_return": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Median Return"
+          },
+          "median_excess": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Median Excess"
+          },
+          "profitable": {
+            "type": "integer",
+            "title": "Profitable"
+          },
+          "flat": {
+            "type": "integer",
+            "title": "Flat"
+          },
+          "losing": {
+            "type": "integer",
+            "title": "Losing"
+          },
+          "profitable_ratio": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Profitable Ratio"
+          },
+          "beat_topix": {
+            "type": "integer",
+            "title": "Beat Topix"
+          },
+          "tied_topix": {
+            "type": "integer",
+            "title": "Tied Topix"
+          },
+          "behind_topix": {
+            "type": "integer",
+            "title": "Behind Topix"
+          },
+          "beat_ratio": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Beat Ratio"
+          },
+          "worst": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorstSegment"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "worst_excess": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorstExcessSegment"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "coverage": {
+            "$ref": "#/components/schemas/Coverage"
+          }
+        },
+        "type": "object",
+        "required": [
+          "weighting",
+          "selected",
+          "completed",
+          "failed",
+          "unfinished",
+          "denominator",
+          "returns",
+          "excess_returns",
+          "median_return",
+          "median_excess",
+          "profitable",
+          "flat",
+          "losing",
+          "profitable_ratio",
+          "beat_topix",
+          "tied_topix",
+          "behind_topix",
+          "beat_ratio",
+          "worst",
+          "worst_excess",
+          "coverage"
+        ],
+        "title": "Distribution",
+        "description": "Completed segments side by side, each weighing the same; nothing chained."
       },
       "FiguresOut": {
         "properties": {
@@ -1761,6 +3193,100 @@
           "market"
         ],
         "title": "InstrumentOut"
+      },
+      "IntervalOut": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "start_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Start Date"
+          },
+          "end_date": {
+            "type": "string",
+            "format": "date",
+            "title": "End Date"
+          },
+          "sessions": {
+            "type": "integer",
+            "title": "Sessions"
+          },
+          "topix_start": {
+            "type": "number",
+            "title": "Topix Start"
+          },
+          "topix_end": {
+            "type": "number",
+            "title": "Topix End"
+          },
+          "topix_return": {
+            "type": "number",
+            "title": "Topix Return"
+          },
+          "rv20_min": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rv20 Min"
+          },
+          "rv20_max": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rv20 Max"
+          },
+          "single_day": {
+            "type": "boolean",
+            "title": "Single Day"
+          },
+          "short": {
+            "type": "boolean",
+            "title": "Short"
+          },
+          "truncated_start": {
+            "type": "boolean",
+            "title": "Truncated Start"
+          },
+          "at_search_end": {
+            "type": "boolean",
+            "title": "At Search End"
+          },
+          "sessions_before": {
+            "type": "integer",
+            "title": "Sessions Before"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "start_date",
+          "end_date",
+          "sessions",
+          "topix_start",
+          "topix_end",
+          "topix_return",
+          "rv20_min",
+          "rv20_max",
+          "single_day",
+          "short",
+          "truncated_start",
+          "at_search_end",
+          "sessions_before"
+        ],
+        "title": "IntervalOut"
       },
       "JobResultOut": {
         "properties": {
@@ -2131,6 +3657,225 @@
         ],
         "title": "Refusal",
         "description": "Why a request was turned away (FastAPI's `HTTPException` shape)."
+      },
+      "RegimeDefinition": {
+        "properties": {
+          "version": {
+            "type": "string",
+            "title": "Version"
+          },
+          "index": {
+            "type": "string",
+            "title": "Index"
+          },
+          "field": {
+            "type": "string",
+            "title": "Field"
+          },
+          "ma_sessions": {
+            "type": "integer",
+            "title": "Ma Sessions"
+          },
+          "slope_sessions": {
+            "type": "integer",
+            "title": "Slope Sessions"
+          },
+          "gap_threshold": {
+            "type": "string",
+            "title": "Gap Threshold"
+          },
+          "rv_sessions": {
+            "type": "integer",
+            "title": "Rv Sessions"
+          },
+          "annualisation": {
+            "type": "integer",
+            "title": "Annualisation"
+          },
+          "rv_history": {
+            "type": "integer",
+            "title": "Rv History"
+          },
+          "short_sessions": {
+            "type": "integer",
+            "title": "Short Sessions"
+          },
+          "trend_min_closes": {
+            "type": "integer",
+            "title": "Trend Min Closes"
+          },
+          "full_min_closes": {
+            "type": "integer",
+            "title": "Full Min Closes"
+          },
+          "formulas": {
+            "$ref": "#/components/schemas/RegimeFormulas"
+          },
+          "topix_from": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Topix From"
+          },
+          "topix_through": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Topix Through"
+          }
+        },
+        "type": "object",
+        "required": [
+          "version",
+          "index",
+          "field",
+          "ma_sessions",
+          "slope_sessions",
+          "gap_threshold",
+          "rv_sessions",
+          "annualisation",
+          "rv_history",
+          "short_sessions",
+          "trend_min_closes",
+          "full_min_closes",
+          "formulas",
+          "topix_from",
+          "topix_through"
+        ],
+        "title": "RegimeDefinition"
+      },
+      "RegimeFormulas": {
+        "properties": {
+          "ma200": {
+            "type": "string",
+            "title": "Ma200"
+          },
+          "gap": {
+            "type": "string",
+            "title": "Gap"
+          },
+          "slope20": {
+            "type": "string",
+            "title": "Slope20"
+          },
+          "trend": {
+            "type": "string",
+            "title": "Trend"
+          },
+          "rv20": {
+            "type": "string",
+            "title": "Rv20"
+          },
+          "rv_threshold": {
+            "type": "string",
+            "title": "Rv Threshold"
+          },
+          "vol": {
+            "type": "string",
+            "title": "Vol"
+          },
+          "unknown": {
+            "type": "string",
+            "title": "Unknown"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ma200",
+          "gap",
+          "slope20",
+          "trend",
+          "rv20",
+          "rv_threshold",
+          "vol",
+          "unknown"
+        ],
+        "title": "RegimeFormulas"
+      },
+      "RegimeRules": {
+        "properties": {
+          "version": {
+            "type": "string",
+            "title": "Version"
+          },
+          "index": {
+            "type": "string",
+            "title": "Index"
+          },
+          "field": {
+            "type": "string",
+            "title": "Field"
+          },
+          "ma_sessions": {
+            "type": "integer",
+            "title": "Ma Sessions"
+          },
+          "slope_sessions": {
+            "type": "integer",
+            "title": "Slope Sessions"
+          },
+          "gap_threshold": {
+            "type": "string",
+            "title": "Gap Threshold"
+          },
+          "rv_sessions": {
+            "type": "integer",
+            "title": "Rv Sessions"
+          },
+          "annualisation": {
+            "type": "integer",
+            "title": "Annualisation"
+          },
+          "rv_history": {
+            "type": "integer",
+            "title": "Rv History"
+          },
+          "short_sessions": {
+            "type": "integer",
+            "title": "Short Sessions"
+          },
+          "trend_min_closes": {
+            "type": "integer",
+            "title": "Trend Min Closes"
+          },
+          "full_min_closes": {
+            "type": "integer",
+            "title": "Full Min Closes"
+          },
+          "formulas": {
+            "$ref": "#/components/schemas/RegimeFormulas"
+          }
+        },
+        "type": "object",
+        "required": [
+          "version",
+          "index",
+          "field",
+          "ma_sessions",
+          "slope_sessions",
+          "gap_threshold",
+          "rv_sessions",
+          "annualisation",
+          "rv_history",
+          "short_sessions",
+          "trend_min_closes",
+          "full_min_closes",
+          "formulas"
+        ],
+        "title": "RegimeRules",
+        "description": "The fixed classification definition; a change to it is a new version."
       },
       "ResearchAccepted": {
         "properties": {
@@ -2744,6 +4489,127 @@
         ],
         "title": "SecurityGap"
       },
+      "SegmentAttempt": {
+        "properties": {
+          "attempt": {
+            "type": "integer",
+            "title": "Attempt"
+          },
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "running",
+              "completed",
+              "failed"
+            ],
+            "title": "Status"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          },
+          "retry_of": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retry Of"
+          }
+        },
+        "type": "object",
+        "required": [
+          "attempt",
+          "run_id",
+          "status",
+          "error",
+          "created_at",
+          "retry_of"
+        ],
+        "title": "SegmentAttempt"
+      },
+      "SegmentMetrics": {
+        "properties": {
+          "sessions": {
+            "type": "integer",
+            "title": "Sessions"
+          },
+          "total_return": {
+            "type": "number",
+            "title": "Total Return"
+          },
+          "topix_return": {
+            "type": "number",
+            "title": "Topix Return"
+          },
+          "excess_return": {
+            "type": "number",
+            "title": "Excess Return"
+          },
+          "max_drawdown": {
+            "type": "number",
+            "title": "Max Drawdown"
+          },
+          "trades": {
+            "type": "integer",
+            "title": "Trades"
+          },
+          "fees": {
+            "type": "number",
+            "title": "Fees"
+          },
+          "realised_pnl": {
+            "type": "number",
+            "title": "Realised Pnl"
+          },
+          "unrealised_pnl": {
+            "type": "number",
+            "title": "Unrealised Pnl"
+          },
+          "holdings": {
+            "type": "integer",
+            "title": "Holdings"
+          },
+          "pending": {
+            "type": "integer",
+            "title": "Pending"
+          }
+        },
+        "type": "object",
+        "required": [
+          "sessions",
+          "total_return",
+          "topix_return",
+          "excess_return",
+          "max_drawdown",
+          "trades",
+          "fees",
+          "realised_pnl",
+          "unrealised_pnl",
+          "holdings",
+          "pending"
+        ],
+        "title": "SegmentMetrics"
+      },
       "SignalsOut": {
         "properties": {
           "strategy": {
@@ -2842,6 +4708,66 @@
           "type"
         ],
         "title": "ValidationError"
+      },
+      "WorstExcessSegment": {
+        "properties": {
+          "position": {
+            "type": "integer",
+            "title": "Position"
+          },
+          "start_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Start Date"
+          },
+          "end_date": {
+            "type": "string",
+            "format": "date",
+            "title": "End Date"
+          },
+          "excess_return": {
+            "type": "number",
+            "title": "Excess Return"
+          }
+        },
+        "type": "object",
+        "required": [
+          "position",
+          "start_date",
+          "end_date",
+          "excess_return"
+        ],
+        "title": "WorstExcessSegment"
+      },
+      "WorstSegment": {
+        "properties": {
+          "position": {
+            "type": "integer",
+            "title": "Position"
+          },
+          "start_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Start Date"
+          },
+          "end_date": {
+            "type": "string",
+            "format": "date",
+            "title": "End Date"
+          },
+          "total_return": {
+            "type": "number",
+            "title": "Total Return"
+          }
+        },
+        "type": "object",
+        "required": [
+          "position",
+          "start_date",
+          "end_date",
+          "total_return"
+        ],
+        "title": "WorstSegment"
       }
     }
   }

@@ -75,9 +75,12 @@ class Research:
             pass
 
     def _interrupt_stale(self):
+        """Under the writer lock nothing runs, so whatever still says it does was cut off."""
         with self._engine.begin() as con:
             con.execute(update(db.runs).where(db.runs.c.status.in_(["queued", "running"])).values(
                 status="failed", error="服务中断，结果未完成；请显式重试（将创建新运行）", finished_at=_now()))
+            con.execute(update(db.discoveries).where(db.discoveries.c.status.in_(["queued", "running"])).values(
+                status="failed", error="服务中断，区间发现未完成；请重新发现", finished_at=_now()))
 
     def _existing(self, key, request):
         with self._engine.connect() as con:

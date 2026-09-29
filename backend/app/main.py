@@ -11,7 +11,10 @@ from typing import Any
 from fastapi import FastAPI
 
 from app.api import accounts as accounts_api, data, jobs as jobs_api, signals, research as research_api
+from app.api import research_regimes as research_regimes_api
 from app.accounts.research import Research
+from app.accounts.research_batches import ResearchBatches
+from app.accounts.research_discovery import RegimeDiscoveries
 from app.db import create_engine_for
 from app.config import Settings
 from app.jobs import DailySync, Jobs
@@ -35,8 +38,11 @@ def create_app(
     market = build_market(settings, client=client, today=today)
     accounts = build_accounts(settings, market, strategies=strategies)
     jobs = Jobs(settings.runtime_dir)
-    research = Research(create_engine_for(settings), market, jobs, settings.runtime_dir,
+    engine = create_engine_for(settings)
+    research = Research(engine, market, jobs, settings.runtime_dir,
                         **({"strategies": strategies} if strategies else {}))
+    research_batches = ResearchBatches(engine, research, jobs)
+    regime_discoveries = RegimeDiscoveries(engine, market, jobs, research_batches, research)
     timer = DailySync(
         jobs,
         make_job=lambda: sync_job(market, accounts),
@@ -62,11 +68,14 @@ def create_app(
     app.state.accounts = accounts
     app.state.jobs = jobs
     app.state.research = research
+    app.state.research_batches = research_batches
+    app.state.regime_discoveries = regime_discoveries
     app.include_router(data.router)
     app.include_router(jobs_api.router)
     app.include_router(signals.router)
     app.include_router(accounts_api.router)
     app.include_router(research_api.router)
+    app.include_router(research_regimes_api.router)
     return app
 
 

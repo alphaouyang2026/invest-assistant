@@ -330,6 +330,109 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/research/regimes/definition": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Definition */
+        get: operations["definition_api_research_regimes_definition_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/research/discoveries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Discover */
+        post: operations["discover_api_research_discoveries_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/research/discoveries/{discovery_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Discovery */
+        get: operations["discovery_api_research_discoveries__discovery_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/research/batches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Batches */
+        get: operations["batches_api_research_batches_get"];
+        put?: never;
+        /** Submit Batch */
+        post: operations["submit_batch_api_research_batches_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/research/batches/{batch_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Batch */
+        get: operations["batch_api_research_batches__batch_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/research/batches/{batch_id}/segments/{position}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Retry Segment */
+        post: operations["retry_segment_api_research_batches__batch_id__segments__position__retry_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -486,6 +589,191 @@ export interface components {
             /** Volume */
             volume: number | null;
         };
+        /**
+         * BatchConfig
+         * @description The source's configuration frozen for every segment; each run adds its own range.
+         */
+        BatchConfig: {
+            /** Name */
+            name: string;
+            /** Strategy */
+            strategy: string;
+            /** Strategy Params */
+            strategy_params: {
+                [key: string]: unknown;
+            };
+            /** Portfolio Rules */
+            portfolio_rules: {
+                [key: string]: unknown;
+            };
+            /** Costs */
+            costs: {
+                [key: string]: string;
+            };
+            /** Source Account Id */
+            source_account_id: number;
+        };
+        /** BatchDetail */
+        BatchDetail: {
+            /** Id */
+            id: string;
+            /** Created At */
+            created_at: string;
+            /** Discovery Id */
+            discovery_id: string | null;
+            selection: components["schemas"]["BatchSelection"];
+            config: components["schemas"]["BatchConfig"];
+            /** Input Check */
+            input_check: {
+                [key: string]: unknown;
+            } | null;
+            /** Code Version */
+            code_version: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "queued" | "running" | "completed" | "partial" | "failed";
+            /** Max Batch Runs */
+            max_batch_runs: number;
+            /** Segments */
+            segments: components["schemas"]["BatchSegment"][];
+            distribution: components["schemas"]["Distribution"];
+        };
+        /** BatchHistory */
+        BatchHistory: {
+            /** Total */
+            total: number;
+            /** Page */
+            page: number;
+            /** Page Size */
+            page_size: number;
+            /** Batches */
+            batches: components["schemas"]["BatchSummary"][];
+        };
+        /** BatchIn */
+        BatchIn: {
+            /**
+             * Request Key
+             * Format: uuid
+             */
+            request_key: string;
+            /** Discovery Id */
+            discovery_id: string;
+            /** Interval Ids */
+            interval_ids: number[];
+            /** Source Account Id */
+            source_account_id: number;
+            /**
+             * Entry Above
+             * @default 0.5
+             */
+            entry_above: number;
+            /**
+             * Exit Below
+             * @default -0.1
+             */
+            exit_below: number;
+        };
+        /** BatchRef */
+        BatchRef: {
+            /** Id */
+            id: string;
+            /** Created At */
+            created_at: string;
+            selection: components["schemas"]["BatchSelection"];
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "queued" | "running" | "completed" | "partial" | "failed";
+        };
+        /** BatchRetryAccepted */
+        BatchRetryAccepted: {
+            /** Id */
+            id: string;
+            /** Run Id */
+            run_id: string;
+        };
+        /** BatchRetryIn */
+        BatchRetryIn: {
+            /**
+             * Request Key
+             * Format: uuid
+             */
+            request_key: string;
+        };
+        /** BatchSegment */
+        BatchSegment: {
+            /** Position */
+            position: number;
+            /** Interval Id */
+            interval_id: number | null;
+            /**
+             * Start Date
+             * Format: date
+             */
+            start_date: string;
+            /**
+             * End Date
+             * Format: date
+             */
+            end_date: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "queued" | "running" | "completed" | "failed";
+            /** Run Id */
+            run_id: string;
+            /** Progress */
+            progress: {
+                [key: string]: unknown;
+            };
+            /** Error */
+            error: string | null;
+            /** Attempts */
+            attempts: components["schemas"]["SegmentAttempt"][];
+            metrics: components["schemas"]["SegmentMetrics"] | null;
+        };
+        /** BatchSelection */
+        BatchSelection: {
+            /**
+             * Interval Ids
+             * @default []
+             */
+            interval_ids: number[];
+            /** Candidate Count */
+            candidate_count?: number | null;
+        };
+        /** BatchSummary */
+        BatchSummary: {
+            /** Id */
+            id: string;
+            /** Created At */
+            created_at: string;
+            /** Discovery Id */
+            discovery_id: string | null;
+            /** Source Account Id */
+            source_account_id: number;
+            /** Source Name */
+            source_name: string;
+            /** Entry Above */
+            entry_above: number;
+            /** Exit Below */
+            exit_below: number;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "queued" | "running" | "completed" | "partial" | "failed";
+            /** Segments */
+            segments: number;
+            /** Completed */
+            completed: number;
+            /** Failed */
+            failed: number;
+        };
         /** CandidateOut */
         CandidateOut: {
             /** Code */
@@ -498,6 +786,42 @@ export interface components {
             priority: number | null;
             /** Reason Codes */
             reason_codes: string[];
+        };
+        /**
+         * ClassificationFingerprint
+         * @description The TOPIX closes a discovery read (from its look-back start through the search end).
+         */
+        ClassificationFingerprint: {
+            /** Sha256 */
+            sha256: string;
+            /** Definition Version */
+            definition_version: string;
+            /**
+             * From
+             * Format: date
+             */
+            from: string;
+            /**
+             * Through
+             * Format: date
+             */
+            through: string;
+            /** Sessions */
+            sessions: number;
+        };
+        /** Coverage */
+        Coverage: {
+            /** Sessions */
+            sessions: number;
+            /** First */
+            first: string | null;
+            /** Last */
+            last: string | null;
+            /** Ranges */
+            ranges: [
+                string,
+                string
+            ][];
         };
         /** DataQuality */
         DataQuality: {
@@ -520,6 +844,154 @@ export interface components {
             bar_rows: number;
             /** Recent Jobs */
             recent_jobs: components["schemas"]["JobResultOut"][];
+        };
+        /** DiscoveryDetail */
+        DiscoveryDetail: {
+            /** Id */
+            id: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "queued" | "running" | "completed" | "failed";
+            /** Error */
+            error: string | null;
+            /** Created At */
+            created_at: string;
+            /** Finished At */
+            finished_at: string | null;
+            /** Definition Version */
+            definition_version: string;
+            definition: components["schemas"]["RegimeRules"];
+            parameters: components["schemas"]["DiscoveryParameters"];
+            fingerprint: components["schemas"]["ClassificationFingerprint"] | null;
+            diagnostics: components["schemas"]["DiscoveryDiagnostics"] | null;
+            /** Intervals */
+            intervals: components["schemas"]["IntervalOut"][];
+            /** Max Batch Runs */
+            max_batch_runs: number;
+            /** Batches */
+            batches: components["schemas"]["BatchRef"][];
+        };
+        /** DiscoveryDiagnostics */
+        DiscoveryDiagnostics: {
+            /** Search Sessions */
+            search_sessions: number;
+            /** Matched Sessions */
+            matched_sessions: number;
+            /** Warmup Unknown */
+            warmup_unknown: [
+                string,
+                string
+            ][];
+            /** Gap Unknown */
+            gap_unknown: [
+                string,
+                string
+            ][];
+            /** Gaps */
+            gaps: string[];
+            /** Trend Counts */
+            trend_counts: {
+                [key: string]: number;
+            };
+            /** Vol Counts */
+            vol_counts: {
+                [key: string]: number;
+            };
+        };
+        /** DiscoveryIn */
+        DiscoveryIn: {
+            /**
+             * Request Key
+             * Format: uuid
+             */
+            request_key: string;
+            /**
+             * Search From
+             * Format: date
+             */
+            search_from: string;
+            /**
+             * Search To
+             * Format: date
+             */
+            search_to: string;
+            /**
+             * Trend
+             * @enum {string}
+             */
+            trend: "up" | "down" | "neutral";
+            /** Volatility */
+            volatility?: ("high" | "low") | null;
+        };
+        /** DiscoveryParameters */
+        DiscoveryParameters: {
+            /**
+             * Search From
+             * Format: date
+             */
+            search_from: string;
+            /**
+             * Search To
+             * Format: date
+             */
+            search_to: string;
+            /**
+             * Trend
+             * @enum {string}
+             */
+            trend: "up" | "down" | "neutral";
+            /** Volatility */
+            volatility: ("high" | "low") | null;
+        };
+        /**
+         * Distribution
+         * @description Completed segments side by side, each weighing the same; nothing chained.
+         */
+        Distribution: {
+            /**
+             * Weighting
+             * @constant
+             */
+            weighting: "equal_per_completed_segment";
+            /** Selected */
+            selected: number;
+            /** Completed */
+            completed: number;
+            /** Failed */
+            failed: number;
+            /** Unfinished */
+            unfinished: number;
+            /** Denominator */
+            denominator: number;
+            /** Returns */
+            returns: number[];
+            /** Excess Returns */
+            excess_returns: number[];
+            /** Median Return */
+            median_return: number | null;
+            /** Median Excess */
+            median_excess: number | null;
+            /** Profitable */
+            profitable: number;
+            /** Flat */
+            flat: number;
+            /** Losing */
+            losing: number;
+            /** Profitable Ratio */
+            profitable_ratio: number | null;
+            /** Beat Topix */
+            beat_topix: number;
+            /** Tied Topix */
+            tied_topix: number;
+            /** Behind Topix */
+            behind_topix: number;
+            /** Beat Ratio */
+            beat_ratio: number | null;
+            worst: components["schemas"]["WorstSegment"] | null;
+            worst_excess: components["schemas"]["WorstExcessSegment"] | null;
+            coverage: components["schemas"]["Coverage"];
         };
         /**
          * FiguresOut
@@ -580,6 +1052,43 @@ export interface components {
             name_en: string;
             /** Market */
             market: string | null;
+        };
+        /** IntervalOut */
+        IntervalOut: {
+            /** Id */
+            id: number;
+            /**
+             * Start Date
+             * Format: date
+             */
+            start_date: string;
+            /**
+             * End Date
+             * Format: date
+             */
+            end_date: string;
+            /** Sessions */
+            sessions: number;
+            /** Topix Start */
+            topix_start: number;
+            /** Topix End */
+            topix_end: number;
+            /** Topix Return */
+            topix_return: number;
+            /** Rv20 Min */
+            rv20_min: number | null;
+            /** Rv20 Max */
+            rv20_max: number | null;
+            /** Single Day */
+            single_day: boolean;
+            /** Short */
+            short: boolean;
+            /** Truncated Start */
+            truncated_start: boolean;
+            /** At Search End */
+            at_search_end: boolean;
+            /** Sessions Before */
+            sessions_before: number;
         };
         /** JobResultOut */
         JobResultOut: {
@@ -731,6 +1240,88 @@ export interface components {
         Refusal: {
             /** Detail */
             detail: string;
+        };
+        /** RegimeDefinition */
+        RegimeDefinition: {
+            /** Version */
+            version: string;
+            /** Index */
+            index: string;
+            /** Field */
+            field: string;
+            /** Ma Sessions */
+            ma_sessions: number;
+            /** Slope Sessions */
+            slope_sessions: number;
+            /** Gap Threshold */
+            gap_threshold: string;
+            /** Rv Sessions */
+            rv_sessions: number;
+            /** Annualisation */
+            annualisation: number;
+            /** Rv History */
+            rv_history: number;
+            /** Short Sessions */
+            short_sessions: number;
+            /** Trend Min Closes */
+            trend_min_closes: number;
+            /** Full Min Closes */
+            full_min_closes: number;
+            formulas: components["schemas"]["RegimeFormulas"];
+            /** Topix From */
+            topix_from: string | null;
+            /** Topix Through */
+            topix_through: string | null;
+        };
+        /** RegimeFormulas */
+        RegimeFormulas: {
+            /** Ma200 */
+            ma200: string;
+            /** Gap */
+            gap: string;
+            /** Slope20 */
+            slope20: string;
+            /** Trend */
+            trend: string;
+            /** Rv20 */
+            rv20: string;
+            /** Rv Threshold */
+            rv_threshold: string;
+            /** Vol */
+            vol: string;
+            /** Unknown */
+            unknown: string;
+        };
+        /**
+         * RegimeRules
+         * @description The fixed classification definition; a change to it is a new version.
+         */
+        RegimeRules: {
+            /** Version */
+            version: string;
+            /** Index */
+            index: string;
+            /** Field */
+            field: string;
+            /** Ma Sessions */
+            ma_sessions: number;
+            /** Slope Sessions */
+            slope_sessions: number;
+            /** Gap Threshold */
+            gap_threshold: string;
+            /** Rv Sessions */
+            rv_sessions: number;
+            /** Annualisation */
+            annualisation: number;
+            /** Rv History */
+            rv_history: number;
+            /** Short Sessions */
+            short_sessions: number;
+            /** Trend Min Closes */
+            trend_min_closes: number;
+            /** Full Min Closes */
+            full_min_closes: number;
+            formulas: components["schemas"]["RegimeFormulas"];
         };
         /** ResearchAccepted */
         ResearchAccepted: {
@@ -961,6 +1552,49 @@ export interface components {
             /** Missing Sessions */
             missing_sessions: number;
         };
+        /** SegmentAttempt */
+        SegmentAttempt: {
+            /** Attempt */
+            attempt: number;
+            /** Run Id */
+            run_id: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "queued" | "running" | "completed" | "failed";
+            /** Error */
+            error: string | null;
+            /** Created At */
+            created_at: string;
+            /** Retry Of */
+            retry_of: string | null;
+        };
+        /** SegmentMetrics */
+        SegmentMetrics: {
+            /** Sessions */
+            sessions: number;
+            /** Total Return */
+            total_return: number;
+            /** Topix Return */
+            topix_return: number;
+            /** Excess Return */
+            excess_return: number;
+            /** Max Drawdown */
+            max_drawdown: number;
+            /** Trades */
+            trades: number;
+            /** Fees */
+            fees: number;
+            /** Realised Pnl */
+            realised_pnl: number;
+            /** Unrealised Pnl */
+            unrealised_pnl: number;
+            /** Holdings */
+            holdings: number;
+            /** Pending */
+            pending: number;
+        };
         /** SignalsOut */
         SignalsOut: {
             /** Strategy */
@@ -999,6 +1633,40 @@ export interface components {
             input?: unknown;
             /** Context */
             ctx?: Record<string, never>;
+        };
+        /** WorstExcessSegment */
+        WorstExcessSegment: {
+            /** Position */
+            position: number;
+            /**
+             * Start Date
+             * Format: date
+             */
+            start_date: string;
+            /**
+             * End Date
+             * Format: date
+             */
+            end_date: string;
+            /** Excess Return */
+            excess_return: number;
+        };
+        /** WorstSegment */
+        WorstSegment: {
+            /** Position */
+            position: number;
+            /**
+             * Start Date
+             * Format: date
+             */
+            start_date: string;
+            /**
+             * End Date
+             * Format: date
+             */
+            end_date: string;
+            /** Total Return */
+            total_return: number;
         };
     };
     responses: never;
@@ -1726,6 +2394,330 @@ export interface operations {
             };
             /** @description Conflict */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+        };
+    };
+    definition_api_research_regimes_definition_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RegimeDefinition"];
+                };
+            };
+        };
+    };
+    discover_api_research_discoveries_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DiscoveryIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResearchAccepted"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+        };
+    };
+    discovery_api_research_discoveries__discovery_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                discovery_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiscoveryDetail"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+        };
+    };
+    batches_api_research_batches_get: {
+        parameters: {
+            query?: {
+                page?: number;
+                page_size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BatchHistory"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    submit_batch_api_research_batches_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BatchIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResearchAccepted"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+            /** @description Precondition Failed */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+        };
+    };
+    batch_api_research_batches__batch_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                batch_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BatchDetail"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+        };
+    };
+    retry_segment_api_research_batches__batch_id__segments__position__retry_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                batch_id: string;
+                position: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BatchRetryIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BatchRetryAccepted"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+            /** @description Precondition Failed */
+            412: {
                 headers: {
                     [name: string]: unknown;
                 };
