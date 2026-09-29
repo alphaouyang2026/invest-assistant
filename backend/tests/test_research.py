@@ -10,7 +10,7 @@ from sqlalchemy import delete, insert, select, update
 from app.accounts import Accounts, AccountSpec, Costs
 from app.accounts import tables
 from app.accounts import research_tables
-from app.accounts.research import Research
+from app.accounts.research import ResearchRuns
 from app.config import Settings
 from app.jobs import Jobs, Job, JobOutcome, JobsBusy
 from app.main import create_app
@@ -36,7 +36,7 @@ def setup(migrated_database, tmp_path):
     accounts = Accounts(migrated_database, market, build_strategy=build)
     source = accounts.create(AccountSpec("来源", "technical_rating_v1", SESSIONS[1]))
     jobs = Jobs(tmp_path)
-    research = Research(migrated_database, market, jobs, tmp_path, strategies=build)
+    research = ResearchRuns(migrated_database, market, jobs, strategies=build)
     jobs.start()
     yield research, jobs, accounts, source, market
     jobs.stop()
@@ -70,7 +70,7 @@ def test_research_matches_paper_and_does_not_change_source(setup, migrated_datab
         assert list(con.execute(select(tables.paper_orders))) == before
     _, changed = run(research, jobs, payload(source, entry_above=.6))
     assert changed["result"]["trades"] == 0
-    assert changed["input_identity"] == result["input_identity"]
+    assert changed["input_fingerprint"] == result["input_fingerprint"]
 
 
 def test_single_day_and_end_holdings_pending_are_not_liquidated(setup):
@@ -96,7 +96,7 @@ def test_fees_return_and_end_valuation_worked_out_by_hand(migrated_database, tmp
     costs = Costs(commission_rate=Decimal("0.001"), commission_min=Decimal("100"), slippage=Decimal("0.001"))
     source = accounts.create(AccountSpec("有手续费", "technical_rating_v1", SESSIONS[1], costs=costs))
     jobs = Jobs(tmp_path)
-    research = Research(migrated_database, market, jobs, tmp_path, strategies=build)
+    research = ResearchRuns(migrated_database, market, jobs, strategies=build)
     jobs.start()
     try:
         # S1 close: NAV ¥10,000,000, a tenth less the 5% floor over 10 names = ¥950,000 → 900 shares at ¥1,000.
@@ -132,7 +132,7 @@ def test_no_trade_before_the_first_session_close(setup, migrated_database, tmp_p
     can only fill at the next session's open."""
     _, jobs, _, source, market = setup
     script = Script({SESSIONS[0]: {"13020": Disposition.HOLD}, SESSIONS[1]: {"13010": Disposition.HOLD}})
-    research = Research(migrated_database, market, jobs, tmp_path, strategies=lambda name, params: script)
+    research = ResearchRuns(migrated_database, market, jobs, strategies=lambda name, params: script)
     run_id, result = run(research, jobs, payload(source, start=SESSIONS[1], end=SESSIONS[3]))
     assert [day for day, _ in script.asked] == SESSIONS[1:4]  # warm-up days are never asked
     orders = list(reversed(research.orders(run_id, page_size=200)["orders"]))
@@ -161,18 +161,18 @@ def later_sync(engine, after):
                                            market_code="0111", product_category="011", sector33="3700"))
 
 
-def test_input_identity_ignores_later_syncs_but_not_changes_in_range(setup, migrated_database):
+def test_input_fingerprint_ignores_later_syncs_but_not_changes_in_range(setup, migrated_database):
     research, jobs, accounts, source, market = setup
     _, old = run(research, jobs, payload(source))
     later_sync(migrated_database, SESSIONS[7])
     _, again = run(research, jobs, payload(source))
-    assert again["input_identity"] == old["input_identity"]
+    assert again["input_fingerprint"] == old["input_fingerprint"]
     assert again["result"] == old["result"]
     # The roster changing inside the range is a different input.
     periods = market_tables.segment_periods
     with migrated_database.begin() as con:
         con.execute(update(periods).where(periods.c.code == "13020").values(valid_to=SESSIONS[3]))
-    assert market.research_identity(SESSIONS[0], SESSIONS[5])["sha256"] != old["input_identity"]["sha256"]
+    assert market.input_fingerprint(SESSIONS[0], SESSIONS[5])["sha256"] != old["input_fingerprint"]["sha256"]
 
 
 def test_saved_results_survive_source_deletion_and_market_correction(setup, migrated_database):
@@ -182,8 +182,8 @@ def test_saved_results_survive_source_deletion_and_market_correction(setup, migr
         con.execute(update(market_tables.daily_bars).where(market_tables.daily_bars.c.code == "13010",
                     market_tables.daily_bars.c.date == SESSIONS[3]).values(close=Decimal("1111")))
     _, new = run(research, jobs, payload(source))
-    assert new["input_identity"]["sha256"] != old["input_identity"]["sha256"]
-    assert new["input_identity"]["rows"] == old["input_identity"]["rows"]
+    assert new["input_fingerprint"]["sha256"] != old["input_fingerprint"]["sha256"]
+    assert new["input_fingerprint"]["rows"] == old["input_fingerprint"]["rows"]
     accounts.delete(source)
     assert research.get(run_id) == old
 

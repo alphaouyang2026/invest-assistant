@@ -10,7 +10,8 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import func, select, update
 
-from app.accounts import AccountSpec, regimes
+from app.accounts import AccountSpec
+from app.market_data import regimes
 from app.accounts import research_tables
 from app.accounts.research_batches import MAX_BATCH_RUNS
 from app.config import Settings
@@ -162,7 +163,7 @@ def test_discovery_lists_every_interval_and_a_batch_runs_the_chosen_ones(env):
     assert batch["status"] == "completed"
     assert batch["discovery_id"] == found["id"]
     assert batch["selection"] == {"interval_ids": [1, 2], "candidate_count": CANDIDATES}
-    assert batch["input_check"] == found["fingerprint"]
+    assert batch["classification_fingerprint"] == found["fingerprint"]
     assert [(s["position"], s["interval_id"], s["start_date"], s["end_date"]) for s in batch["segments"]] == [
         (n, i["id"], i["start_date"], i["end_date"]) for n, i in enumerate(found["intervals"][:2], 1)]
     assert batch["distribution"]["denominator"] == 2

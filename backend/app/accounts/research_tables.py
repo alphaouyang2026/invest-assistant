@@ -1,4 +1,12 @@
-"""Isolated, immutable research outputs. Source accounts are not foreign keys."""
+"""Isolated, immutable research outputs. Source accounts are not foreign keys.
+
+Two column names predate the glossary and are kept to spare a migration;
+code and API use the glossary names:
+- manual_research_runs.input_identity: the run's research input fingerprint
+  (研究输入指纹), `input_fingerprint`;
+- research_batches.input_check: the discovery's classification fingerprint,
+  `classification_fingerprint`.
+"""
 from sqlalchemy import Column, Integer, MetaData, Table, Text
 
 from app.accounts.tables import JsonText
@@ -15,7 +23,7 @@ runs = Table(
     Column("created_at", Text, nullable=False),
     Column("finished_at", Text),
     Column("progress", JsonText, nullable=False),
-    Column("input_identity", JsonText),
+    Column("input_identity", JsonText),  # input_fingerprint in code
     Column("code_version", Text, nullable=False),
     Column("error", Text),
     Column("result", JsonText),
@@ -36,7 +44,7 @@ batches = Table(
     Column("config", JsonText, nullable=False),  # frozen base configuration, without the range
     Column("discovery_id", Text),
     Column("selection", JsonText, nullable=False),
-    Column("input_check", JsonText),
+    Column("input_check", JsonText),  # classification_fingerprint in code
     Column("code_version", Text, nullable=False),
     Column("created_at", Text, nullable=False),
 )

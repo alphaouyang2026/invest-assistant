@@ -38,7 +38,7 @@ const batch = {
   id: "batch-1", created_at: "2026-09-29T00:00:02", discovery_id: "disc-1", selection: { interval_ids: [1, 2, 3], candidate_count: 3 },
   config: { name: "技术账户", strategy: "technical_rating_v1", strategy_params: { entry_above: .5, exit_below: -.1 },
     portfolio_rules: config.portfolio_rules, costs: config.costs, source_account_id: 1 },
-  input_check: null, code_version: "sha256:code", status: "partial", max_batch_runs: 20,
+  classification_fingerprint: null, code_version: "sha256:code", status: "partial", max_batch_runs: 20,
   segments: [
     segment(1, "completed", { metrics: metrics(.08, .05) }),
     segment(2, "completed", { metrics: metrics(0, 0) }),

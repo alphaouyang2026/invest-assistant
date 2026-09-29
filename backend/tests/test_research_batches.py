@@ -11,7 +11,7 @@ from sqlalchemy import func, select, update
 from app.accounts import Accounts, AccountSpec
 from app.accounts import tables
 from app.accounts import research_tables
-from app.accounts.research import Research
+from app.accounts.research import ResearchRuns
 from app.accounts.research_batches import MAX_BATCH_RUNS, ResearchBatches, SegmentSpec, StaleInput, distribution
 from app.jobs import Job, JobOutcome, Jobs, JobsBusy
 from app.market_data import tables as market_tables
@@ -43,7 +43,7 @@ def env(migrated_database, tmp_path):
     accounts = Accounts(migrated_database, market, build_strategy=build)
     source = accounts.create(AccountSpec("来源", "technical_rating_v1", S[1]))
     jobs = Jobs(tmp_path)
-    research = Research(migrated_database, market, jobs, tmp_path, strategies=build)
+    research = ResearchRuns(migrated_database, market, jobs, strategies=build)
     batches = ResearchBatches(migrated_database, research, jobs)
     jobs.start()
     yield SimpleNamespace(engine=migrated_database, market=market, boom=boom, accounts=accounts, source=source,
@@ -88,7 +88,7 @@ def test_each_segment_is_an_ordinary_run_with_its_own_capital(env):
     manual_id = env.research.submit(payload(env.source, start=S[3], end=S[5]), str(uuid4()))
     assert env.jobs.wait_until_idle()
     manual = env.research.get(manual_id)
-    for field in ("config", "result", "input_identity", "status"):
+    for field in ("config", "result", "input_fingerprint", "status"):
         assert child[field] == manual[field], field
     assert env.research.orders(child["id"]) == env.research.orders(manual_id)
     # Its first segment too, trades and all.
@@ -273,9 +273,9 @@ def test_same_batch_or_retry_sent_twice_at_once_is_accepted_once(env, monkeypatc
 
 def test_batches_remember_their_discovery_and_selection(env):
     selection = {"interval_ids": [1, 2, 3], "candidate_count": 4}
-    batch_id = submit(env, discovery_id="d1", selection=selection, input_check={"sha256": "x"})
+    batch_id = submit(env, discovery_id="d1", selection=selection, classification_fingerprint={"sha256": "x"})
     batch = env.batches.get(batch_id)
-    assert (batch["discovery_id"], batch["selection"], batch["input_check"]) == ("d1", selection, {"sha256": "x"})
+    assert (batch["discovery_id"], batch["selection"], batch["classification_fingerprint"]) == ("d1", selection, {"sha256": "x"})
     assert [s["interval_id"] for s in batch["segments"]] == [1, 2, 3]
     assert env.batches.for_discovery("d1") == [
         {"id": batch_id, "created_at": batch["created_at"], "selection": selection, "status": "completed"}]

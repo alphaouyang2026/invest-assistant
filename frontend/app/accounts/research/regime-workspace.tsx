@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { api, type Schemas } from "@/lib/api/client";
 import { signedPercent, tone } from "@/lib/format";
 import { Pager } from "../../pager";
 import { BatchView } from "./batch-view";
-import { BATCH_STATES, Configuration, message, STATES } from "./research-shared";
+import { BATCH_STATES, Configuration, message, poll, STATES, unfinished, useSubmit } from "./research-shared";
 
 type Definition = Schemas["RegimeDefinition"];
 const readDiscovery = (id: string, signal: AbortSignal) =>
@@ -50,12 +50,9 @@ export function RegimeWorkspace({ sources, sourceId = "", initialDiscovery = "",
   const [entry, setEntry] = useState("0.5");
   const [exit, setExit] = useState("-0.1");
   const [batchId, setBatchId] = useState(initialBatch);
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [stale, setStale] = useState<string | null>(null);
-  const sending = useRef(false);
-  // Reuse the key after a lost HTTP response; changing inputs creates a new attempt.
-  const request = useRef({ input: "", key: "" });
+  const { busy, send: submit } = useSubmit(setError);
   const chosen = sources.find(s => String(s.id) === source);
   const warmup = Number(chosen?.config.strategy_params.warmup_sessions ?? DEFAULT_WARMUP);
 
@@ -77,20 +74,9 @@ export function RegimeWorkspace({ sources, sourceId = "", initialDiscovery = "",
 
   useEffect(() => {
     if (!discoveryId) return;
-    const controller = new AbortController();
-    let timer: ReturnType<typeof setTimeout>;
     setDiscovery(current => (current?.id === discoveryId ? current : null));
-    const poll = async () => {
-      try {
-        const response = await readDiscovery(discoveryId, controller.signal);
-        if (response.error) throw response.error;
-        if (controller.signal.aborted) return;
-        setDiscovery(response.data);
-        if (["queued", "running"].includes(response.data.status)) timer = setTimeout(poll, 1500);
-      } catch (e) { if (!controller.signal.aborted) setError(message(e)); }
-    };
-    void poll();
-    return () => { controller.abort(); clearTimeout(timer); };
+    return poll(signal => readDiscovery(discoveryId, signal),
+      data => { setDiscovery(data); return unfinished(data.status); }, e => setError(message(e)));
   }, [discoveryId, discoveryVersion]);
 
   // A restored discovery puts its own search back into the form.
@@ -111,17 +97,9 @@ export function RegimeWorkspace({ sources, sourceId = "", initialDiscovery = "",
     setQuery({ discovery: discoveryId, batch: id });
   }
 
-  async function send<T>(input: unknown, call: (key: string) => Promise<T>) {
-    if (sending.current) return;
-    sending.current = true;
-    setBusy(true); setError(null); setStale(null);
-    const text = JSON.stringify(input);
-    if (request.current.input !== text) request.current = { input: text, key: crypto.randomUUID() };
-    try {
-      await call(request.current.key);
-      request.current = { input: "", key: "" };
-    } catch (e) { setError(message(e)); }
-    finally { sending.current = false; setBusy(false); }
+  function send(input: unknown, call: (key: string) => Promise<void>) {
+    setError(null); setStale(null);
+    return submit(input, call);
   }
 
   const discover = (parameters: Parameters) => send({ discover: parameters }, async key => {
@@ -184,7 +162,7 @@ export function RegimeWorkspace({ sources, sourceId = "", initialDiscovery = "",
       <div className="card-h"><h2>候选区间 · {STATES[discovery.status]}</h2>
         <span>{discovery.parameters.search_from} — {discovery.parameters.search_to} · {TRENDS[discovery.parameters.trend]}
           {discovery.parameters.volatility ? ` · ${VOLS[discovery.parameters.volatility]}` : " · 波动不限"} · {discovery.definition_version}</span></div>
-      {["queued", "running"].includes(discovery.status) && <p role="status">正在按 TOPIX 行情划分区间…</p>}
+      {unfinished(discovery.status) && <p role="status">正在按 TOPIX 行情划分区间…</p>}
       {discovery.status === "failed" && <p role="alert">区间发现失败：{discovery.error}</p>}
       {discovery.status === "completed" && <>
         {discovery.diagnostics && <Diagnostics diagnostics={discovery.diagnostics} count={intervals.length} />}

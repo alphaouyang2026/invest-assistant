@@ -110,7 +110,7 @@ def main():
         orders = [ledger(run) for run in (manual["id"], child["id"])]
         show({"manual_run": manual["id"], "batch_child": child["id"], "orders": len(orders[0]),
               "same_result": manual["result"] == child["result"], "same_orders": orders[0] == orders[1],
-              "same_input": manual["input_identity"]["sha256"] == child["input_identity"]["sha256"]})
+              "same_input": manual["input_fingerprint"]["sha256"] == child["input_fingerprint"]["sha256"]})
         print("Open /accounts/research?mode=regime&discovery=<id>&batch=<id> with this isolated DATABASE_PATH.")
 
 

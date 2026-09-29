@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api/client";
 import { signedPercent, tone, yen } from "@/lib/format";
-import { BATCH_STATES, Configuration, message, STATES } from "./research-shared";
+import { BATCH_STATES, Configuration, message, poll, STATES, unfinished, useSubmit } from "./research-shared";
 
 const readBatch = (id: string, signal: AbortSignal) =>
   api.GET("/api/research/batches/{batch_id}", { params: { path: { batch_id: id } }, signal });
@@ -12,7 +12,6 @@ const readBatch = (id: string, signal: AbortSignal) =>
 type Batch = NonNullable<Awaited<ReturnType<typeof readBatch>>["data"]>;
 type Segment = Batch["segments"][number];
 
-const active = (status: string) => status === "queued" || status === "running";
 const ratio = (value: number | null) => (value === null ? "—" : `${(value * 100).toFixed(1)}%`);
 
 /** One research batch: every segment side by side, then their distribution. Polls while anything is unfinished. */
@@ -21,50 +20,31 @@ export function BatchView({ id, onStatus, onDiscovery, onRediscover }: {
 }) {
   const [batch, setBatch] = useState<Batch | null>(null);
   const [version, setVersion] = useState(0);
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [stale, setStale] = useState<string | null>(null);
-  const sending = useRef(false);
-  const request = useRef({ input: "", key: "" });
+  const { busy, send } = useSubmit(setError);
   const callbacks = useRef({ onStatus, onDiscovery });
   callbacks.current = { onStatus, onDiscovery };
   const lastStatus = useRef<string | null>(null);
 
-  useEffect(() => {
-    const controller = new AbortController();
-    let timer: ReturnType<typeof setTimeout>;
-    const poll = async () => {
-      try {
-        const response = await readBatch(id, controller.signal);
-        if (response.error) throw response.error;
-        if (controller.signal.aborted) return;
-        const data = response.data;
-        setBatch(data);
-        if (lastStatus.current === null && data.discovery_id) callbacks.current.onDiscovery?.(data.discovery_id);
-        if (lastStatus.current !== null && lastStatus.current !== data.status) callbacks.current.onStatus?.();
-        lastStatus.current = data.status;
-        if (active(data.status) || data.segments.some(s => active(s.status))) timer = setTimeout(poll, 1500);
-      } catch (e) { if (!controller.signal.aborted) setError(message(e)); }
-    };
-    void poll();
-    return () => { controller.abort(); clearTimeout(timer); };
-  }, [id, version]);
+  useEffect(() => poll(signal => readBatch(id, signal), data => {
+    setBatch(data);
+    if (lastStatus.current === null && data.discovery_id) callbacks.current.onDiscovery?.(data.discovery_id);
+    if (lastStatus.current !== null && lastStatus.current !== data.status) callbacks.current.onStatus?.();
+    lastStatus.current = data.status;
+    return unfinished(data.status) || data.segments.some(s => unfinished(s.status));
+  }, e => setError(message(e))), [id, version]);
 
-  async function retry(position: number) {
-    if (sending.current) return;
-    sending.current = true;
-    setBusy(true); setError(null); setStale(null);
-    const input = `${id}:${position}`;
-    if (request.current.input !== input) request.current = { input, key: crypto.randomUUID() };
-    try {
+  function retry(position: number) {
+    setError(null); setStale(null);
+    return send({ batch: id, position }, async key => {
       const response = await api.POST("/api/research/batches/{batch_id}/segments/{position}/retry", {
-        params: { path: { batch_id: id, position } }, body: { request_key: request.current.key },
+        params: { path: { batch_id: id, position } }, body: { request_key: key },
       });
-      if (response.response.status === 412 && response.error) setStale(message(response.error));
-      else if (response.error) throw response.error;
-      else { request.current = { input: "", key: "" }; setVersion(v => v + 1); }
-    } catch (e) { setError(message(e)); }
-    finally { sending.current = false; setBusy(false); }
+      if (response.response.status === 412 && response.error) return setStale(message(response.error));
+      if (response.error) throw response.error;
+      setVersion(v => v + 1);
+    });
   }
 
   if (!batch) return error ? <p role="alert">{error}</p> : <p role="status">正在读取研究批次…</p>;

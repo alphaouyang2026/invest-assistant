@@ -46,7 +46,7 @@ def main():
             assert detail["status"] == "completed", detail
             summary = {k: v for k, v in detail["result"].items() if k not in ("nav", "holdings", "pending")}
             print(json.dumps({"run_id": run_id, "entry": entry, "seconds": round(time.monotonic() - started, 2),
-                              "input": detail["input_identity"], "result": summary}, ensure_ascii=False), flush=True)
+                              "input": detail["input_fingerprint"], "result": summary}, ensure_ascii=False), flush=True)
             assert client.get(f"/api/research/runs/{run_id}/orders?page_size=1").status_code == 200
         print("Both runs persisted; refresh via /accounts/research?run=<run_id> with this isolated DATABASE_PATH.")
 

@@ -1,4 +1,4 @@
-"""Interval discovery (04b-B): which ranges of the past matched a TOPIX
+"""Regime discovery (区间发现, 04b-B): which ranges of the past matched a TOPIX
 regime filter, and batches over the ones the user picks.
 
 A discovery is a job, like any other research job, under the shared writer
@@ -21,22 +21,29 @@ from decimal import Decimal
 import pandas as pd
 from sqlalchemy import Engine, insert, select, update
 
-from app.accounts import regimes
 from app.accounts import research_tables as db
-from app.accounts.research import Research
-from app.accounts.research_jobs import code_version, find_request, now, plain_json, submit_once
+from app.accounts.research_jobs import (
+    COMPLETED, FAILED, QUEUED, RUNNING, UNFINISHED, code_version, find_request, now, plain_json, submit_once,
+)
 from app.accounts.research_batches import MAX_BATCH_RUNS, ResearchBatches, SegmentSpec, StaleInput
 from app.jobs import Job, JobOutcome, Jobs, Progress
-from app.market_data import EXEC_CLOSE, MarketData
-
-TOPIX = "TOPIX"
+from app.market_data import EXEC_CLOSE, TOPIX, MarketData, regimes
 
 
 class RegimeDiscoveries:
-    def __init__(self, engine: Engine, market: MarketData, jobs: Jobs, batches: ResearchBatches,
-                 research: Research) -> None:
+    def __init__(self, engine: Engine, market: MarketData, jobs: Jobs, batches: ResearchBatches) -> None:
         self._engine, self._market, self._jobs = engine, market, jobs
-        self._batches, self._research = batches, research
+        self._batches = batches
+
+    def recover(self) -> None:
+        """At start-up; never marks another live process's discovery interrupted."""
+        self._jobs.when_idle(self.interrupt_unfinished)
+
+    def interrupt_unfinished(self) -> None:
+        """Call under the writer lock: a discovery that still says it runs was cut off."""
+        with self._engine.begin() as con:
+            con.execute(update(db.discoveries).where(db.discoveries.c.status.in_(UNFINISHED)).values(
+                status=FAILED, error="服务中断，区间发现未完成；请重新发现", finished_at=now()))
 
     def definition(self) -> dict:
         """The classification rules, and how far TOPIX goes (for the form's defaults)."""
@@ -51,20 +58,20 @@ class RegimeDiscoveries:
 
         def prepare() -> None:
             # Jobs holds the writer lock: nothing else is running.
-            self._research._interrupt_stale()
+            self.interrupt_unfinished()
             self._series(*_range(parameters))
             with self._engine.begin() as con:
                 con.execute(insert(db.discoveries).values(
                     id=discovery_id, request_key=key, request=parameters,
                     definition_version=regimes.DEFINITION.version, definition=regimes.DEFINITION.as_dict(),
-                    parameters=parameters, status="queued", code_version=code_version(), created_at=now()))
+                    parameters=parameters, status=QUEUED, code_version=code_version(), created_at=now()))
 
         return submit_once(self._jobs, Job("regime_discovery", lambda progress: self._run(discovery_id, progress)),
                            prepare=prepare, find=lambda: find_request(self._engine, db.discoveries, key, parameters),
                            new_id=discovery_id)
 
     def _run(self, discovery_id: str, progress: Progress) -> JobOutcome:
-        self._set(discovery_id, status="running")
+        self._set(discovery_id, status=RUNNING)
         try:
             parameters = self._row(discovery_id)["parameters"]
             search_from, search_to = _range(parameters)
@@ -79,12 +86,12 @@ class RegimeDiscoveries:
                          "end_date": i.end.isoformat(), "sessions": i.sessions, "data": _interval(i)}
                         for n, i in enumerate(found.intervals, 1)])
                 con.execute(update(db.discoveries).where(db.discoveries.c.id == discovery_id).values(
-                    status="completed", fingerprint=fingerprint, diagnostics=plain_json(asdict(found.diagnostics)),
+                    status=COMPLETED, fingerprint=fingerprint, diagnostics=plain_json(asdict(found.diagnostics)),
                     finished_at=now()))
             progress({"discovery_id": discovery_id, "intervals": len(found.intervals)})
             return JobOutcome({"discovery_id": discovery_id, "intervals": len(found.intervals)})
         except Exception as error:
-            self._set(discovery_id, status="failed", error=str(error), finished_at=now())
+            self._set(discovery_id, status=FAILED, error=str(error), finished_at=now())
             raise
 
     def get(self, discovery_id: str) -> dict:
@@ -124,7 +131,7 @@ class RegimeDiscoveries:
                      entry_above: float, exit_below: float, key: str) -> str:
         """Run one configuration over the chosen intervals of a discovery."""
         row = self._row(discovery_id)
-        if row["status"] != "completed":
+        if row["status"] != COMPLETED:
             raise ValueError("区间发现尚未完成，不能运行")
         with self._engine.connect() as con:
             stored = {r["interval_id"]: r for r in con.execute(select(db.discovery_intervals).where(
@@ -139,7 +146,7 @@ class RegimeDiscoveries:
             source_account_id=source_account_id, entry_above=entry_above, exit_below=exit_below,
             segments=segments, key=key, discovery_id=discovery_id,
             selection={"interval_ids": chosen, "candidate_count": len(stored)},
-            input_check=row["fingerprint"], precheck=self.check(discovery_id))
+            classification_fingerprint=row["fingerprint"], precheck=self.check(discovery_id))
 
     def retry_segment(self, batch_id: str, position: int, key: str) -> str:
         """Retry one failed segment; for a batch from a discovery, only while its TOPIX is unchanged."""
@@ -197,7 +204,7 @@ def _range(parameters: dict) -> tuple[date, date]:
     return date.fromisoformat(parameters["search_from"]), date.fromisoformat(parameters["search_to"])
 
 
-def _interval(interval: regimes.Interval) -> dict:
+def _interval(interval: regimes.RegimeInterval) -> dict:
     """What the list shows beyond the dates: TOPIX at both ends and the RV20 spread, as plain numbers."""
     shown = {key: value for key, value in asdict(interval).items() if key not in ("start", "end", "sessions")}
     shown["topix_start"], shown["topix_end"] = float(interval.topix_start), float(interval.topix_end)

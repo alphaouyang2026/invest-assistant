@@ -116,7 +116,7 @@ class RegimeFilter:
 
 
 @dataclass(frozen=True)
-class Interval:
+class RegimeInterval:
     start: date
     end: date
     sessions: int
@@ -149,7 +149,7 @@ class Discovery:
     search_from: date
     search_to: date
     labels: list[DayLabel]         # search sessions only
-    intervals: list[Interval]      # oldest first; empty = nothing matched
+    intervals: list[RegimeInterval]    # oldest first; empty = nothing matched
     diagnostics: Diagnostics
 
 
@@ -252,13 +252,13 @@ def discover(sessions: Sequence[date], closes: Mapping[date, Decimal | float | N
         else:
             runs.append([k])
 
-    def interval(run: list[int]) -> Interval:
+    def interval(run: list[int]) -> RegimeInterval:
         days = [searched[k] for k in run]
         start, end = days[0], days[-1]
         assert start.close is not None and end.close is not None
         spread = [label.rv20 for label in days if label.rv20 is not None]
         previous = labels[offset - 1] if offset > 0 else None
-        return Interval(
+        return RegimeInterval(
             start=start.day, end=end.day, sessions=len(days),
             topix_start=start.close, topix_end=end.close, topix_return=float(end.close / start.close - 1),
             rv20_min=min(spread) if spread else None, rv20_max=max(spread) if spread else None,

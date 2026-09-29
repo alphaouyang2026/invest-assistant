@@ -623,17 +623,14 @@ export interface components {
             discovery_id: string | null;
             selection: components["schemas"]["BatchSelection"];
             config: components["schemas"]["BatchConfig"];
-            /** Input Check */
-            input_check: {
-                [key: string]: unknown;
-            } | null;
+            classification_fingerprint: components["schemas"]["ClassificationFingerprint"] | null;
             /** Code Version */
             code_version: string;
             /**
              * Status
              * @enum {string}
              */
-            status: "queued" | "running" | "completed" | "partial" | "failed";
+            status: "queued" | "running" | "completed" | "failed" | "partial";
             /** Max Batch Runs */
             max_batch_runs: number;
             /** Segments */
@@ -653,15 +650,6 @@ export interface components {
         };
         /** BatchIn */
         BatchIn: {
-            /**
-             * Request Key
-             * Format: uuid
-             */
-            request_key: string;
-            /** Discovery Id */
-            discovery_id: string;
-            /** Interval Ids */
-            interval_ids: number[];
             /** Source Account Id */
             source_account_id: number;
             /**
@@ -674,6 +662,15 @@ export interface components {
              * @default -0.1
              */
             exit_below: number;
+            /**
+             * Request Key
+             * Format: uuid
+             */
+            request_key: string;
+            /** Discovery Id */
+            discovery_id: string;
+            /** Interval Ids */
+            interval_ids: number[];
         };
         /** BatchRef */
         BatchRef: {
@@ -686,7 +683,7 @@ export interface components {
              * Status
              * @enum {string}
              */
-            status: "queued" | "running" | "completed" | "partial" | "failed";
+            status: "queued" | "running" | "completed" | "failed" | "partial";
         };
         /** BatchRetryAccepted */
         BatchRetryAccepted: {
@@ -766,7 +763,7 @@ export interface components {
              * Status
              * @enum {string}
              */
-            status: "queued" | "running" | "completed" | "partial" | "failed";
+            status: "queued" | "running" | "completed" | "failed" | "partial";
             /** Segments */
             segments: number;
             /** Completed */
@@ -1376,8 +1373,8 @@ export interface components {
             progress: {
                 [key: string]: unknown;
             };
-            /** Input Identity */
-            input_identity: {
+            /** Input Fingerprint */
+            input_fingerprint: {
                 [key: string]: unknown;
             } | null;
             /** Code Version */
@@ -1417,23 +1414,8 @@ export interface components {
         };
         /** ResearchIn */
         ResearchIn: {
-            /**
-             * Request Key
-             * Format: uuid
-             */
-            request_key: string;
             /** Source Account Id */
             source_account_id: number;
-            /**
-             * Start Date
-             * Format: date
-             */
-            start_date: string;
-            /**
-             * End Date
-             * Format: date
-             */
-            end_date: string;
             /**
              * Entry Above
              * @default 0.5
@@ -1444,6 +1426,21 @@ export interface components {
              * @default -0.1
              */
             exit_below: number;
+            /**
+             * Request Key
+             * Format: uuid
+             */
+            request_key: string;
+            /**
+             * Start Date
+             * Format: date
+             */
+            start_date: string;
+            /**
+             * End Date
+             * Format: date
+             */
+            end_date: string;
         };
         /** ResearchOrders */
         ResearchOrders: {
@@ -1521,8 +1518,8 @@ export interface components {
             progress: {
                 [key: string]: unknown;
             };
-            /** Input Identity */
-            input_identity: {
+            /** Input Fingerprint */
+            input_fingerprint: {
                 [key: string]: unknown;
             } | null;
             /** Code Version */

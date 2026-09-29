@@ -8,8 +8,8 @@ ends, so a foreground backfill and the service never write at once. Every
 result is appended to `var/jobs.jsonl`; the job in progress lives only in
 memory — a restart loses it, and rerunning is the recovery.
 
-Callers see `submit`, `current` and `history`, plus `run_now` for the
-command line.
+Callers see `submit`, `current`, `history` and `when_idle`, plus `run_now`
+for the command line.
 """
 
 from __future__ import annotations
@@ -152,6 +152,25 @@ class Jobs:
         """True once no job is running; False if `timeout` ran out."""
         with self._changed:
             return self._changed.wait_for(lambda: self._current is None, timeout)
+
+    def when_idle(self, action: Callable[[], None]) -> bool:
+        """Run `action` under the writer lock if no job holds it, here or in
+        another process; False, without running it, if one does. For
+        recovery at start-up: whatever still says it is running while
+        nothing holds the lock was cut off — and nothing else is."""
+        with self._changed:
+            if self._current is not None:
+                return False
+            self._dir.mkdir(parents=True, exist_ok=True)
+            try:
+                self._lock.acquire(timeout=0)
+            except Timeout:
+                return False
+            try:
+                action()
+            finally:
+                self._lock.release()
+            return True
 
     def _work(self) -> None:
         while True:

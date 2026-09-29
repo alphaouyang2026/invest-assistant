@@ -24,13 +24,12 @@ from app.accounts.statistics import Figures, statistics
 from app.accounts.records import BUY, FILLED, SELL, Record
 from app.accounts.session import Bar, Costs, Session, corporate_actions, open_session, replace_sells
 from app.market_data import (
-    ADJUSTMENT_FACTOR, EX_RIGHTS_TYPE, EXEC_CLOSE, EXEC_HIGH, EXEC_LOW, EXEC_OPEN, LOWER_LIMIT_HIT, QUALITY,
+    ADJUSTMENT_FACTOR, EX_RIGHTS_TYPE, EXEC_CLOSE, EXEC_HIGH, EXEC_LOW, EXEC_OPEN, LOWER_LIMIT_HIT, QUALITY, TOPIX,
     UPPER_LIMIT_HIT, MarketData, MarketFrame,
 )
 from app.strategies import Disposition, Holding, Strategy, build_strategy
 
 UNTRADABLE = "untradable"
-TOPIX = "TOPIX"
 
 
 @dataclass(frozen=True)
@@ -144,7 +143,7 @@ class Accounts:
         if not days:
             return AdvanceReport(account["name"], [], [])
 
-        rules, costs, initial_cash = _rules(account)
+        rules, costs, initial_cash = trading_terms(account)
         ledger = Ledger(initial_cash, self._records(account_id))
         strategy = self._build_strategy(account["strategy"], account["strategy_params"])
         universes = self._market.universe(days[0], days[-1])
@@ -178,7 +177,7 @@ class Accounts:
             return self._reports[account_id][1]
 
     def _work_out_report(self, account: dict, records: list[Record]) -> AccountReport:
-        _, _, initial_cash = _rules(account)
+        _, _, initial_cash = trading_terms(account)
         ledger = Ledger(initial_cash, records)
         through = account["advanced_through"]
         if through is None:
@@ -290,7 +289,7 @@ class Accounts:
         return stored
 
     def _prices(self, strategy: Strategy, ledger: Ledger, universes: Mapping[date, list[str]],
-                days: list[date]) -> _Prices:
+                days: list[date]) -> Prices:
         """One read for the whole run: every code that could be bought or is
         held, from far enough back for the strategy's warm-up and for the
         oldest holding's opening."""
@@ -301,10 +300,10 @@ class Accounts:
         start = sessions[max(0, len(sessions) - strategy.warmup_sessions)] if sessions else days[0]
         opened = [p.opened_on for p in ledger.positions.values()]
         start = min([start, *opened])
-        return _Prices(self._market.read(sorted(codes), start, days[-1]))
+        return Prices(self._market.read(sorted(codes), start, days[-1]))
 
 
-def replay_day(ledger: Ledger, prices: _Prices, strategy: Strategy, universes: Mapping[date, list[str]],
+def replay_day(ledger: Ledger, prices: Prices, strategy: Strategy, universes: Mapping[date, list[str]],
                day: date, next_day: date, rules: PortfolioRules, costs: Costs) -> tuple[list[Record], list[str]]:
     """The same daily trading rules for paper accounts and isolated research."""
     session = prices.session(day)
@@ -332,9 +331,10 @@ def replay_day(ledger: Ledger, prices: _Prices, strategy: Strategy, universes: M
     return [*events, *fills, *again, *orders], warnings
 
 
-class _Prices:
-    """The account's view of the run's market data, looked up only as
-    needed — a three-year run spans more than a million bars."""
+class Prices:
+    """A replay's view of its market data (a paper account's or a research
+    run's), looked up only as needed — a three-year run spans more than a
+    million bars."""
 
     def __init__(self, frame: MarketFrame) -> None:
         self.frame = frame
@@ -379,7 +379,8 @@ class _Bars(Mapping):
         return 0
 
 
-def _rules(account: Mapping[str, Any]) -> tuple[PortfolioRules, Costs, Decimal]:
+def trading_terms(account: Mapping[str, Any]) -> tuple[PortfolioRules, Costs, Decimal]:
+    """The portfolio rules, costs and initial cash stored with an account or a research configuration."""
     portfolio, costs = account["portfolio_rules"], account["costs"]
     rules = PortfolioRules(max_positions=portfolio["max_positions"], max_weight=Decimal(portfolio["max_weight"]),
                            cash_floor=Decimal(portfolio["cash_floor"]))

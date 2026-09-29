@@ -8,7 +8,7 @@ const config = { name: "技术账户", strategy: "technical_rating_v1", strategy
   portfolio_rules: { initial_cash: "10000000", max_positions: 10, max_weight: "0.1", cash_floor: "0.05" },
   costs: { commission_rate: "0", commission_min: "0", slippage: "0.001" }, start_date: "2025-01-06", end_date: "2025-01-10" };
 const completed: Schemas["ResearchDetail"] = { id: "run-one", config, status: "completed", created_at: "2026-09-29", finished_at: "2026-09-29",
-  progress: { sessions_done: 5, sessions_total: 5 }, error: null, code_version: "sha256:code", input_identity: { sha256: "data" }, retry_of: null,
+  progress: { sessions_done: 5, sessions_total: 5 }, error: null, code_version: "sha256:code", input_fingerprint: { sha256: "data" }, retry_of: null,
   result: { total_return: .1, topix_return: .05, excess_return: .05, max_drawdown: .02, trades: 1, fees: 0,
     realised_pnl: 0, unrealised_pnl: 1000000, cash: 9000000, holdings: [], pending: [], warnings: [],
     nav: [{ date: "2025-01-06", nav: 10000000, nav_curve: 1, topix_curve: 1, drawdown: 0 }] } };

@@ -1,7 +1,7 @@
-"""Manual-range research: durable jobs, isolated ledger, frozen reports.
+"""Research runs (研究运行): durable jobs, isolated ledger, frozen reports.
 
-Only this module knows research persistence. Trading itself is replay_day,
-the exact same function used by Accounts.advance.
+Only this module writes research runs — a batch's segments included. Trading
+itself is replay_day, the exact same function used by Accounts.advance.
 """
 from __future__ import annotations
 
@@ -10,32 +10,36 @@ import uuid
 from dataclasses import asdict, replace
 from datetime import date
 from decimal import Decimal
-from pathlib import Path
 
 import pandas as pd
-from filelock import FileLock, Timeout
 from sqlalchemy import Connection, insert, select, update, func
 
 from app.accounts import tables
 from app.accounts import research_tables as db
-from app.accounts.accounts import _Prices, _rules, replay_day
+from app.accounts.accounts import Prices, replay_day, trading_terms
 from app.accounts.ledger import Ledger
 from app.accounts.records import FILLED
-from app.accounts.research_jobs import code_version, find_request, now, plain_json, submit_once
-from app.jobs import Job, JobOutcome, LOCK_FILE, Progress
-from app.market_data import EXEC_CLOSE
+from app.accounts.research_jobs import (
+    COMPLETED, FAILED, QUEUED, RUNNING, UNFINISHED, code_version, find_request, now, plain_json, submit_once,
+)
+from app.jobs import Job, JobOutcome, Progress
+from app.market_data import EXEC_CLOSE, TOPIX
 from app.strategies import STRATEGY_DEFAULTS, build_strategy
+from app.strategies.technical_rating import TechnicalRating
+
+# The one strategy research covers for now (04b).
+RESEARCH_STRATEGY = TechnicalRating.name
 
 
-class Research:
-    def __init__(self, engine, market, jobs, runtime_dir, *, strategies=build_strategy):
+class ResearchRuns:
+    def __init__(self, engine, market, jobs, *, strategies=build_strategy):
         self._engine, self._market, self._jobs = engine, market, jobs
-        self._dir, self._strategies = Path(runtime_dir), strategies
+        self._strategies = strategies
 
     def sources(self):
         with self._engine.connect() as con:
             rows = con.execute(select(tables.paper_accounts).where(
-                tables.paper_accounts.c.strategy == "technical_rating_v1").order_by(tables.paper_accounts.c.id))
+                tables.paper_accounts.c.strategy == RESEARCH_STRATEGY).order_by(tables.paper_accounts.c.id))
             return [{"id": r["id"], "name": r["name"], "config": self._config(dict(r))}
                     for r in rows.mappings()]
 
@@ -45,21 +49,15 @@ class Research:
                       ("name", "strategy", "strategy_params", "portfolio_rules", "costs", "start_date")})
 
     def recover(self):
-        """Never mark another live process's run interrupted."""
-        self._dir.mkdir(parents=True, exist_ok=True)
-        try:
-            with FileLock(self._dir / LOCK_FILE, timeout=0):
-                self._interrupt_stale()
-        except Timeout:
-            pass
+        """At start-up; never marks another live process's run interrupted."""
+        self._jobs.when_idle(self.interrupt_unfinished)
 
-    def _interrupt_stale(self):
-        """Under the writer lock nothing runs, so whatever still says it does was cut off."""
+    def interrupt_unfinished(self):
+        """Call under the writer lock: nothing runs then, so a run that
+        still says it does was cut off. Batch segments are runs too."""
         with self._engine.begin() as con:
-            con.execute(update(db.runs).where(db.runs.c.status.in_(["queued", "running"])).values(
-                status="failed", error="服务中断，结果未完成；请显式重试（将创建新运行）", finished_at=now()))
-            con.execute(update(db.discoveries).where(db.discoveries.c.status.in_(["queued", "running"])).values(
-                status="failed", error="服务中断，区间发现未完成；请重新发现", finished_at=now()))
+            con.execute(update(db.runs).where(db.runs.c.status.in_(UNFINISHED)).values(
+                status=FAILED, error="服务中断，结果未完成；请显式重试（将创建新运行）", finished_at=now()))
 
     def submit(self, request, key, *, retry_of=None):
         try:
@@ -68,7 +66,7 @@ class Research:
             raise ValueError("策略参数必须是有限数值") from None
         if retry_of:
             original = self.get(retry_of)
-            if original["status"] != "failed":
+            if original["status"] != FAILED:
                 raise ValueError("只有失败的运行可以重试")
             with self._engine.connect() as con:
                 if con.execute(select(db.batch_attempts.c.run_id).where(
@@ -79,17 +77,17 @@ class Research:
 
         def prepare():
             # Jobs holds the cross-process writer lock before invoking prepare.
-            self._interrupt_stale()
+            self.interrupt_unfinished()
             if retry_of:
                 config = original["config"]
             else:
                 config = self.frozen_config(request["source_account_id"], request["entry_above"],
                                             request["exit_below"], request["start_date"], request["end_date"])
-            self._validate(config)
+            self.validate(config)
             with self._engine.begin() as con:
-                self._insert_run(con, run_id, key, request, config, retry_of)
+                self.add_queued_run(con, run_id, key, request, config, retry_of)
 
-        return submit_once(self._jobs, Job("research", lambda progress: self._execute(run_id, progress)),
+        return submit_once(self._jobs, Job("research", lambda progress: self.execute(run_id, progress)),
                            prepare=prepare, find=lambda: find_request(self._engine, db.runs, key, request),
                            new_id=run_id)
 
@@ -102,25 +100,29 @@ class Research:
                 tables.paper_accounts.c.id == source_account_id)).mappings().one_or_none()
         if source is None:
             raise LookupError("来源账户不存在")
-        if source["strategy"] != "technical_rating_v1":
-            raise ValueError("首期只支持 technical_rating_v1")
+        if source["strategy"] != RESEARCH_STRATEGY:
+            raise ValueError(f"首期只支持 {RESEARCH_STRATEGY}")
         config = self._config(dict(source))
         config.update(source_account_id=source["id"], start_date=start_date, end_date=end_date)
         config["strategy_params"] = {
-            **STRATEGY_DEFAULTS["technical_rating_v1"], **config["strategy_params"],
+            **STRATEGY_DEFAULTS[RESEARCH_STRATEGY], **config["strategy_params"],
             "entry_above": entry_above, "exit_below": exit_below,
         }
         return config
 
     @staticmethod
-    def _insert_run(con: Connection, run_id: str, key: str, request: dict, config: dict,
-                    retry_of: str | None) -> None:
-        """A queued run row, inside the caller's transaction."""
+    def add_queued_run(con: Connection, run_id: str, key: str, request: dict, config: dict,
+                       retry_of: str | None) -> None:
+        """A queued run, inside the caller's transaction (a batch adds all its
+        segments' runs in one); `execute` replays it."""
         con.execute(insert(db.runs).values(
             id=run_id, request_key=key, request=request, config=config, retry_of=retry_of,
-            status="queued", created_at=now(), progress={}, code_version=code_version()))
+            status=QUEUED, created_at=now(), progress={}, code_version=code_version()))
 
-    def _validate(self, config):
+    def validate(self, config):
+        """Whether `config` can run on the data held now (thresholds, range,
+        warm-up, TOPIX, the session after the end); ValueError naming why
+        not. Cheap: the calendar and one TOPIX read."""
         for name in ("entry_above", "exit_below"):
             value = config["strategy_params"][name]
             if isinstance(value, bool) or not isinstance(value, (float, int)) or not math.isfinite(value) or not -1 <= value <= 1:
@@ -137,9 +139,9 @@ class Research:
             raise ValueError(f"预热期不足，需要起始日前 {strategy.warmup_sessions} 个开市日")
         warmup = before[-strategy.warmup_sessions] if strategy.warmup_sessions else start
         required = [d for d in calendar.sessions() if warmup <= d <= end]
-        frame = self._market.read(["TOPIX"], warmup, end)
+        frame = self._market.read([TOPIX], warmup, end)
         values = frame.wide(EXEC_CLOSE).reindex(required)
-        if "TOPIX" not in values or any(pd.isna(v) or v <= 0 for v in values["TOPIX"]):
+        if TOPIX not in values or any(pd.isna(v) or v <= 0 for v in values[TOPIX]):
             raise ValueError("回测／预热区间 TOPIX 数据缺失或无效，请先补齐行情")
         try:
             calendar.next(end)
@@ -151,31 +153,32 @@ class Research:
         with self._engine.begin() as con:
             con.execute(update(db.runs).where(db.runs.c.id == run_id).values(**values))
 
-    def _execute(self, run_id: str, progress: Progress, *, expect_identity: str | None = None) -> JobOutcome:
-        """Replay one run. With `expect_identity`, refuse to replay once the
-        input fingerprint differs from it (a batch segment's retry)."""
-        self._set(run_id, status="running")
+    def execute(self, run_id: str, progress: Progress, *, expect_fingerprint: str | None = None) -> JobOutcome:
+        """Replay one queued run, inside a job. With `expect_fingerprint`,
+        refuse to replay once the research input fingerprint differs from it
+        (a batch segment's retry). Records a failure on the run, then raises."""
+        self._set(run_id, status=RUNNING)
         try:
             config = self.get(run_id)["config"]
-            calendar, strategy, warmup = self._validate(config)
+            calendar, strategy, warmup = self.validate(config)
             start, end = date.fromisoformat(config["start_date"]), date.fromisoformat(config["end_date"])
             days = [d for d in calendar.sessions() if start <= d <= end]
             # Universe also reads its 20-day turnover window, even with a short strategy warm-up.
             prior = [d for d in calendar.sessions() if d < start]
-            identity_start = min(warmup, prior[max(0, len(prior) - 19)] if prior else start)
-            identity = self._market.research_identity(identity_start, end)
-            if identity["missing_stock_sessions"]:
-                raise ValueError("回测／预热区间缺少股票行情：" + ", ".join(identity["missing_stock_sessions"][:5]))
-            if expect_identity is not None and identity["sha256"] != expect_identity:
+            read_from = min(warmup, prior[max(0, len(prior) - 19)] if prior else start)
+            fingerprint = self._market.input_fingerprint(read_from, end)
+            if fingerprint["missing_stock_sessions"]:
+                raise ValueError("回测／预热区间缺少股票行情：" + ", ".join(fingerprint["missing_stock_sessions"][:5]))
+            if expect_fingerprint is not None and fingerprint["sha256"] != expect_fingerprint:
                 raise ValueError("该区间的行情自本批首次运行后已变化，请重新发现并新建批次")
             # Stored only once the input is accepted: it is what this run replayed, and
             # what a batch segment's retry compares with — never data that was refused.
-            self._set(run_id, input_identity=identity)
+            self._set(run_id, input_identity=fingerprint)
             universes = self._market.universe(start, end)
             codes = sorted({code for listed in universes.values() for code in listed})
-            prices = _Prices(self._market.read(codes, warmup, end))
-            topix = self._market.read(["TOPIX"], start, end).wide(EXEC_CLOSE)["TOPIX"]
-            rules, costs, initial = _rules(config)
+            prices = Prices(self._market.read(codes, warmup, end))
+            topix = self._market.read([TOPIX], start, end).wide(EXEC_CLOSE)[TOPIX]
+            rules, costs, initial = trading_terms(config)
             ledger, points, warnings = Ledger(initial), [], []
             serial, peak = 0, initial
             for done, day in enumerate(days, 1):
@@ -218,10 +221,10 @@ class Research:
                     con.execute(insert(db.orders), [{"run_id": run_id, "sequence": r.id, "record": _record(r)}
                                                     for r in ledger.records])
                 con.execute(update(db.runs).where(db.runs.c.id == run_id).values(
-                    status="completed", result=result, finished_at=now()))
+                    status=COMPLETED, result=result, finished_at=now()))
             return JobOutcome({"run_id": run_id, "sessions": len(days)}, result["warnings"])
         except Exception as error:
-            self._set(run_id, status="failed", error=str(error), finished_at=now())
+            self._set(run_id, status=FAILED, error=str(error), finished_at=now())
             raise
 
     def get(self, run_id):
@@ -229,7 +232,7 @@ class Research:
             row = con.execute(select(db.runs).where(db.runs.c.id == run_id)).mappings().one_or_none()
         if row is None:
             raise LookupError("研究运行不存在")
-        return dict(row)
+        return _named(row)
 
     def history(self, page=1, page_size=20):
         """Manual runs only; a batch's segment runs are listed with their batch."""
@@ -239,7 +242,7 @@ class Research:
             total = con.execute(select(func.count()).select_from(db.runs).where(manual)).scalar_one()
             rows = con.execute(select(*columns).where(manual).order_by(db.runs.c.created_at.desc(), db.runs.c.id)
                                .offset((page - 1) * page_size).limit(page_size)).mappings()
-            return {"total": total, "page": page, "page_size": page_size, "runs": [dict(r) for r in rows]}
+            return {"total": total, "page": page, "page_size": page_size, "runs": [_named(r) for r in rows]}
 
     def orders(self, run_id, page=1, page_size=50):
         self.get(run_id)
@@ -249,6 +252,14 @@ class Research:
             records = con.execute(select(db.orders.c.record).where(where).order_by(db.orders.c.sequence.desc())
                                   .offset((page - 1) * page_size).limit(page_size)).scalars().all()
         return {"total": total, "page": page, "page_size": page_size, "orders": records}
+
+
+def _named(row) -> dict:
+    """A run under the names code and API use: its `input_identity` column
+    holds the research input fingerprint (see research_tables)."""
+    run = dict(row)
+    run["input_fingerprint"] = run.pop("input_identity")
+    return run
 
 
 def _record(record):

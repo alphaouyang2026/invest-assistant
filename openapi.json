@@ -1936,17 +1936,15 @@
           "config": {
             "$ref": "#/components/schemas/BatchConfig"
           },
-          "input_check": {
+          "classification_fingerprint": {
             "anyOf": [
               {
-                "additionalProperties": true,
-                "type": "object"
+                "$ref": "#/components/schemas/ClassificationFingerprint"
               },
               {
                 "type": "null"
               }
-            ],
-            "title": "Input Check"
+            ]
           },
           "code_version": {
             "type": "string",
@@ -1958,8 +1956,8 @@
               "queued",
               "running",
               "completed",
-              "partial",
-              "failed"
+              "failed",
+              "partial"
             ],
             "title": "Status"
           },
@@ -1985,7 +1983,7 @@
           "discovery_id",
           "selection",
           "config",
-          "input_check",
+          "classification_fingerprint",
           "code_version",
           "status",
           "max_batch_runs",
@@ -2027,23 +2025,6 @@
       },
       "BatchIn": {
         "properties": {
-          "request_key": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Request Key"
-          },
-          "discovery_id": {
-            "type": "string",
-            "title": "Discovery Id"
-          },
-          "interval_ids": {
-            "items": {
-              "type": "integer"
-            },
-            "type": "array",
-            "minItems": 1,
-            "title": "Interval Ids"
-          },
           "source_account_id": {
             "type": "integer",
             "exclusiveMinimum": 0.0,
@@ -2062,14 +2043,31 @@
             "minimum": -1.0,
             "title": "Exit Below",
             "default": -0.1
+          },
+          "request_key": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Request Key"
+          },
+          "discovery_id": {
+            "type": "string",
+            "title": "Discovery Id"
+          },
+          "interval_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Interval Ids"
           }
         },
         "type": "object",
         "required": [
+          "source_account_id",
           "request_key",
           "discovery_id",
-          "interval_ids",
-          "source_account_id"
+          "interval_ids"
         ],
         "title": "BatchIn"
       },
@@ -2092,8 +2090,8 @@
               "queued",
               "running",
               "completed",
-              "partial",
-              "failed"
+              "failed",
+              "partial"
             ],
             "title": "Status"
           }
@@ -2297,8 +2295,8 @@
               "queued",
               "running",
               "completed",
-              "partial",
-              "failed"
+              "failed",
+              "partial"
             ],
             "title": "Status"
           },
@@ -4007,7 +4005,7 @@
             "type": "object",
             "title": "Progress"
           },
-          "input_identity": {
+          "input_fingerprint": {
             "anyOf": [
               {
                 "additionalProperties": true,
@@ -4017,7 +4015,7 @@
                 "type": "null"
               }
             ],
-            "title": "Input Identity"
+            "title": "Input Fingerprint"
           },
           "code_version": {
             "type": "string",
@@ -4054,7 +4052,7 @@
           "created_at",
           "finished_at",
           "progress",
-          "input_identity",
+          "input_fingerprint",
           "code_version",
           "error",
           "result"
@@ -4133,25 +4131,10 @@
       },
       "ResearchIn": {
         "properties": {
-          "request_key": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Request Key"
-          },
           "source_account_id": {
             "type": "integer",
             "exclusiveMinimum": 0.0,
             "title": "Source Account Id"
-          },
-          "start_date": {
-            "type": "string",
-            "format": "date",
-            "title": "Start Date"
-          },
-          "end_date": {
-            "type": "string",
-            "format": "date",
-            "title": "End Date"
           },
           "entry_above": {
             "type": "number",
@@ -4166,12 +4149,27 @@
             "minimum": -1.0,
             "title": "Exit Below",
             "default": -0.1
+          },
+          "request_key": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Request Key"
+          },
+          "start_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Start Date"
+          },
+          "end_date": {
+            "type": "string",
+            "format": "date",
+            "title": "End Date"
           }
         },
         "type": "object",
         "required": [
-          "request_key",
           "source_account_id",
+          "request_key",
           "start_date",
           "end_date"
         ],
@@ -4379,7 +4377,7 @@
             "type": "object",
             "title": "Progress"
           },
-          "input_identity": {
+          "input_fingerprint": {
             "anyOf": [
               {
                 "additionalProperties": true,
@@ -4389,7 +4387,7 @@
                 "type": "null"
               }
             ],
-            "title": "Input Identity"
+            "title": "Input Fingerprint"
           },
           "code_version": {
             "type": "string",
@@ -4416,7 +4414,7 @@
           "created_at",
           "finished_at",
           "progress",
-          "input_identity",
+          "input_fingerprint",
           "code_version",
           "error"
         ],

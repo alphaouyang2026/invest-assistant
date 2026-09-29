@@ -12,16 +12,12 @@ from fastapi import FastAPI
 
 from app.api import accounts as accounts_api, data, jobs as jobs_api, signals, research as research_api
 from app.api import research_regimes as research_regimes_api
-from app.accounts.research import Research
-from app.accounts.research_batches import ResearchBatches
-from app.accounts.research_discovery import RegimeDiscoveries
-from app.db import create_engine_for
 from app.config import Settings
 from app.jobs import DailySync, Jobs
 from app.log import configure_logging
 from app.market_data.jquants import JQuantsClient
 from app.strategies import Strategy
-from app.runtime import build_accounts, build_market, sync_job
+from app.runtime import build_accounts, build_market, build_research, sync_job
 
 
 def create_app(
@@ -38,11 +34,7 @@ def create_app(
     market = build_market(settings, client=client, today=today)
     accounts = build_accounts(settings, market, strategies=strategies)
     jobs = Jobs(settings.runtime_dir)
-    engine = create_engine_for(settings)
-    research = Research(engine, market, jobs, settings.runtime_dir,
-                        **({"strategies": strategies} if strategies else {}))
-    research_batches = ResearchBatches(engine, research, jobs)
-    regime_discoveries = RegimeDiscoveries(engine, market, jobs, research_batches, research)
+    research = build_research(settings, market, jobs, strategies=strategies)
     timer = DailySync(
         jobs,
         make_job=lambda: sync_job(market, accounts),
@@ -67,9 +59,9 @@ def create_app(
     app.state.market = market
     app.state.accounts = accounts
     app.state.jobs = jobs
-    app.state.research = research
-    app.state.research_batches = research_batches
-    app.state.regime_discoveries = regime_discoveries
+    app.state.research_runs = research.runs
+    app.state.research_batches = research.batches
+    app.state.regime_discoveries = research.discoveries
     app.include_router(data.router)
     app.include_router(jobs_api.router)
     app.include_router(signals.router)

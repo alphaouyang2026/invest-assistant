@@ -1,14 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { api, type Schemas } from "@/lib/api/client";
 import { signedPercent, yen, signedYen } from "@/lib/format";
 import { ORDER_KINDS, ORDER_STATUSES, outcome, reason } from "@/lib/labels";
 import { NavChart } from "../nav-chart";
 import { Pager } from "../../pager";
 import { RegimeWorkspace } from "./regime-workspace";
-import { Configuration, message, STATES } from "./research-shared";
+import { Configuration, message, poll, STATES, unfinished, useSubmit } from "./research-shared";
 
 type Run = Schemas["ResearchDetail"];
 export type Mode = "manual" | "regime";
@@ -31,11 +31,8 @@ export function ResearchWorkspace({ sourceId = "", initialRun = "", initialMode 
   const [history, setHistory] = useState<Schemas["ResearchHistory"] | null>(null);
   const [historyPage, setHistoryPage] = useState(1);
   const [version, setVersion] = useState(0);
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const sending = useRef(false);
-  // Reuse the key after a lost HTTP response; changing inputs creates a new attempt.
-  const request = useRef({ input: "", key: "" });
+  const { busy, send } = useSubmit(setError);
   const config = sources.find(s => String(s.id) === source)?.config;
 
   useEffect(() => {
@@ -85,22 +82,9 @@ export function ResearchWorkspace({ sourceId = "", initialRun = "", initialMode 
 
   useEffect(() => {
     if (!selected) return;
-    const controller = new AbortController();
-    let timer: ReturnType<typeof setTimeout>;
     setRun(null);
-    const poll = async () => {
-      try {
-        const response = await api.GET("/api/research/runs/{run_id}", {
-          params: { path: { run_id: selected } }, signal: controller.signal,
-        });
-        if (response.error) throw response.error;
-        if (controller.signal.aborted) return;
-        setRun(response.data);
-        if (["queued", "running"].includes(response.data.status)) timer = setTimeout(poll, 1500);
-      } catch (e) { if (!controller.signal.aborted) setError(message(e)); }
-    };
-    void poll();
-    return () => { controller.abort(); clearTimeout(timer); };
+    return poll(signal => api.GET("/api/research/runs/{run_id}", { params: { path: { run_id: selected } }, signal }),
+      data => { setRun(data); return unfinished(data.status); }, e => setError(message(e)));
   }, [selected, version]);
 
   function switchMode(next: Mode) {
@@ -119,26 +103,18 @@ export function ResearchWorkspace({ sourceId = "", initialRun = "", initialMode 
     window.history.replaceState(null, "", url);
   }
 
-  async function submit(retry = false) {
-    if (sending.current) return;
-    sending.current = true;
-    setBusy(true); setError(null);
+  function submit(retry = false) {
+    setError(null);
     const body = { source_account_id: Number(source), start_date: start, end_date: end,
       entry_above: Number(entry), exit_below: Number(exit) };
-    const input = JSON.stringify(retry ? { retry: selected } : body);
-    if (request.current.input !== input) request.current = { input, key: crypto.randomUUID() };
-    try {
+    return send(retry ? { retry: selected } : body, async key => {
       const response = retry
-        ? await api.POST("/api/research/runs/{run_id}/retry", {
-            params: { path: { run_id: selected } }, body: { request_key: request.current.key },
-          })
-        : await api.POST("/api/research/runs", { body: { ...body, request_key: request.current.key } });
+        ? await api.POST("/api/research/runs/{run_id}/retry", { params: { path: { run_id: selected } }, body: { request_key: key } })
+        : await api.POST("/api/research/runs", { body: { ...body, request_key: key } });
       if (response.error) throw response.error;
       choose(response.data.id);
       setVersion(v => v + 1);
-      request.current = { input: "", key: "" };
-    } catch (e) { setError(message(e)); }
-    finally { sending.current = false; setBusy(false); }
+    });
   }
 
   return <section className="page">
@@ -181,10 +157,10 @@ export function ResearchWorkspace({ sourceId = "", initialRun = "", initialMode 
         <span>{run.config.start_date} — {run.config.end_date}</span></div>
       <Configuration config={run.config} />
       <p>固定阈值：{String(run.config.strategy_params.entry_above)} / {String(run.config.strategy_params.exit_below)} · {run.config.strategy}</p>
-      {["queued", "running"].includes(run.status) && <p role="status">{STATES[run.status]}：{String(run.progress.sessions_done ?? 0)} / {String(run.progress.sessions_total ?? "—")} 个交易日</p>}
+      {unfinished(run.status) && <p role="status">{STATES[run.status]}：{String(run.progress.sessions_done ?? 0)} / {String(run.progress.sessions_total ?? "—")} 个交易日</p>}
       {run.error && <div role="alert">{run.error} <button className="btn" disabled={busy} onClick={() => void submit(true)}>重试（新运行）</button></div>}
       {run.result && <Result run={run} />}
-      <details><summary>输入与版本记录</summary><pre>{JSON.stringify({ input: run.input_identity, code: run.code_version, retry_of: run.retry_of }, null, 2)}</pre></details>
+      <details><summary>输入与版本记录</summary><pre>{JSON.stringify({ input: run.input_fingerprint, code: run.code_version, retry_of: run.retry_of }, null, 2)}</pre></details>
     </section>}
     <section className="card"><div className="card-h"><h2>全部运行记录</h2></div>
       <div className="scroll"><table aria-label="研究运行历史"><thead><tr><th>运行</th><th>区间</th><th>阈值</th><th>状态</th></tr></thead>

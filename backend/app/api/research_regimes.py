@@ -4,18 +4,15 @@ from datetime import date
 from typing import Any, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, Query, Request
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.accounts.research_batches import StaleInput
-from app.api.research import ResearchAccepted
-from app.api.schemas import Refusal
-from app.jobs import JobsBusy
+from app.accounts.research_batches import BatchStatus
+from app.accounts.research_jobs import RunStatus
+from app.api.research import ERRORS, STALE_ERRORS, FrozenConfig, ResearchAccepted, Thresholds, call_service
 
 router = APIRouter(prefix="/api/research", tags=["research"])
 
-Status = Literal["queued", "running", "completed", "failed"]
-BatchStatus = Literal["queued", "running", "completed", "partial", "failed"]
 Span = tuple[date, date]
 
 
@@ -118,7 +115,7 @@ class BatchRef(BaseModel):
 
 class DiscoveryDetail(BaseModel):
     id: str
-    status: Status
+    status: RunStatus
     error: str | None
     created_at: str
     finished_at: str | None
@@ -132,13 +129,10 @@ class DiscoveryDetail(BaseModel):
     batches: list[BatchRef]
 
 
-class BatchIn(BaseModel):
+class BatchIn(Thresholds):
     request_key: UUID
     discovery_id: str
     interval_ids: list[int] = Field(min_length=1)
-    source_account_id: int = Field(gt=0)
-    entry_above: float = Field(default=0.5, ge=-1, le=1, allow_inf_nan=False)
-    exit_below: float = Field(default=-0.1, ge=-1, le=1, allow_inf_nan=False)
 
 
 class BatchRetryIn(BaseModel):
@@ -150,13 +144,8 @@ class BatchRetryAccepted(BaseModel):
     run_id: str
 
 
-class BatchConfig(BaseModel):
+class BatchConfig(FrozenConfig):
     """The source's configuration frozen for every segment; each run adds its own range."""
-    name: str
-    strategy: str
-    strategy_params: dict[str, Any]
-    portfolio_rules: dict[str, Any]
-    costs: dict[str, str]
     source_account_id: int
 
 
@@ -177,7 +166,7 @@ class SegmentMetrics(BaseModel):
 class SegmentAttempt(BaseModel):
     attempt: int
     run_id: str
-    status: Status
+    status: RunStatus
     error: str | None
     created_at: str
     retry_of: str | None
@@ -188,7 +177,7 @@ class BatchSegment(BaseModel):
     interval_id: int | None
     start_date: date
     end_date: date
-    status: Status
+    status: RunStatus
     run_id: str
     progress: dict[str, Any]
     error: str | None
@@ -196,17 +185,17 @@ class BatchSegment(BaseModel):
     metrics: SegmentMetrics | None
 
 
-class WorstSegment(BaseModel):
+class SegmentRange(BaseModel):
     position: int
     start_date: date
     end_date: date
+
+
+class WorstSegment(SegmentRange):
     total_return: float
 
 
-class WorstExcessSegment(BaseModel):
-    position: int
-    start_date: date
-    end_date: date
+class WorstExcessSegment(SegmentRange):
     excess_return: float
 
 
@@ -248,7 +237,7 @@ class BatchDetail(BaseModel):
     discovery_id: str | None
     selection: BatchSelection
     config: BatchConfig
-    input_check: dict[str, Any] | None
+    classification_fingerprint: ClassificationFingerprint | None
     code_version: str
     status: BatchStatus
     max_batch_runs: int
@@ -277,23 +266,6 @@ class BatchHistory(BaseModel):
     batches: list[BatchSummary]
 
 
-def _call(call):
-    try:
-        return call()
-    except LookupError as error:
-        raise HTTPException(404, str(error)) from None
-    except StaleInput as error:
-        raise HTTPException(412, str(error)) from None
-    except ValueError as error:
-        raise HTTPException(422, str(error)) from None
-    except JobsBusy as error:
-        raise HTTPException(409, str(error)) from None
-
-
-ERRORS = {code: {"model": Refusal} for code in (404, 409, 422)}
-STALE = {**ERRORS, 412: {"model": Refusal}}
-
-
 @router.get("/regimes/definition")
 def definition(request: Request) -> RegimeDefinition:
     return request.app.state.regime_discoveries.definition()
@@ -301,19 +273,19 @@ def definition(request: Request) -> RegimeDefinition:
 
 @router.post("/discoveries", status_code=202, responses=ERRORS)
 def discover(request: Request, body: DiscoveryIn) -> ResearchAccepted:
-    discovery_id = _call(lambda: request.app.state.regime_discoveries.submit(
+    discovery_id = call_service(lambda: request.app.state.regime_discoveries.submit(
         body.model_dump(mode="json", exclude={"request_key"}), str(body.request_key)))
     return ResearchAccepted(id=discovery_id)
 
 
 @router.get("/discoveries/{discovery_id}", responses=ERRORS)
 def discovery(request: Request, discovery_id: str) -> DiscoveryDetail:
-    return _call(lambda: request.app.state.regime_discoveries.get(discovery_id))
+    return call_service(lambda: request.app.state.regime_discoveries.get(discovery_id))
 
 
-@router.post("/batches", status_code=202, responses=STALE)
+@router.post("/batches", status_code=202, responses=STALE_ERRORS)
 def submit_batch(request: Request, body: BatchIn) -> ResearchAccepted:
-    batch_id = _call(lambda: request.app.state.regime_discoveries.submit_batch(
+    batch_id = call_service(lambda: request.app.state.regime_discoveries.submit_batch(
         discovery_id=body.discovery_id, interval_ids=body.interval_ids,
         source_account_id=body.source_account_id, entry_above=body.entry_above, exit_below=body.exit_below,
         key=str(body.request_key)))
@@ -328,11 +300,11 @@ def batches(request: Request, page: int = Query(1, ge=1),
 
 @router.get("/batches/{batch_id}", responses=ERRORS)
 def batch(request: Request, batch_id: str) -> BatchDetail:
-    return _call(lambda: request.app.state.research_batches.get(batch_id))
+    return call_service(lambda: request.app.state.research_batches.get(batch_id))
 
 
-@router.post("/batches/{batch_id}/segments/{position}/retry", status_code=202, responses=STALE)
+@router.post("/batches/{batch_id}/segments/{position}/retry", status_code=202, responses=STALE_ERRORS)
 def retry_segment(request: Request, batch_id: str, position: int, body: BatchRetryIn) -> BatchRetryAccepted:
-    run_id = _call(lambda: request.app.state.regime_discoveries.retry_segment(
+    run_id = call_service(lambda: request.app.state.regime_discoveries.retry_segment(
         batch_id, position, str(body.request_key)))
     return BatchRetryAccepted(id=batch_id, run_id=run_id)

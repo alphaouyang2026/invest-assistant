@@ -1,24 +1,56 @@
-"""Manual-range research HTTP translation; no backtesting in GET handlers."""
+"""Research run HTTP translation; no backtesting in GET handlers. Also
+what the batch and discovery routes share with it: the error mapping, the
+threshold fields and the frozen configuration."""
+from collections.abc import Callable
 from datetime import date
-from typing import Any, Literal
+from typing import Any, TypeVar
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
+from app.accounts.research import RESEARCH_STRATEGY
+from app.accounts.research_batches import StaleInput
+from app.accounts.research_jobs import RunStatus
 from app.api.schemas import NavPointOut, OrderOut, Refusal
 from app.jobs import JobsBusy
+from app.strategies import STRATEGY_DEFAULTS
 
 router = APIRouter(prefix="/api/research", tags=["research"])
 
+T = TypeVar("T")
 
-class ResearchIn(BaseModel):
-    request_key: UUID
+
+def call_service(call: Callable[[], T]) -> T:
+    """A research service's refusals as HTTP answers."""
+    try:
+        return call()
+    except LookupError as error:
+        raise HTTPException(404, str(error)) from None
+    except StaleInput as error:
+        raise HTTPException(412, str(error)) from None
+    except ValueError as error:
+        raise HTTPException(422, str(error)) from None
+    except JobsBusy as error:
+        raise HTTPException(409, str(error)) from None
+
+
+ERRORS: dict[int | str, dict[str, Any]] = {code: {"model": Refusal} for code in (404, 409, 422)}
+STALE_ERRORS: dict[int | str, dict[str, Any]] = {**ERRORS, 412: {"model": Refusal}}
+_DEFAULTS = STRATEGY_DEFAULTS[RESEARCH_STRATEGY]
+
+
+class Thresholds(BaseModel):
+    """One fixed pair of thresholds on a source account's configuration."""
     source_account_id: int = Field(gt=0)
+    entry_above: float = Field(default=_DEFAULTS["entry_above"], ge=-1, le=1, allow_inf_nan=False)
+    exit_below: float = Field(default=_DEFAULTS["exit_below"], ge=-1, le=1, allow_inf_nan=False)
+
+
+class ResearchIn(Thresholds):
+    request_key: UUID
     start_date: date
     end_date: date
-    entry_above: float = Field(default=0.5, ge=-1, le=1, allow_inf_nan=False)
-    exit_below: float = Field(default=-0.1, ge=-1, le=1, allow_inf_nan=False)
 
 
 class ResearchRetryIn(BaseModel):
@@ -29,12 +61,16 @@ class ResearchAccepted(BaseModel):
     id: str
 
 
-class ResearchConfig(BaseModel):
+class FrozenConfig(BaseModel):
+    """The source's configuration as it was when the research was accepted."""
     name: str
     strategy: str
     strategy_params: dict[str, Any]
     portfolio_rules: dict[str, Any]
     costs: dict[str, str]
+
+
+class ResearchConfig(FrozenConfig):
     start_date: date
     end_date: date | None = None
     source_account_id: int | None = None
@@ -75,11 +111,11 @@ class ResearchSummary(BaseModel):
     id: str
     config: ResearchConfig
     retry_of: str | None
-    status: Literal["queued", "running", "completed", "failed"]
+    status: RunStatus
     created_at: str
     finished_at: str | None
     progress: dict[str, Any]
-    input_identity: dict[str, Any] | None
+    input_fingerprint: dict[str, Any] | None
     code_version: str
     error: str | None
 
@@ -102,28 +138,14 @@ class ResearchOrders(BaseModel):
     orders: list[OrderOut]
 
 
-def _call(call):
-    try:
-        return call()
-    except LookupError as error:
-        raise HTTPException(404, str(error)) from None
-    except ValueError as error:
-        raise HTTPException(422, str(error)) from None
-    except JobsBusy as error:
-        raise HTTPException(409, str(error)) from None
-
-
-ERRORS = {code: {"model": Refusal} for code in (404, 409, 422)}
-
-
 @router.get("/sources")
 def sources(request: Request) -> list[ResearchSource]:
-    return request.app.state.research.sources()
+    return request.app.state.research_runs.sources()
 
 
 @router.post("/runs", status_code=202, responses=ERRORS)
 def submit(request: Request, body: ResearchIn) -> ResearchAccepted:
-    run_id = _call(lambda: request.app.state.research.submit(
+    run_id = call_service(lambda: request.app.state.research_runs.submit(
         body.model_dump(mode="json", exclude={"request_key"}), str(body.request_key)))
     return ResearchAccepted(id=run_id)
 
@@ -131,21 +153,21 @@ def submit(request: Request, body: ResearchIn) -> ResearchAccepted:
 @router.get("/runs")
 def history(request: Request, page: int = Query(1, ge=1),
             page_size: int = Query(20, ge=1, le=100)) -> ResearchHistory:
-    return request.app.state.research.history(page, page_size)
+    return request.app.state.research_runs.history(page, page_size)
 
 
 @router.get("/runs/{run_id}", responses=ERRORS)
 def detail(request: Request, run_id: str) -> ResearchDetail:
-    return _call(lambda: request.app.state.research.get(run_id))
+    return call_service(lambda: request.app.state.research_runs.get(run_id))
 
 
 @router.get("/runs/{run_id}/orders", responses=ERRORS)
 def orders(request: Request, run_id: str, page: int = Query(1, ge=1),
            page_size: int = Query(50, ge=1, le=200)) -> ResearchOrders:
-    return _call(lambda: request.app.state.research.orders(run_id, page, page_size))
+    return call_service(lambda: request.app.state.research_runs.orders(run_id, page, page_size))
 
 
 @router.post("/runs/{run_id}/retry", status_code=202, responses=ERRORS)
 def retry(request: Request, run_id: str, body: ResearchRetryIn) -> ResearchAccepted:
-    new_id = _call(lambda: request.app.state.research.submit({}, str(body.request_key), retry_of=run_id))
+    new_id = call_service(lambda: request.app.state.research_runs.submit({}, str(body.request_key), retry_of=run_id))
     return ResearchAccepted(id=new_id)

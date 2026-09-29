@@ -276,12 +276,13 @@ class MarketData:
     def calendar(self) -> Calendar:
         return Calendar(self._sessions())
 
-    def research_identity(self, start: date, end: date) -> dict:
-        """Content identity, not an archive. Conservatively covers all stocks,
-        roster periods and later adjustment factors used by read/universe.
-        Scoped to what a replay of `start`..`end` can see, so a sync that only
-        adds later days or later roster changes leaves it unchanged.
-        Call under the shared job lock, like sync and research execution."""
+    def input_fingerprint(self, start: date, end: date) -> dict:
+        """The research input fingerprint (研究输入指纹): a content hash, not an
+        archive. Conservatively covers all stocks, roster periods and later
+        adjustment factors used by read/universe. Scoped to what a replay of
+        `start`..`end` can see, so a sync that only adds later days or later
+        roster changes leaves it unchanged. Call under the shared job lock,
+        like sync and research execution."""
         import hashlib
         import json
 

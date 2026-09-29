@@ -6,7 +6,7 @@ from decimal import Decimal
 
 import pytest
 
-from app.accounts.regimes import (
+from app.market_data.regimes import (
     DEFINITION, DEFINITION_VERSION, Definition, RegimeFilter, classify, discover, fingerprint, lookback_start,
 )
 
