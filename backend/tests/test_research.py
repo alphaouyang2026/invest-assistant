@@ -5,7 +5,7 @@ from decimal import Decimal
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import select, update
+from sqlalchemy import delete, insert, select, update
 
 from app.accounts import Accounts, AccountSpec
 from app.accounts import tables
@@ -85,6 +85,36 @@ def test_single_day_and_end_holdings_pending_are_not_liquidated(setup):
     assert held["result"]["realised_pnl"] == 0
     assert held["result"]["pending"][0]["kind"] == "sell"
     assert held["result"]["holdings"][0]["quantity"] == 900
+
+
+def later_sync(engine, after):
+    """What a routine sync does to data after `after`: the calendar reloaded one
+    day longer, later bars restated, one listing ending and another starting."""
+    calendar, periods, bars = market_tables.trading_calendar, market_tables.segment_periods, market_tables.daily_bars
+    with engine.begin() as con:
+        days = [dict(row) for row in con.execute(select(calendar)).mappings()]
+        con.execute(delete(calendar))
+        con.execute(insert(calendar), days + [{"date": max(d["date"] for d in days) + timedelta(days=1),
+                                               "holiday_division": 1}])
+        con.execute(update(bars).where(bars.c.code == "13010", bars.c.date > after).values(close=Decimal("1300")))
+        con.execute(update(periods).where(periods.c.code == "13020", periods.c.valid_to.is_(None))
+                    .values(valid_to=after))
+        con.execute(insert(periods).values(code="13030", valid_from=after + timedelta(days=1), valid_to=None,
+                                           market_code="0111", product_category="011", sector33="3700"))
+
+
+def test_input_identity_ignores_later_syncs_but_not_changes_in_range(setup, migrated_database):
+    research, jobs, accounts, source, market = setup
+    _, old = run(research, jobs, payload(source))
+    later_sync(migrated_database, SESSIONS[7])
+    _, again = run(research, jobs, payload(source))
+    assert again["input_identity"] == old["input_identity"]
+    assert again["result"] == old["result"]
+    # The roster changing inside the range is a different input.
+    periods = market_tables.segment_periods
+    with migrated_database.begin() as con:
+        con.execute(update(periods).where(periods.c.code == "13020").values(valid_to=SESSIONS[3]))
+    assert market.research_identity(SESSIONS[0], SESSIONS[5])["sha256"] != old["input_identity"]["sha256"]
 
 
 def test_saved_results_survive_source_deletion_and_market_correction(setup, migrated_database):
@@ -180,7 +210,9 @@ def test_http_submit_poll_page_and_invalid_input(migrated_database):
 
 def test_legacy_0004_tables_are_preserved_on_upgrade(tmp_path, monkeypatch):
     import sqlite3
-    from app.migrate import upgrade_to_head
+    from alembic.script import ScriptDirectory
+    from app.migrate import _config, upgrade_to_head
+    head = ScriptDirectory.from_config(_config()).get_current_head()
     path = tmp_path / "legacy.db"
     with sqlite3.connect(path) as con:
         con.execute("CREATE TABLE alembic_version (version_num VARCHAR(32) PRIMARY KEY)")
@@ -192,4 +224,4 @@ def test_legacy_0004_tables_are_preserved_on_upgrade(tmp_path, monkeypatch):
     with sqlite3.connect(path) as con:
         assert con.execute("SELECT * FROM research_runs").fetchall() == [(1, "legacy-result")]
         assert con.execute("SELECT COUNT(*) FROM manual_research_runs").fetchone() == (0,)
-        assert con.execute("SELECT * FROM alembic_version").fetchone() == ("0005",)
+        assert con.execute("SELECT * FROM alembic_version").fetchone() == (head,)
