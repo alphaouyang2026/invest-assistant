@@ -16,14 +16,14 @@ from pathlib import Path
 
 import pandas as pd
 from filelock import FileLock, Timeout
-from sqlalchemy import insert, select, update, func
+from sqlalchemy import Connection, insert, select, update, func
 
 from app.accounts import tables
 from app.accounts import research_tables as db
 from app.accounts.accounts import _Prices, _rules, replay_day
 from app.accounts.ledger import Ledger
 from app.accounts.records import FILLED
-from app.jobs import Job, JobOutcome, LOCK_FILE
+from app.jobs import Job, JobOutcome, LOCK_FILE, Progress
 from app.market_data import EXEC_CLOSE
 from app.strategies import STRATEGY_DEFAULTS, build_strategy
 
@@ -97,6 +97,10 @@ class Research:
             original = self.get(retry_of)
             if original["status"] != "failed":
                 raise ValueError("只有失败的运行可以重试")
+            with self._engine.connect() as con:
+                if con.execute(select(db.batch_attempts.c.run_id).where(
+                        db.batch_attempts.c.run_id == retry_of)).first():
+                    raise ValueError("该运行属于研究批次，请在批次中重试此段")
             request = {"retry_of": retry_of}
         if existing := self._existing(key, request):
             return existing
@@ -108,28 +112,41 @@ class Research:
             if retry_of:
                 config = original["config"]
             else:
-                with self._engine.connect() as con:
-                    source = con.execute(select(tables.paper_accounts).where(
-                        tables.paper_accounts.c.id == request["source_account_id"])).mappings().one_or_none()
-                if source is None:
-                    raise LookupError("来源账户不存在")
-                if source["strategy"] != "technical_rating_v1":
-                    raise ValueError("首期只支持 technical_rating_v1")
-                config = self._config(dict(source))
-                config.update(source_account_id=source["id"], start_date=request["start_date"],
-                              end_date=request["end_date"])
-                config["strategy_params"] = {
-                    **STRATEGY_DEFAULTS["technical_rating_v1"], **config["strategy_params"],
-                    "entry_above": request["entry_above"], "exit_below": request["exit_below"],
-                }
+                config = self.frozen_config(request["source_account_id"], request["entry_above"],
+                                            request["exit_below"], request["start_date"], request["end_date"])
             self._validate(config)
             with self._engine.begin() as con:
-                con.execute(insert(db.runs).values(
-                    id=run_id, request_key=key, request=request, config=config, retry_of=retry_of,
-                    status="queued", created_at=_now(), progress={}, code_version=_code_version()))
+                self._insert_run(con, run_id, key, request, config, retry_of)
 
         self._jobs.submit(Job("research", lambda progress: self._execute(run_id, progress)), prepare=prepare)
         return run_id
+
+    def frozen_config(self, source_account_id: int, entry_above: float, exit_below: float,
+                      start_date: str | None, end_date: str | None) -> dict:
+        """The source's configuration as it is now, with this run's range and
+        thresholds. Reads the source; the caller validates the result."""
+        with self._engine.connect() as con:
+            source = con.execute(select(tables.paper_accounts).where(
+                tables.paper_accounts.c.id == source_account_id)).mappings().one_or_none()
+        if source is None:
+            raise LookupError("来源账户不存在")
+        if source["strategy"] != "technical_rating_v1":
+            raise ValueError("首期只支持 technical_rating_v1")
+        config = self._config(dict(source))
+        config.update(source_account_id=source["id"], start_date=start_date, end_date=end_date)
+        config["strategy_params"] = {
+            **STRATEGY_DEFAULTS["technical_rating_v1"], **config["strategy_params"],
+            "entry_above": entry_above, "exit_below": exit_below,
+        }
+        return config
+
+    @staticmethod
+    def _insert_run(con: Connection, run_id: str, key: str, request: dict, config: dict,
+                    retry_of: str | None) -> None:
+        """A queued run row, inside the caller's transaction."""
+        con.execute(insert(db.runs).values(
+            id=run_id, request_key=key, request=request, config=config, retry_of=retry_of,
+            status="queued", created_at=_now(), progress={}, code_version=_code_version()))
 
     def _validate(self, config):
         for name in ("entry_above", "exit_below"):
@@ -162,7 +179,9 @@ class Research:
         with self._engine.begin() as con:
             con.execute(update(db.runs).where(db.runs.c.id == run_id).values(**values))
 
-    def _execute(self, run_id, progress):
+    def _execute(self, run_id: str, progress: Progress, *, expect_identity: str | None = None) -> JobOutcome:
+        """Replay one run. With `expect_identity`, refuse to replay once the
+        input fingerprint differs from it (a batch segment's retry)."""
         self._set(run_id, status="running")
         try:
             config = self.get(run_id)["config"]
@@ -174,6 +193,8 @@ class Research:
             identity_start = min(warmup, prior[max(0, len(prior) - 19)] if prior else start)
             identity = self._market.research_identity(identity_start, end)
             self._set(run_id, input_identity=identity)
+            if expect_identity is not None and identity["sha256"] != expect_identity:
+                raise ValueError("该区间的行情自本批首次运行后已变化，请重新发现并新建批次")
             if identity["missing_stock_sessions"]:
                 raise ValueError("回测／预热区间缺少股票行情：" + ", ".join(identity["missing_stock_sessions"][:5]))
             universes = self._market.universe(start, end)
@@ -237,10 +258,12 @@ class Research:
         return dict(row)
 
     def history(self, page=1, page_size=20):
+        """Manual runs only; a batch's segment runs are listed with their batch."""
         columns = [c for c in db.runs.c if c.name not in ("result", "request", "request_key")]
+        manual = db.runs.c.id.not_in(select(db.batch_attempts.c.run_id))
         with self._engine.connect() as con:
-            total = con.execute(select(func.count()).select_from(db.runs)).scalar_one()
-            rows = con.execute(select(*columns).order_by(db.runs.c.created_at.desc(), db.runs.c.id)
+            total = con.execute(select(func.count()).select_from(db.runs).where(manual)).scalar_one()
+            rows = con.execute(select(*columns).where(manual).order_by(db.runs.c.created_at.desc(), db.runs.c.id)
                                .offset((page - 1) * page_size).limit(page_size)).mappings()
             return {"total": total, "page": page, "page_size": page_size, "runs": [dict(r) for r in rows]}
 

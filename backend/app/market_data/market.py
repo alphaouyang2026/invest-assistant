@@ -279,38 +279,55 @@ class MarketData:
     def research_identity(self, start: date, end: date) -> dict:
         """Content identity, not an archive. Conservatively covers all stocks,
         roster periods and later adjustment factors used by read/universe.
+        Scoped to what a replay of `start`..`end` can see, so a sync that only
+        adds later days or later roster changes leaves it unchanged.
         Call under the shared job lock, like sync and research execution."""
         import hashlib
         import json
 
         digest = hashlib.sha256()
-        bars = tables.daily_bars
+        bars, periods, calendar = tables.daily_bars, tables.segment_periods, tables.trading_calendar
+        sessions = self._sessions()
+        # The replay places its last day's orders on the next session.
+        horizon = next((day for day in sessions if day > end), end)
         queries = {
             "bars": select(bars).where(bars.c.date.between(start, end)).order_by(bars.c.code, bars.c.date),
             "later_factors": select(bars.c.code, bars.c.date, bars.c.adjustment_factor, bars.c.ex_rights_type)
                 .where(bars.c.date > end, cast(bars.c.adjustment_factor, Float) != 1.0)
                 .order_by(bars.c.code, bars.c.date),
-            "segments": select(tables.segment_periods).order_by(
-                tables.segment_periods.c.code, tables.segment_periods.c.valid_from),
-            "calendar": select(tables.trading_calendar).order_by(tables.trading_calendar.c.date),
+            "calendar": select(calendar).where(calendar.c.date.between(start, horizon)).order_by(calendar.c.date),
         }
         counts = {}
         with self._engine.connect() as connection:
             stock_dates = set(connection.execute(select(bars.c.date).where(
                 bars.c.code != TOPIX, bars.c.date.between(start, end)).distinct()).scalars())
-            for name, query in queries.items():
+            roster = connection.execute(select(periods).where(
+                periods.c.valid_from <= end, periods.c.valid_to.is_(None) | (periods.c.valid_to >= start),
+            )).mappings().all()
+            # Clipped to the range, so closing a still-open period after `end`
+            # changes nothing.
+            segments = sorted(
+                (row["code"], max(row["valid_from"], start), min(row["valid_to"] or end, end),
+                 row["market_code"], row["product_category"], row["sector33"]) for row in roster)
+            # A replay treats a code as gone after its last listed day, which
+            # can come from any of its periods; only a day inside the range matters.
+            listed = self._listed_through(connection, sorted({row["code"] for row in roster}))
+            delisted = [(code, last) for code, last in sorted(listed.items()) if last is not None and last < end]
+            parts = {**queries, "segments": segments, "delisted": delisted}
+            for name, part in parts.items():
                 digest.update(name.encode())
                 count = 0
-                for row in connection.execute(query):
+                for row in connection.execute(part) if name in queries else part:
                     digest.update(json.dumps(list(row), default=str, ensure_ascii=False,
                                              separators=(",", ":")).encode())
                     digest.update(b"\n")
                     count += 1
                 counts[name] = count
         return {"sha256": digest.hexdigest(), "from": start.isoformat(), "through": end.isoformat(),
-                "rows": counts, "missing_stock_sessions": [d.isoformat() for d in self._sessions()
+                "rows": counts, "missing_stock_sessions": [d.isoformat() for d in sessions
                     if start <= d <= end and d not in stock_dates],
-                "scope": "all stocks in range; all roster/calendar; later adjustment factors"}
+                "scope": "all stocks in range; later adjustment factors; roster periods overlapping the range "
+                         "(clipped to it) and listings ending inside it; calendar through the next session"}
 
     def read(self, codes: Sequence[str] | None, start: date, end: date) -> MarketFrame:
         """Every bar of `codes` (all securities when None) from `start` to

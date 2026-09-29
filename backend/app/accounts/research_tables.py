@@ -26,3 +26,34 @@ orders = Table(
     Column("sequence", Integer, primary_key=True),
     Column("record", JsonText, nullable=False),
 )
+# 04b-B: one configuration over several ranges. Every attempt at a segment is
+# an ordinary manual_research_runs row; statuses are derived from those runs.
+batches = Table(
+    "research_batches", metadata,
+    Column("id", Text, primary_key=True),
+    Column("request_key", Text, nullable=False, unique=True),
+    Column("request", JsonText, nullable=False),
+    Column("config", JsonText, nullable=False),  # frozen base configuration, without the range
+    Column("discovery_id", Text),
+    Column("selection", JsonText, nullable=False),
+    Column("input_check", JsonText),
+    Column("code_version", Text, nullable=False),
+    Column("created_at", Text, nullable=False),
+)
+batch_segments = Table(
+    "research_batch_segments", metadata,
+    Column("batch_id", Text, primary_key=True),
+    Column("position", Integer, primary_key=True),
+    Column("interval_id", Integer),
+    Column("start_date", Text, nullable=False),
+    Column("end_date", Text, nullable=False),
+)
+batch_attempts = Table(
+    "research_batch_attempts", metadata,
+    Column("batch_id", Text, primary_key=True),
+    Column("position", Integer, primary_key=True),
+    Column("attempt", Integer, primary_key=True),
+    Column("run_id", Text, nullable=False, unique=True),
+    Column("request_key", Text, unique=True),  # only retries carry a client key
+    Column("created_at", Text, nullable=False),
+)
