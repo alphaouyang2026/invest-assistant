@@ -7,7 +7,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import delete, insert, select, update
 
-from app.accounts import Accounts, AccountSpec
+from app.accounts import Accounts, AccountSpec, Costs
 from app.accounts import tables
 from app.accounts import research_tables
 from app.accounts.research import Research
@@ -85,6 +85,64 @@ def test_single_day_and_end_holdings_pending_are_not_liquidated(setup):
     assert held["result"]["realised_pnl"] == 0
     assert held["result"]["pending"][0]["kind"] == "sell"
     assert held["result"]["holdings"][0]["quantity"] == 900
+
+
+def test_fees_return_and_end_valuation_worked_out_by_hand(migrated_database, tmp_path):
+    """A 0.1% commission (at least ¥100) and 0.1% slippage each side; 13010
+    is bought on S2 and told to go on S4 (see PLAN and PRICES)."""
+    market = synced(migrated_database, PRICES)
+    build = lambda name, params: Script(PLAN)
+    accounts = Accounts(migrated_database, market, build_strategy=build)
+    costs = Costs(commission_rate=Decimal("0.001"), commission_min=Decimal("100"), slippage=Decimal("0.001"))
+    source = accounts.create(AccountSpec("有手续费", "technical_rating_v1", SESSIONS[1], costs=costs))
+    jobs = Jobs(tmp_path)
+    research = Research(migrated_database, market, jobs, tmp_path, strategies=build)
+    jobs.start()
+    try:
+        # S1 close: NAV ¥10,000,000, a tenth less the 5% floor over 10 names = ¥950,000 → 900 shares at ¥1,000.
+        # S2 open ¥1,000 +0.1% = ¥1,001: ¥900,900 plus a ¥900.90 fee; cash ¥9,098,199.10.
+        # S4 close ¥1,200: 900 × 1,200 = ¥1,080,000 held, not sold (the exit is pending for S5).
+        _, held = run(research, jobs, payload(source, end=SESSIONS[4]))
+        r = held["result"]
+        assert r["fees"] == pytest.approx(900.9)
+        assert r["cash"] == pytest.approx(9_098_199.1)
+        assert r["unrealised_pnl"] == pytest.approx(1_080_000 - 901_800.9)
+        assert r["realised_pnl"] == pytest.approx(0)
+        assert r["total_return"] == pytest.approx(10_178_199.1 / 10_000_000 - 1)
+        assert r["topix_return"] == 0 and r["excess_return"] == pytest.approx(r["total_return"])
+        assert r["max_drawdown"] == pytest.approx(1 - 9_998_199.1 / 10_000_000)  # S2 close, after the fee
+        assert r["holdings"] == [{"code": "13010", "quantity": 900, "opened_on": SESSIONS[2].isoformat(),
+                                  "cost": pytest.approx(901_800.9), "close": 1200.0, "value": 1_080_000.0}]
+        assert [(p["kind"], p["code"], p["execution_date"]) for p in r["pending"]] == [
+            ("sell", "13010", SESSIONS[5].isoformat())]
+        # One session more: sold at the S5 open ¥1,150 −0.1% = ¥1,148.85, ¥1,033,965 less a ¥1,033.965 fee.
+        _, sold = run(research, jobs, payload(source, end=SESSIONS[5]))
+        r = sold["result"]
+        assert r["fees"] == pytest.approx(900.9 + 1033.965)
+        assert r["cash"] == pytest.approx(9_098_199.1 + 1_033_965 - 1033.965)
+        assert r["realised_pnl"] == pytest.approx(1_032_931.035 - 901_800.9)
+        assert r["unrealised_pnl"] == 0 and r["trades"] == 2
+        assert r["total_return"] == pytest.approx(r["cash"] / 10_000_000 - 1)
+    finally:
+        jobs.stop()
+
+
+def test_no_trade_before_the_first_session_close(setup, migrated_database, tmp_path):
+    """A signal on a warm-up day never trades, and the first day's signal
+    can only fill at the next session's open."""
+    _, jobs, _, source, market = setup
+    script = Script({SESSIONS[0]: {"13020": Disposition.HOLD}, SESSIONS[1]: {"13010": Disposition.HOLD}})
+    research = Research(migrated_database, market, jobs, tmp_path, strategies=lambda name, params: script)
+    run_id, result = run(research, jobs, payload(source, start=SESSIONS[1], end=SESSIONS[3]))
+    assert [day for day, _ in script.asked] == SESSIONS[1:4]  # warm-up days are never asked
+    orders = list(reversed(research.orders(run_id, page_size=200)["orders"]))
+    assert all(o["signal_date"] >= SESSIONS[1].isoformat() for o in orders)
+    assert not [o for o in orders if o["execution_date"] == SESSIONS[1].isoformat()]
+    filled = [o for o in orders if o["status"] == "filled"]
+    assert [(o["code"], o["signal_date"], o["execution_date"], o["fill_price"]) for o in filled] == [
+        ("13010", SESSIONS[1].isoformat(), SESSIONS[2].isoformat(), pytest.approx(1001))]
+    assert result["result"]["nav"][0] == {"date": SESSIONS[1].isoformat(), "nav": 10_000_000, "nav_curve": 1,
+                                          "topix_curve": 1, "drawdown": 0}
 
 
 def later_sync(engine, after):
