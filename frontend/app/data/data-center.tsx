@@ -15,7 +15,10 @@ const STATE_LABELS: Record<string, string> = {
   running: "进行中",
 };
 
-const KIND_LABELS: Record<string, string> = { sync: "同步", advance: "推进账户" };
+const KIND_LABELS: Record<string, string> = {
+  sync: "同步", advance: "推进账户", research: "指定区间回测",
+  regime_discovery: "按市场形势查找区间", research_batch: "研究批次（逐段回测）",
+};
 
 const GAPS_SHOWN = 20;
 

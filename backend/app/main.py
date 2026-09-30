@@ -10,13 +10,14 @@ from typing import Any
 
 from fastapi import FastAPI
 
-from app.api import accounts as accounts_api, data, jobs as jobs_api, signals
+from app.api import accounts as accounts_api, data, jobs as jobs_api, signals, research as research_api
+from app.api import research_regimes as research_regimes_api
 from app.config import Settings
 from app.jobs import DailySync, Jobs
 from app.log import configure_logging
 from app.market_data.jquants import JQuantsClient
 from app.strategies import Strategy
-from app.runtime import build_accounts, build_market, sync_job
+from app.runtime import build_accounts, build_market, build_research, sync_job
 
 
 def create_app(
@@ -33,6 +34,7 @@ def create_app(
     market = build_market(settings, client=client, today=today)
     accounts = build_accounts(settings, market, strategies=strategies)
     jobs = Jobs(settings.runtime_dir)
+    research = build_research(settings, market, jobs, strategies=strategies)
     timer = DailySync(
         jobs,
         make_job=lambda: sync_job(market, accounts),
@@ -42,6 +44,7 @@ def create_app(
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         stop = threading.Event()
+        research.recover()
         jobs.start()
         ticking = threading.Thread(target=timer.run_forever, args=(stop,), name="daily-sync", daemon=True)
         ticking.start()
@@ -56,10 +59,15 @@ def create_app(
     app.state.market = market
     app.state.accounts = accounts
     app.state.jobs = jobs
+    app.state.research_runs = research.runs
+    app.state.research_batches = research.batches
+    app.state.regime_discoveries = research.discoveries
     app.include_router(data.router)
     app.include_router(jobs_api.router)
     app.include_router(signals.router)
     app.include_router(accounts_api.router)
+    app.include_router(research_api.router)
+    app.include_router(research_regimes_api.router)
     return app
 
 

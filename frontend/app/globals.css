@@ -164,6 +164,11 @@ a {
   gap: 20px;
 }
 
+/* A `display` rule above would otherwise override the hidden attribute. */
+[hidden] {
+  display: none !important;
+}
+
 .crumb {
   font-size: 13px;
   color: var(--muted);

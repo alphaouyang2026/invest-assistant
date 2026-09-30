@@ -2,19 +2,24 @@
 
 Both build `MarketData`, `Accounts` and the jobs here, so the job the timer
 queues, the one behind 立即同步 and the one `python -m app.cli sync` runs
-are the same object built the same way — and likewise for advancing.
+are the same object built the same way — and likewise for advancing. The
+service builds the research services here too.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 from datetime import date
 from typing import Any
 
 from app.accounts import Accounts
+from app.accounts.research import ResearchRuns
+from app.accounts.research_batches import ResearchBatches
+from app.accounts.research_discovery import RegimeDiscoveries
 from app.config import Settings
 from app.db import create_engine_for
-from app.jobs import Job, JobOutcome, Progress
+from app.jobs import Job, JobOutcome, Jobs, Progress
 from app.market_data import MarketData, SyncProgress
 from app.market_data.jquants import HttpJQuantsClient, JQuantsClient
 from app.strategies import Strategy, build_strategy
@@ -55,6 +60,33 @@ def build_accounts(
 ) -> Accounts:
     """`strategies` is for tests; the service builds the real ones."""
     return Accounts(create_engine_for(settings), market, build_strategy=strategies or build_strategy)
+
+
+@dataclass(frozen=True)
+class Research:
+    """The three research services, sharing one database and the jobs."""
+    runs: ResearchRuns
+    batches: ResearchBatches
+    discoveries: RegimeDiscoveries
+
+    def recover(self) -> None:
+        """At start-up: each service fails the work a stopped service left unfinished."""
+        self.runs.recover()
+        self.discoveries.recover()
+
+
+def build_research(
+    settings: Settings,
+    market: MarketData,
+    jobs: Jobs,
+    *,
+    strategies: Callable[[str, Mapping[str, Any]], Strategy] | None = None,
+) -> Research:
+    """`strategies` is for tests; the service builds the real ones."""
+    engine = create_engine_for(settings)
+    runs = ResearchRuns(engine, market, jobs, strategies=strategies or build_strategy)
+    batches = ResearchBatches(engine, runs, jobs)
+    return Research(runs, batches, RegimeDiscoveries(engine, market, jobs, batches))
 
 
 def advance_job(accounts: Accounts, account_id: int | None = None) -> Job:
