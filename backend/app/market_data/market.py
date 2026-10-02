@@ -8,10 +8,11 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from decimal import Decimal
+from enum import StrEnum
 from zoneinfo import ZoneInfo
 
 import pandas as pd
-from sqlalchemy import Connection, Engine, Float, cast, delete, func, insert, select, update
+from sqlalchemy import ColumnElement, Connection, Engine, Float, cast, delete, func, insert, select, update
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from app.market_data import split_check, tables
@@ -25,9 +26,20 @@ BACKFILL_YEARS = 5
 OPEN_DIVISIONS = (1, 2)  # HolDiv: a full or a half trading day
 STOCK, INDEX = "stock", "index"
 TOPIX = "TOPIX"
-# The universe (spec §6.1). One rule set, so constants rather than a policy
-# argument (spec A.1).
+
+
+class UniverseRule(StrEnum):
+    """Where a universe's codes come from (spec §6.1). Each strategy
+    declares its own; the turnover floor and the tradable bar that day are
+    the same under either."""
+
+    PRIME_COMMON_STOCK = "prime_common_stock"  # Prime common stock that day
+    TOPIX_ETF = "topix_etf"                    # 1306 alone, while on the roster
+
+
+# The universe (spec §6.1): the conditions every rule shares are constants.
 PRIME, COMMON_STOCK = "0111", "011"
+TOPIX_ETF_CODES = ("13060",)  # NEXT FUNDS TOPIX ETF (1306)
 TURNOVER_SESSIONS = 20
 MIN_AVERAGE_TURNOVER = Decimal("500000000")  # yen
 
@@ -209,12 +221,15 @@ class MarketData:
             quality=QualityReport(missing, gaps, untradable_rows, untradable_on_latest),
         )
 
-    def universe(self, start: date, end: date | None = None) -> dict[date, list[str]]:
+    def universe(
+        self, start: date, end: date | None = None, *, rule: UniverseRule = UniverseRule.PRIME_COMMON_STOCK,
+    ) -> dict[date, list[str]]:
         """Each session from `start` to `end` (default: `start` alone) → the
-        codes that may be newly bought on it (spec §6.1): Prime common stock
-        that day, averaging ¥500M turnover over the last 20 sessions with a
-        missing or untradable day counting as nothing, and with a bar that
-        day that is not untradable. One read for the whole range."""
+        codes that may be newly bought on it (spec §6.1): those `rule` draws
+        on that day — Prime common stock, or 1306 while on the roster — that
+        average ¥500M turnover over the last 20 sessions with a missing or
+        untradable day counting as nothing, and have a bar that day that is
+        not untradable. One read for the whole range."""
         end = end or start
         sessions = [session for session in self._sessions() if session <= end]
         days = [session for session in sessions if session >= start]
@@ -225,7 +240,7 @@ class MarketData:
         with self._engine.connect() as connection:
             periods = connection.execute(
                 select(segments.c.code, segments.c.valid_from, segments.c.valid_to).where(
-                    segments.c.market_code == PRIME, segments.c.product_category == COMMON_STOCK,
+                    _drawn_on(rule),
                     segments.c.valid_from <= end, segments.c.valid_to.is_(None) | (segments.c.valid_to >= start),
                 )
             ).all()
@@ -476,6 +491,15 @@ def _write_session(
             for entry in roster
         ])
     return changes.warnings
+
+
+def _drawn_on(rule: UniverseRule) -> ColumnElement[bool]:
+    """The segment periods a universe rule takes its codes from — the one
+    place the two rules differ."""
+    segments = tables.segment_periods
+    if rule is UniverseRule.TOPIX_ETF:
+        return segments.c.code.in_(TOPIX_ETF_CODES)
+    return (segments.c.market_code == PRIME) & (segments.c.product_category == COMMON_STOCK)
 
 
 def _years_before(day: date, years: int) -> date:

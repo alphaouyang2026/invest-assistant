@@ -1,18 +1,23 @@
-"""The universe (spec §6.1): who may be newly bought on a session — Prime
-common stock that day, ¥500M average turnover over the last 20 sessions,
-and not untradable that day."""
+"""The universe (spec §6.1): who may be newly bought on a session — under
+the strategy's universe rule, Prime common stock that day or 1306 alone;
+under either, ¥500M average turnover over the last 20 sessions and not
+untradable that day."""
 
 from __future__ import annotations
 
 from datetime import date, timedelta
 from decimal import Decimal
 
-from app.market_data import MarketData
+import pytest
+
+from app.market_data import MarketData, UniverseRule
 from tests.fakes import FakeJQuants, bar, listed
 
 SESSIONS = [date(2026, 8, 3) + timedelta(days=n) for n in range(25)]
 DAY = SESSIONS[-1]
 PRIME, STANDARD, COMMON_STOCK = "0111", "0112", "011"
+OTHER_MARKET, ETF_PRODUCT = "0109", "014"  # その他: where ETFs are listed
+TOPIX_ETF, OTHER_TOPIX_ETF = "13060", "13480"  # 1306 and 1348
 LIQUID = Decimal("600000000")
 
 
@@ -114,4 +119,40 @@ def test_a_range_gives_each_sessions_universe_in_one_go(migrated_database) -> No
         SESSIONS[22]: ["13010", "13020"],
         SESSIONS[23]: ["13010", "13030"],
         SESSIONS[24]: ["13010", "13030"],
+    }
+
+
+def etf(code: str):
+    return listed(code, OTHER_MARKET, product=ETF_PRODUCT)
+
+
+def test_the_topix_etf_rule_draws_on_1306_alone(migrated_database) -> None:
+    """Not a stock, not another TOPIX ETF; and 1306 is no Prime common stock."""
+    market = market_with(
+        migrated_database,
+        lambda day: [bar(code, day, turnover=LIQUID) for code in ("13010", TOPIX_ETF, OTHER_TOPIX_ETF)],
+        [listed("13010", PRIME), etf(TOPIX_ETF), etf(OTHER_TOPIX_ETF)],
+    )
+
+    assert market.universe(DAY, rule=UniverseRule.TOPIX_ETF)[DAY] == [TOPIX_ETF]
+    assert market.universe(DAY, rule=UniverseRule.PRIME_COMMON_STOCK)[DAY] == ["13010"]
+    assert market.universe(DAY)[DAY] == ["13010"]  # the rule left out is Prime common stock
+
+
+@pytest.mark.parametrize("why_not", ["thin", "halted that day", "off the roster that day"])
+def test_1306_needs_the_turnover_a_tradable_bar_and_the_roster_that_day(migrated_database, why_not) -> None:
+    """The same conditions as for stocks: only where the codes come from differs."""
+    def bars_for(day):
+        if why_not == "halted that day" and day == DAY:
+            return [bar(TOPIX_ETF, day, close=None, turnover=LIQUID)]
+        return [bar(TOPIX_ETF, day, turnover=Decimal("490000000") if why_not == "thin" else LIQUID)]
+
+    def roster(day):
+        return [] if why_not == "off the roster that day" and day == DAY else [etf(TOPIX_ETF)]
+
+    market = market_with(migrated_database, bars_for, roster)
+
+    assert market.universe(SESSIONS[-2], DAY, rule=UniverseRule.TOPIX_ETF) == {
+        SESSIONS[-2]: [] if why_not == "thin" else [TOPIX_ETF],
+        DAY: [],
     }
