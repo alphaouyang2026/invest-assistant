@@ -5,6 +5,7 @@
 - 术语：[CONTEXT.md](../../CONTEXT.md)——本文所有领域名词都按其中的定义使用
 - 架构决定：[ADR-0001](../../docs/adr/0001-store-bars-by-security-and-date-without-point-in-time.md) 生产日线覆盖存储 · [ADR-0002](../../docs/adr/0002-use-sqlite-single-file.md) SQLite 单文件 · [ADR-0003](../../docs/adr/0003-compute-research-prices-from-adjustment-factors.md) 研究价格本地计算 · [ADR-0005](../../docs/adr/0005-freeze-data-per-research-experiment.md) 研究输入指纹与同批输入一致性 · [ADR-0006](../../docs/adr/0006-separate-research-runs-from-paper-accounts.md) 阈值研究独立保存、复用账户交易规则
 - 研究扩展：[04b 账户页面：technical_rating 策略场景研究](issues/04b-research-backtest-account-ui.md)。按 A 手选区间可见闭环、B 市场形势自动选段顺序交付；§7.5、§7.6 分别记录 A、B 的实现契约，账户状态分析明确延后。
+- 策略扩展：[TOPIX ETF 策略](../topix-etf-strategies/spec.md)（2026-10-02 起）。股票池改由策略声明的股票池规则决定（§6.1）；只交易 1306 的策略见 §6.5。
 - 来历：my-invest 的简化版。取舍过程见 my-invest 会话中的架构评审与两轮追问（Q1–Q32），结论已全部写进本文、CONTEXT.md 和 ADR。
 
 ## 1. 做什么，不做什么
@@ -245,17 +246,19 @@ NaN 的处理也要显式规定并写进测试：宽表对齐后，某证券当�
 
 ### 6.1 股票池
 
-交易日 `t` 的股票池 = 同时满足：
+股票池按策略声明的**股票池规则**取（6.2、附录 A.3）。交易日 `t` 的股票池 = 同时满足：
 
-- `t` 所在的市场分类区间：`market_code = 0111`（Prime）且 `product_category = 011`；
+- 是规则给出的候选证券，现有两种规则：
+  - **Prime 普通股**（默认值，两个个股策略用它）：`t` 所在的市场分类区间是 `market_code = 0111`（Prime）且 `product_category = 011`；
+  - **TOPIX ETF**（TOPIX ETF 策略用它，6.5）：只有 1306（代码 13060），且 `t` 在上市名册中，即有覆盖 `t` 的市场分类区间（1306 的市场区分是 0109 その他，商品类别 014）；
 - 最近 20 个开市日（含 `t`）的成交额平均 ≥ 5 亿日元，缺失或 `untradable` 的日子按 0 计；
 - `t` 的日线不是 `untradable`。
 
-股票池只决定能否**新开仓**；已持仓证券离开股票池不会被卖出，仍由策略的退出规则管理（Q26）。
+两种规则只在「候选证券从哪里来」上不同，后两条共用同一段计算。股票池只决定能否**新开仓**；已持仓证券离开股票池不会被卖出，仍由策略的退出规则管理（Q26）。
 
 ### 6.2 策略 seam
 
-策略是一个声明了名称、默认参数、预热期和图上画哪些指标的对象，只有一个方法 `evaluate(frame, day, holdings)`（[附录 A](#附录-a模块-interface)）。`frame` 里每只**能判断**的证券（预热期够、当天不是 `untradable`）都得到一条信号，处置可以是「不参与」，信号里带着这一天的指标值。它对两类证券给出信号：
+策略是一个声明了名称、默认参数、预热期、图上画哪些指标和股票池规则（在哪套股票池里新开仓，6.1）的对象，只有一个方法 `evaluate(frame, day, holdings)`（[附录 A](#附录-a模块-interface)）。`frame` 里每只**能判断**的证券（预热期够、当天不是 `untradable`）都得到一条信号，处置可以是「不参与」，信号里带着这一天的指标值。它对两类证券给出信号：
 
 - **未持仓**：从空仓角度判断「可持有」还是「不参与」，给出理由；「可持有」的带候选排序值。`holdings` 传空时，其中「可持有」的就是信号页的入场候选，与任何账户无关。
 - **持仓**：结合持仓事实判断「可持有」还是「必须清仓」，给出理由。持仓只传代码、股数和开仓成交日；持有天数和开仓以来最高研究收盘价由策略自己从行情算出，不由调用方传入——否则这条规则会散到每个调用方去。
@@ -264,7 +267,7 @@ NaN 的处理也要显式规定并写进测试：宽表对齐后，某证券当�
 
 返回「不参与」也是为了证券详情页：按日循环调用 `evaluate`，就同时得到指标曲线（每天信号里的指标值）和历史入场点，不需要为画图另加方法。
 
-策略不查数据库、不筛股票池：`frame` 里有什么就评价什么，股票池由调用方先问行情数据模块。预热期不足的证券没有信号；持仓证券当天 `untradable`（例如停牌）时也没有信号，持仓维持原状。
+策略不查数据库、不筛股票池：`frame` 里有什么就评价什么，股票池由调用方按策略声明的股票池规则先问行情数据模块。预热期不足的证券没有信号；持仓证券当天 `untradable`（例如停牌）时也没有信号，持仓维持原状。
 
 **frame 的起点**：递推类指标的值取决于输入从哪天开始。策略对整个 `frame` 把指标算一次，按 `frame` 对象缓存（缓存不属于 interface），之后每次 `evaluate` 只按日取值，所以按日循环调用的开销与只调用一次相近。代价是：同一证券同一交易日，`frame` 起点不同，指标值会略有不同（见第 12 节）。调用方至少要从第一个评价日往前读预热期那么多个开市日；`frame` 传入后不得再修改。一条测试守住「不看未来」：用整个 `frame` 在 `t` 日评价，结果等于把 `frame` 截到 `t` 日再评价。
 
@@ -306,6 +309,12 @@ RSI14[t−1] ≤ 30      且  RSI14[t] > 30
 - 入场：总评 > `entry_above`（默认 0.5）；排序值 = 总评。
 - 持仓退出：总评 < `exit_below`（默认 −0.1）。04b 两个阈值均允许 −1 到 +1，拒绝非有限数字和越界值；评分五档定义不随交易阈值改变。
 - 预热期 260 个交易日。长周期 EMA 的数值会因起算点不同与 TradingView 页面略有差异，属于已知局限。
+
+### 6.5 TOPIX ETF 策略
+
+规则见 [TOPIX ETF 策略规格](../topix-etf-strategies/spec.md)，冻结，改规则就是新版本。它们的股票池规则是 TOPIX ETF（6.1），所以只交易 1306（NEXT FUNDS TOPIX 連動型上場投信，代码 13060）；成交、费用、拆合股调整和估值与个股策略完全相同，ETF 分配金不入账（第 12 节）。新建账户页为它们建议的组合规则是最多 1 只、单只上限 100%、现金下限 5%，也就是约 95% 的资金买入 1306，用户仍可修改；建账户接口不强制。
+
+- **一直持有 v1**（`topix_buy_and_hold_v1`，对照组）：参数只有 `warmup_sessions`，默认 1（当天的日线），小于 1 时拒绝。1306 当天能判断（有日线且不是 `untradable`）就是「可持有」：空仓时理由 `always_hold`、排序值 1；持仓时同样可持有，永不清仓。不画线。账户因此在起始日收盘出信号、下一开市日开盘买入一次，之后一直持有；和按 TOPIX 趋势进出的策略比较时，成交、滑点、拆股、不含分配金这几点口径一致。
 
 ## 7. 模拟账户
 
@@ -406,7 +415,7 @@ B 按 TOPIX 市场形势自动提取区间，逐段调用同一个独立回放�
 | 信号页 `/signals` | 选择策略和日期（默认最新交易日），列出入场候选（代码、名称、市场、排序值、理由）；搜索证券 |
 | 证券详情 `/signals/[code]` | lightweight-charts 画 K 线（研究价格）、成交量、所选策略的指标，以及历史入场点 |
 | 账户列表 `/accounts` | 模拟账户概览；技术评级账户提供「回测此策略」入口，带入来源账户配置 |
-| 新建账户 `/accounts/new` | 名称、策略、策略参数、组合规则、费用、起始日；提交后开始推进 |
+| 新建账户 `/accounts/new` | 名称、策略、策略参数、组合规则（选策略时按它建议的值填好，可以再改）、费用、起始日；提交后开始推进 |
 | 账户详情 `/accounts/[id]` | 模拟账户统计、净值 vs 基准、回撤、持仓、待执行订单、历史账本 |
 | 指定区间研究 `/accounts/research` | 两种模式切换。「手动指定区间」：来源账户、手选起止日、一组阈值、异步状态、净值／基准／回撤、交易与期末持仓、全部运行历史；URL 的 run 参数恢复结果。「按市场形势选择区间」（`?mode=regime`）：搜索起止（默认到 TOPIX 最新日）、TOPIX 趋势、可选波动，可展开分类公式与版本；异步发现后列出全部候选区间（开市日数、TOPIX 变化、RV20 范围，单日／短段／起点被截断／可能延续到搜索范围之后／策略预热不足标注）和诊断（预热不足、缺口、零匹配）；勾选后以一个来源账户和一组阈值「对所选区间运行」，显示已选段数与单批上限，超限禁止提交；逐段显示状态、进度、收益、TOPIX、收益差、回撤、成交数、手续费和「查看详情」（即 `?run=` 的 A 报告），失败段可「重试此段」；结果分布写明分母，只按已完成段等权；列出本次发现发起的批次和全部批次；页面写明各段长度不同等权、边界事后划分、不连乘不合成回撤、TOPIX 不含分红。URL 的 discovery、batch 参数恢复；行情变化（412）提示重新发现 |
 
@@ -416,7 +425,7 @@ API（前缀 `/api`）：
 - `GET /instruments?q=`、`GET /instruments/{code}/bars?from=&to=&strategy=`（研究价格 + 所选策略的指标 + 历史入场点）
 - `GET /signals?strategy=&date=`
 - `GET /accounts`、`POST /accounts`、`GET /accounts/{id}`、`GET /accounts/{id}/nav`、`GET /accounts/{id}/orders`、`POST /accounts/{id}/stop`、`DELETE /accounts/{id}`
-- `GET /strategies`（两个策略的参数与默认值，给新建账户页展示；即附录 A.3 的 `STRATEGY_DEFAULTS`）
+- `GET /strategies`（每个策略的参数与默认值，即附录 A.3 的 `STRATEGY_DEFAULTS`；它的股票池规则名称；建议的组合规则：TOPIX ETF 策略为 1 只、100%、5%，个股策略为 10 只、10%、5%。给新建账户页展示）
 - `GET /jobs/current`
 
 04b-A API（前缀 `/api/research`）：
@@ -481,6 +490,9 @@ docker-compose.yml
 - PaperAccount 使用生产日线，J-Quants 后续修正不会回写已成交订单，但会影响新建账户及重新估值。研究保留配置、观察、结果和输入指纹，保证同批比较输入一致；指纹无法恢复已覆盖行情，因此不保证跨数据修正的精确重放（ADR-0001、ADR-0005）。
 - 场景分组和阈值比较仍可能受小样本、状态路径差异和反复挑选影响；报告是探索性条件绩效，不自动证明泛化或因果关系。
 - 不含分红和税，高股息股的收益被低估（ADR-0003）。
+- ETF 分配金同样不入账：1306 每年 7 月落权那天的收益比 TOPIX 低 2.0–2.4%（2022—2026 年各一次），持有 1306 的账户这一天少算这么多。TOPIX 是价格指数，也不含分红，只是它在 3 月、9 月成分股除息时下跌，所以 TOPIX ETF 一直持有账户相对 TOPIX 的超额按整年看接近 0，短期会因两者时点不同而偏离。
+- ETF 也按 100 口一手计算；实际売買単位以交易所为准。
+- 极端行情时 ETF 的收盘价可能明显偏离 TOPIX（数据里 1348 在 2024-08-05 比 TOPIX 多跌 5.8 个百分点）；账户按 1306 的实际价格成交和估值，这部分差异会留在结果里。
 - 只用日线：跟踪止损是「收盘确认、次日开盘卖出」，跳空时按真实开盘价成交，不按止损线成交。
 - 开盘即涨停的买单一律视为买不到，现实中可能在收盘按比例分到少量；开盘即跌停的卖单同理。
 - 技术评级的长周期 EMA 与 TradingView 页面的数值可能略有差异。
@@ -500,19 +512,23 @@ class MarketData:
     def sync(self, *, until: date | None = None,
              on_progress: Callable[[SyncProgress], None] | None = None) -> SyncReport: ...
     def read(self, codes: Sequence[str] | None, start: date, end: date) -> MarketFrame: ...
-    def universe(self, start: date, end: date | None = None) -> dict[date, list[str]]: ...  # end 缺省为 start
+    def universe(self, start: date, end: date | None = None, *,          # end 缺省为 start
+                 rule: UniverseRule = UniverseRule.PRIME_COMMON_STOCK) -> dict[date, list[str]]: ...
     def instruments(self, *, query: str | None = None,
                     codes: Sequence[str] | None = None) -> list[Instrument]: ...
     def calendar(self) -> Calendar: ...      # sessions()/next()/prev()/offset()，纯内存
     def overview(self) -> DataOverview: ...  # 最大日期、行数、最近任务结果、现算的质量警告
 
+class UniverseRule(StrEnum):   # 股票池规则（6.1）
+    PRIME_COMMON_STOCK = "prime_common_stock"; TOPIX_ETF = "topix_etf"
+
 @dataclass(frozen=True)
 class Instrument:   code: str; name: str; name_en: str; market: str | None   # 当前市场区分；已退市为 None
 ```
 
-藏在后面：J-Quants 分页与限速、逐日覆盖写入、市场分类区间的开闭、研究价格的累计系数、质量标记、拆合股核对、股票池的市场分类区间与成交额门槛、4 张表的全部 SQL。
+藏在后面：J-Quants 分页与限速、逐日覆盖写入、市场分类区间的开闭、研究价格的累计系数、质量标记、拆合股核对、每种股票池规则的候选证券与共用的成交额门槛、4 张表的全部 SQL。
 
-`universe` 不带参数表：规则只有一套（6.1），门槛是模块内部的常量——只有一种取值的参数就是一个还用不上的 seam。它一次给出一段日期里每个开市日的股票池：信号页只问一天，回测要问几百天，逐日调用时每天约 0.25 秒（02 回填数据实测），3 年的回测光股票池就要 3 分钟，一次查询算完整段则只读一次成交额和市场分类区间。`instruments` 给信号页补证券名称与市场、给 `GET /api/instruments?q=` 做搜索（按代码前缀或名称包含）；只有这个模块能读 `instruments` 表，所以由它提供。
+`universe` 只带一个参数 `rule`，即股票池规则（6.1），调用方从策略的声明里取来（A.3），有 Prime 普通股和 TOPIX ETF 两种取值。两种规则只在候选证券从哪里来上不同；成交额门槛、20 个开市日的窗口和不可交易的判定是模块内部的常量，两种规则共用同一段计算。它一次给出一段日期里每个开市日的股票池：信号页只问一天，回测要问几百天，逐日调用时每天约 0.25 秒（02 回填数据实测），3 年的回测光股票池就要 3 分钟，一次查询算完整段则只读一次成交额和市场分类区间。`instruments` 给信号页补证券名称与市场、给 `GET /api/instruments?q=` 做搜索（按代码前缀或名称包含）；只有这个模块能读 `instruments` 表，所以由它提供。
 
 `MarketFrame` 是一个很薄的包装：内部是以 (证券, 交易日) 为索引的 DataFrame，列名由模块给出的常量声明（研究价格 OHLCV、成交价格 OHLC、成交额、涨跌停标志、质量标记、调整系数、除权类型），另带 `listed_through`（证券代码 → 它在名册中的最后一个交易日，仍在名册中为 `None`，由市场分类区间推出），并提供宽表访问器 `wide(列名)`（行是交易日、列是证券代码，没有日线的格子为 NaN），指标模块直接吃这种宽表。它是 interface 的一部分，列名和空值语义都要写进文档——这是选择用 pandas 换来的代价。调整系数、除权类型和 `listed_through` 是给模拟账户的——拆合股调整和退市结清（7.1）要用，而账户模块不能直接查这四张表；回测时账户按「那一天」判断在不在名册，不能用 `instruments` 给出的当前市场区分。
 
@@ -542,6 +558,7 @@ class Strategy(Protocol):
     name: str
     warmup_sessions: int
     plots: tuple[Plot, ...]          # 图上画哪些指标：指标名 → 叠在价格上，还是单独一栏
+    universe_rule: UniverseRule      # 在哪套股票池里新开仓（6.1）；不声明的取 Prime 普通股
 
     def evaluate(self, frame: MarketFrame, day: date,
                  holdings: Sequence[Holding]) -> list[Signal]: ...
@@ -569,11 +586,11 @@ class SecurityHistory:
                     entries: list[date]                             # 未持仓角度得到「可持有」的交易日
 ```
 
-只有一个方法：`frame` 里每只能判断的证券都得到一条信号（含「不参与」，带当天指标值）；`holdings` 传空，其中「可持有」的就是入场候选；传账户持仓，就同时得到该账户的清仓信号。参数在构造时就固定在策略对象里，不出现在方法签名上。指标对整个 `frame` 只算一次、按 `frame` 缓存，缓存不属于 interface（6.2「frame 的起点」）。
+只有一个方法：`frame` 里每只能判断的证券都得到一条信号（含「不参与」，带当天指标值）；`holdings` 传空，其中「可持有」的就是入场候选；传账户持仓，就同时得到该账户的清仓信号。参数在构造时就固定在策略对象里，不出现在方法签名上。指标对整个 `frame` 只算一次、按 `frame` 缓存，缓存不属于 interface（6.2「frame 的起点」）。股票池规则和 `warmup_sessions`、`plots` 一样是声明：策略自己仍不筛股票池，调用方按它取股票池（`entry_candidates`、模拟账户推进、研究运行）。
 
-两个适配器：Trend-Pullback v1 和技术评级 v1。
+三个适配器：Trend-Pullback v1 和技术评级 v1（股票池规则取默认的 Prime 普通股），TOPIX ETF 一直持有 v1（TOPIX ETF，6.5）。
 
-`entry_candidates` 和 `history` 不是 seam，是写在 seam 之上的两个普通函数：它们藏住「先取股票池、从第一个评价日往前读预热期那么多个开市日、调用 `evaluate`、补上证券名称」这套组装。`history` 按日循环调用同一个 `evaluate`，从每天的信号里收集指标曲线和入场点，不为画图另加方法。**删除测试**：删掉它们，「预热期决定往前读多远」会同时出现在信号页和证券详情页两个 API 处理函数里，而 A.6 规定 API 里不写业务规则。账户模块读的是覆盖整段回测的长 `frame`，不经过它们，直接调用 `evaluate`。
+`entry_candidates` 和 `history` 不是 seam，是写在 seam 之上的两个普通函数：它们藏住「按策略声明的股票池规则取股票池、从第一个评价日往前读预热期那么多个开市日、调用 `evaluate`、补上证券名称」这套组装。`history` 按日循环调用同一个 `evaluate`，从每天的信号里收集指标曲线和入场点，不为画图另加方法。**删除测试**：删掉它们，「预热期决定往前读多远」会同时出现在信号页和证券详情页两个 API 处理函数里，而 A.6 规定 API 里不写业务规则。账户模块读的是覆盖整段回测的长 `frame`，不经过它们，直接调用 `evaluate`。
 
 **删除测试**：删掉这个 seam，入场和退出规则会长进账户推进的循环里，信号页也就没法在不建账户的情况下显示候选。
 
@@ -593,7 +610,7 @@ class Accounts:
 
 `advance` 是模拟账户推进的入口：拆合股调整、退市结清、开盘成交、卖单重下、出信号、组合规则、写订单，全在它后面。它从 `advanced_through` 的下一个开市日推进到 `through`（默认最新交易日）；重复调用不会重复推进。paper account 的历史追赶和后续模拟交易都使用它；04b 增加独立研究入口，复用这些规则而不写 paper 账本（ADR-0006）。
 
-`advance` 自己只做读库、写库和逐日循环：一次读出整段所需的行情（`MarketData.read` 取整段股票池的并集加上持仓）和整段股票池（`MarketData.universe(start, end)`），然后每个交易日分开盘、收盘两段——收盘段要先拿到开盘成交之后的持仓，才能问策略 `evaluate(frame, t, holdings)`。
+`advance` 自己只做读库、写库和逐日循环：一次读出整段所需的行情（`MarketData.read` 取整段股票池的并集加上持仓）和整段股票池（`MarketData.universe(start, end, rule=策略声明的股票池规则)`），然后每个交易日分开盘、收盘两段——收盘段要先拿到开盘成交之后的持仓，才能问策略 `evaluate(frame, t, holdings)`。
 
 内部的 seam 只给自己的测试用，不对外；全部不碰数据库、不产生副作用，所以「开盘涨停买不到」「卖出所得当场可用」「现金不够减手数」「十合一的零股折现」这类规则可以用几行合成数据测，而不必造一个账户再推进一年：
 
