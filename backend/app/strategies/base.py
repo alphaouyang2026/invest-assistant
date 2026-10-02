@@ -181,3 +181,80 @@ class IndicatorStrategy:
             )
         since = bars.loc[holding.opened_on:day]
         return Position(sessions_held=len(since), highest_close=float(np.nanmax(since[CLOSE].to_numpy(float))))
+
+
+@dataclass(frozen=True)
+class _ReferenceWorkedOut:
+    """A frame as a strategy on its reference series sees it: the lines (a
+    value per session), the sessions they can be judged on, and which of the
+    other codes (in `codes` order) are tradable on each."""
+
+    codes: list[str]
+    rows: dict[date, int]
+    ready: np.ndarray
+    tradable: np.ndarray
+    lines: dict[str, np.ndarray]
+
+
+class ReferenceSeriesStrategy:
+    """Works out its lines from its reference series alone (CONTEXT.md
+    参照行情), once per frame and a value per session, and judges every other
+    code in the frame on them. A session can be judged once each reference
+    series has a close that day and the warm-up's worth of closes behind it;
+    then each other code with a bar that day that is not untradable gets a
+    signal on the same readings, and a reference series never gets one.
+    Subclasses give the lines and the rules — the TOPIX ETF strategies that
+    follow TOPIX."""
+
+    name: str
+    warmup_sessions: int  # closes of each reference series, the day's own included
+    plots: tuple[Plot, ...]
+    universe_rule: UniverseRule
+    reference_series: tuple[str, ...]
+
+    def __init__(self, params: Mapping[str, Any]) -> None:
+        self.params = params
+        self._worked_out: weakref.WeakKeyDictionary[MarketFrame, _ReferenceWorkedOut] = weakref.WeakKeyDictionary()
+
+    def lines(self, closes: pd.DataFrame) -> dict[str, pd.Series]:
+        """`closes` are the reference series' research closes, a row per
+        session of the frame and a column per code, NaN where one has none.
+        Each line has a value per session."""
+        raise NotImplementedError
+
+    def judge(self, readings: dict[str, float], held: bool) -> Judgement:
+        """May add what it works out along the way to `readings`."""
+        raise NotImplementedError
+
+    def evaluate(self, frame: MarketFrame, day: date, holdings: Sequence[Holding]) -> list[Signal]:
+        worked = self._worked_out_for(frame)
+        at = worked.rows.get(day)
+        if at is None or not worked.ready[at]:
+            return []
+        held = {holding.code for holding in holdings}
+        today = {name: float(values[at]) for name, values in worked.lines.items()}
+
+        signals = []
+        for column in np.flatnonzero(worked.tradable[at]):
+            code = worked.codes[column]
+            readings = dict(today)
+            judgement = self.judge(readings, code in held)
+            signals.append(Signal(code, judgement.disposition, judgement.reason_codes, readings, judgement.priority))
+        return signals  # by code: the columns are
+
+    def _worked_out_for(self, frame: MarketFrame) -> _ReferenceWorkedOut:
+        """Everything that depends on the frame alone, once per frame."""
+        if frame not in self._worked_out:
+            closes = frame.wide(CLOSE).astype(float)
+            reference = closes.reindex(columns=list(self.reference_series))
+            present = reference.notna()
+            others = [code for code in closes.columns if code not in self.reference_series]
+            quality = frame.wide(QUALITY).reindex(index=closes.index, columns=others)
+            self._worked_out[frame] = _ReferenceWorkedOut(
+                codes=others,
+                rows={day: n for n, day in enumerate(closes.index)},
+                ready=(present & (present.cumsum() >= self.warmup_sessions)).all(axis=1).to_numpy(),
+                tradable=(quality.notna() & (quality != UNTRADABLE)).to_numpy(),
+                lines={name: line.reindex(closes.index).to_numpy(float) for name, line in self.lines(reference).items()},
+            )
+        return self._worked_out[frame]

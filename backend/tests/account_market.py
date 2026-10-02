@@ -46,17 +46,19 @@ class Script:
 
 
 def fake_client(prices: dict[str, list[str | None]], *, extra: dict | None = None,
-                gone: dict | None = None, listings: Mapping[str, RosterEntry] | None = None) -> FakeJQuants:
+                gone: dict | None = None, listings: Mapping[str, RosterEntry] | None = None,
+                topix: list[str] | None = None) -> FakeJQuants:
     """`prices[code][n]` is the open = high = low = close on SESSIONS[n]; None,
     a halt. `extra[(code, n)]` adds fields to that bar; a code in `gone`
     leaves the roster (and has no bars) from SESSIONS[gone[code]] on. A code
     is Prime common stock unless `listings` has its roster entry (an ETF's,
-    say: `ETF_LISTINGS`)."""
+    say: `ETF_LISTINGS`). TOPIX closes at `topix[n]`, 2,700 throughout unless
+    told otherwise."""
     extra, gone, listings = extra or {}, gone or {}, listings or {}
     bars = {day: [bar(code, day, series[n], turnover=LIQUID, **extra.get((code, n), {}))
                   for code, series in prices.items() if n < gone.get(code, len(SESSIONS))]
             for n, day in enumerate(SESSIONS)}
-    topix = [IndexBar(day, Decimal("2700"), Decimal("2700"), Decimal("2700"), Decimal("2700")) for day in SESSIONS]
+    topix = [IndexBar(day, *[Decimal(close)] * 4) for day, close in zip(SESSIONS, topix or ["2700"] * len(SESSIONS))]
 
     def roster(day):
         n = SESSIONS.index(day)
@@ -69,8 +71,9 @@ def fake_client(prices: dict[str, list[str | None]], *, extra: dict | None = Non
 
 
 def synced(engine, prices: dict[str, list[str | None]], *, extra: dict | None = None,
-           gone: dict | None = None, listings: Mapping[str, RosterEntry] | None = None) -> MarketData:
-    market = MarketData(engine, fake_client(prices, extra=extra, gone=gone, listings=listings),
+           gone: dict | None = None, listings: Mapping[str, RosterEntry] | None = None,
+           topix: list[str] | None = None) -> MarketData:
+    market = MarketData(engine, fake_client(prices, extra=extra, gone=gone, listings=listings, topix=topix),
                         today=lambda: SESSIONS[-1])
     market.sync()
     return market

@@ -1,11 +1,14 @@
 """Accounts on the TOPIX ETF strategies (.scratch/topix-etf-strategies spec):
 the real strategies, advanced through the fake J-Quants market with 1306
-listed as an ETF (0109 / 014) beside a Prime stock. Fills, lots, splits and
-valuation are the rules every account has (spec §7)."""
+listed as an ETF (0109 / 014), beside a Prime stock or TOPIX closing as a
+test says. Fills, lots, splits and valuation are the rules every account
+has (spec §7)."""
 
 from __future__ import annotations
 
 from decimal import Decimal
+
+import pytest
 
 from app.accounts import Accounts, AccountSpec, PortfolioRules
 from app.strategies import Disposition
@@ -68,6 +71,43 @@ def test_a_ten_for_one_split_makes_the_holding_ten_times_larger_and_leaves_the_n
     assert [(h.code, h.quantity) for h in report.holdings] == [(TOPIX_ETF, 31000)]
     assert list(report.nav[SESSIONS[2]:SESSIONS[7]]) == [Decimal("9990700")] * 6
     assert [o.kind for o in report.orders] == ["buy", "split_adjustment"]  # nothing bought or sold after
+
+
+def test_the_moving_average_account_buys_1306_once_topix_crosses_above_its_band_and_sells_it_once_below(
+    migrated_database,
+) -> None:
+    """A three-close average and the default 1% band, TOPIX closing:
+
+    S3 100 on its average of 100, S4 100.5 inside the band (average
+    100.17): nothing. S5 106, above 103.19 (average 102.17): bought at S6's
+    open. S6 104 and S7 103.5, inside the band (averages 103.5 and 104.5):
+    kept. S8 98, below 100.82 (average 101.83): sold at S9's open.
+
+    1306 stays at 3,000, so TOPIX alone moves the account:
+    ⌊10,000,000 × 95% ÷ 3,000 ÷ 100⌋ × 100 = 3,100 bought at 3,003 and sold
+    at 2,997, leaving 10,000,000 − 3,100 × 6 in cash."""
+    topix = ["100", "100", "100", "100", "100.5", "106", "104", "103.5", "98", "98"]
+    market = synced(migrated_database, {TOPIX_ETF: ["3000"] * 10}, listings=ETF_LISTINGS, topix=topix)
+    accounts = Accounts(migrated_database, market)
+    account = accounts.create(AccountSpec(name="均线", strategy="topix_ma_v1", start_date=SESSIONS[3],
+                                          strategy_params={"ma_sessions": 3, "warmup_sessions": 3}, rules=ONE_ETF))
+
+    accounts.advance(account, through=SESSIONS[7])
+    held = accounts.report(account)
+    accounts.advance(account)
+    report = accounts.report(account)
+
+    assert [(h.code, h.quantity, h.opened_on) for h in held.holdings] == [(TOPIX_ETF, 3100, SESSIONS[6])]
+    assert held.pending == []
+    assert summary(report.orders) == [
+        ("buy", TOPIX_ETF, SESSIONS[5], SESSIONS[6], 3100, "filled", 3100, Decimal("3003.000")),
+        ("sell", TOPIX_ETF, SESSIONS[8], SESSIONS[9], 3100, "filled", 3100, Decimal("2997.000")),
+    ]
+    assert [(o.reason["disposition"], o.reason["reason_codes"]) for o in report.orders] == [
+        ("hold", ["topix_above_ma"]), ("exit", ["topix_below_ma"])]
+    assert report.orders[0].priority == pytest.approx(106 / (306.5 / 3) - 1)
+    assert (report.holdings, report.pending) == ([], [])
+    assert report.nav[SESSIONS[9]] == Decimal("9981400")
 
 
 def test_a_stock_account_trades_and_values_as_before_with_1306_in_the_market(migrated_database) -> None:
