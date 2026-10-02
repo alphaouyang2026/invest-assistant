@@ -100,7 +100,7 @@ def test_nothing_after_the_day_is_seen() -> None:
     cut = MarketFrame(whole.data[whole.data.index.get_level_values("date") <= day])
     holdings = [Holding("13020", 100, DAYS[182])]
 
-    for name in ("trend_pullback_v1",):
+    for name in ("trend_pullback_v1", "topix_buy_and_hold_v1"):
         strategy = build_strategy(name, {})
         assert strategy.evaluate(whole, day, holdings) == build_strategy(name, {}).evaluate(cut, day, holdings)
 

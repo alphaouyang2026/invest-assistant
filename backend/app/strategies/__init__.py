@@ -1,19 +1,22 @@
-"""Strategies (spec §6, A.3): two adapters behind one seam."""
+"""Strategies (spec §6, A.3): the stock strategies and the TOPIX ETF ones,
+adapters behind one seam."""
 
 from collections.abc import Mapping
 from typing import Any
 
 from app.strategies.base import Disposition, Holding, Judgement, Plot, Signal, Strategy
-from app.strategies import technical_rating, trend_pullback
+from app.strategies import technical_rating, topix_buy_and_hold, trend_pullback
 from app.strategies.assembly import Candidate, SecurityHistory, entry_candidates, history
 
 _STRATEGIES = {
     trend_pullback.TrendPullback.name: trend_pullback.TrendPullback,
     technical_rating.TechnicalRating.name: technical_rating.TechnicalRating,
+    topix_buy_and_hold.TopixBuyAndHold.name: topix_buy_and_hold.TopixBuyAndHold,
 }
 STRATEGY_DEFAULTS: Mapping[str, Mapping[str, Any]] = {
     trend_pullback.TrendPullback.name: trend_pullback.DEFAULTS,
     technical_rating.TechnicalRating.name: technical_rating.DEFAULTS,
+    topix_buy_and_hold.TopixBuyAndHold.name: topix_buy_and_hold.DEFAULTS,
 }
 
 

@@ -118,5 +118,6 @@ def test_stopping_and_deleting_and_a_missing_account_is_a_404(api) -> None:
 def test_the_strategies_and_their_defaults_for_the_new_account_page(api) -> None:
     listed = {s["name"]: s["defaults"] for s in api.get("/api/strategies").json()}
 
-    assert set(listed) == {"trend_pullback_v1", "technical_rating_v1"}
+    assert set(listed) == {"trend_pullback_v1", "technical_rating_v1", "topix_buy_and_hold_v1"}
     assert listed["technical_rating_v1"]["entry_above"] == 0.5
+    assert listed["topix_buy_and_hold_v1"] == {"warmup_sessions": 1}
