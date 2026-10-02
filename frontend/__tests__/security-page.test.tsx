@@ -81,6 +81,27 @@ describe("证券详情页", () => {
     expect(drawn.data?.entries).toEqual(["2026-09-17"]);
   });
 
+  it("TOPIX 均线下，1306 的图在单独一栏画 TOPIX 收盘和均线", async () => {
+    stubBackend({
+      ...BARS,
+      code: "13060",
+      plots: [{ indicator: "topix_close", pane: "separate" }, { indicator: "topix_ma", pane: "separate" }],
+      lines: {
+        topix_close: [{ date: "2026-09-17", value: 3120.5 }, { date: "2026-09-18", value: 3150.25 }],
+        topix_ma: [{ date: "2026-09-17", value: 2950.1 }, { date: "2026-09-18", value: 2952.3 }],
+      } as unknown as typeof BARS.lines,
+    });
+    render(<SecurityDetail code="13060" strategy="topix_ma_v1" />);
+
+    await screen.findByTestId("chart");
+    expect(asked[0]).toBe("/api/instruments/13060/bars?strategy=topix_ma_v1");
+    expect(drawn.data?.lines).toEqual([
+      { name: "topix_close", pane: "separate", points: [{ time: "2026-09-17", value: 3120.5 }, { time: "2026-09-18", value: 3150.25 }] },
+      { name: "topix_ma", pane: "separate", points: [{ time: "2026-09-17", value: 2950.1 }, { time: "2026-09-18", value: 2952.3 }] },
+    ]);
+    expect(screen.getByRole("link", { name: "TOPIX 均线" })).toHaveAttribute("aria-current", "page");
+  });
+
   it("把研究价格 K 线、成交量、策略的指标和历史入场点交给图表", async () => {
     render(<SecurityDetail code="72030" strategy="trend_pullback_v1" />);
 

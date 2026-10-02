@@ -15,10 +15,22 @@ const CANDIDATES: Record<string, unknown[]> = {
     { code: "13060", name: "ＮＥＸＴ　ＦＵＮＤＳ　ＴＯＰＩＸ連動型上場投信", market: "0109", priority: 1, reason_codes: ["always_hold"] },
   ],
 };
+// TOPIX 均线 holds 1306 from the close of 2026-09-18 only; on the quiet
+// day no strategy has a candidate.
+const ABOVE_THE_AVERAGE = "2026-09-18";
+const QUIET_DAY = "2026-09-16";
+const MA_CANDIDATE = {
+  code: "13060", name: "ＮＥＸＴ　ＦＵＮＤＳ　ＴＯＰＩＸ連動型上場投信", market: "0109", priority: 0.0312,
+  reason_codes: ["topix_above_ma"],
+};
+const UNIVERSE_RULES: Record<string, string> = {
+  trend_pullback_v1: "prime_common_stock", technical_rating_v1: "prime_common_stock",
+  topix_buy_and_hold_v1: "topix_etf", topix_ma_v1: "topix_etf",
+};
 
 /**
- * A stand-in for the backend: answers `/api/signals` and `/api/instruments`
- * and records what the page asked for.
+ * A stand-in for the backend: answers `/api/signals`, `/api/instruments`
+ * and `/api/strategies`, and records what the page asked for.
  */
 function fakeBackend() {
   const asked: string[] = [];
@@ -28,11 +40,19 @@ function fakeBackend() {
     const json = (body: unknown) => new Response(JSON.stringify(body), { headers: { "Content-Type": "application/json" } });
     if (url.pathname === "/api/signals") {
       const strategy = url.searchParams.get("strategy") ?? "";
+      const date = url.searchParams.get("date") ?? "2026-09-24";
       return json({
         strategy,
-        date: url.searchParams.get("date") ?? "2026-09-24",
-        candidates: CANDIDATES[strategy] ?? [],
+        date,
+        candidates: date === QUIET_DAY ? []
+          : strategy === "topix_ma_v1" ? (date === ABOVE_THE_AVERAGE ? [MA_CANDIDATE] : [])
+          : (CANDIDATES[strategy] ?? []),
       });
+    }
+    if (url.pathname === "/api/strategies") {
+      return json(Object.entries(UNIVERSE_RULES).map(([name, universe_rule]) => ({
+        name, defaults: {}, universe_rule, suggested_rules: { max_positions: 1, max_weight: 1, cash_floor: 0.05 },
+      })));
     }
     if (url.pathname === "/api/instruments") {
       return json([{ code: "72030", name: "トヨタ自動車", name_en: "TOYOTA MOTOR", market: "0111" }]);
@@ -98,6 +118,39 @@ describe("信号页", () => {
     expect(within(row).getByText("その他")).toBeInTheDocument();
     expect(within(row).getByText("一直持有（对照组）")).toHaveClass("badge", "up");
     expect(within(row).getByText("1.00")).toBeInTheDocument();
+  });
+
+  it("TOPIX 均线没有候选时写明今天不持有 1306，链接到 1306 的详情页；有候选时理由是 TOPIX 在均线之上", async () => {
+    const user = userEvent.setup();
+    render(<SignalBoard />);
+    await screen.findByRole("table", { name: "入场候选" });
+
+    await user.click(screen.getByRole("button", { name: "TOPIX 均线" }));
+
+    expect(await screen.findByText(/今天不持有 1306/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "看 1306 的详情" })).toHaveAttribute(
+      "href", "/signals/13060?strategy=topix_ma_v1",
+    );
+    expect(screen.queryByText("这一天没有入场候选")).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("收盘日"), { target: { value: ABOVE_THE_AVERAGE } });
+    const link = await screen.findByRole("link", { name: "1306" });
+    const row = link.closest("tr") as HTMLElement;
+    expect(within(row).getByText("TOPIX 在均线之上")).toHaveClass("badge", "up");
+    expect(within(row).getByText("0.03")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("收盘日"), { target: { value: "2026-09-17" } });
+    expect(await screen.findByText(/这一天不持有 1306/)).toBeInTheDocument();
+  });
+
+  it("个股策略没有候选时仍是一般的说明", async () => {
+    render(<SignalBoard />);
+    await screen.findByRole("table", { name: "入场候选" });
+
+    fireEvent.change(screen.getByLabelText("收盘日"), { target: { value: QUIET_DAY } });
+
+    expect(await screen.findByText("这一天没有入场候选")).toBeInTheDocument();
+    expect(screen.queryByText(/不持有 1306/)).not.toBeInTheDocument();
   });
 
   it("搜索证券，结果链接到详情页", async () => {

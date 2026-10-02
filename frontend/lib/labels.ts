@@ -17,6 +17,12 @@ export const STRATEGIES = [
     about:
       "对照组：只交易 1306（NEXT FUNDS TOPIX 連動型上場投信），能买就买入，之后一直持有、从不卖出。成交、滑点、拆股和其他策略同一套规则；ETF 分配金不入账，每年 7 月落权那天约少算 2%",
   },
+  {
+    name: "topix_ma_v1",
+    label: "TOPIX 均线",
+    about:
+      "只交易 1306，每个开市日收盘看 TOPIX：收盘高出均线（默认 200 个开市日）超过缓冲带（默认 1%）就买入，低于均线超过缓冲带就全部卖出、持有现金，在缓冲带内（含恰好在门槛上）不改变状态。成交、滑点、拆股和其他策略同一套规则；ETF 分配金不入账",
+  },
 ] as const;
 
 export type StrategyName = (typeof STRATEGIES)[number]["name"];
@@ -41,7 +47,20 @@ export const PARAMS: Record<string, { label: string; hint: string }> = {
   // 技术评级 v1
   entry_above: { label: "入场线", hint: "总评高于它才买入" },
   exit_below: { label: "退出线", hint: "持仓的总评低于它就卖出" },
+  // TOPIX 均线
+  ma_sessions: { label: "均线窗口", hint: "TOPIX 收盘的个数（开市日），含当天；预热期跟着它变" },
+  band: { label: "缓冲带", hint: "比例，0.01 表示 1%：TOPIX 高出均线超过它才买入，低于均线超过它才卖出" },
 };
+
+/** Window parameters the warm-up follows: changing one sets the warm-up to
+ * the closes its rule reads, the day's own included — what the backend
+ * checks the warm-up against. */
+export const WARMUP_FOLLOWS: Partial<Record<string, (window: number) => number>> = {
+  ma_sessions: (sessions) => sessions, // TOPIX 均线
+};
+
+/** The one ETF the TOPIX ETF universe rule draws on. */
+export const TOPIX_ETF = { code: "13060", label: "1306" };
 
 /** J-Quants' market codes; ETFs such as 1306 are listed under その他. */
 const MARKETS: Record<string, string> = { "0109": "その他", "0111": "Prime", "0112": "Standard", "0113": "Growth" };
@@ -66,6 +85,10 @@ const REASONS: Record<string, string> = {
   strong_sell: "强烈卖出",
   // TOPIX ETF 一直持有
   always_hold: "一直持有（对照组）",
+  // TOPIX 均线
+  topix_above_ma: "TOPIX 在均线之上",
+  topix_near_ma: "TOPIX 在均线附近（缓冲带内）",
+  topix_below_ma: "TOPIX 在均线之下",
 };
 
 export const reason = (code: string) => REASONS[code] ?? code;
@@ -75,6 +98,7 @@ const REASON_TONES: Record<string, string> = {
   strong_buy: "up", buy: "up", sell: "down", strong_sell: "down",
   trailing_stop: "down", trend_broken: "down", overbought_fade: "down", time_exit: "",
   always_hold: "up",
+  topix_above_ma: "up", topix_near_ma: "", topix_below_ma: "down",
 };
 
 export const reasonTone = (code: string) => REASON_TONES[code] ?? "up";

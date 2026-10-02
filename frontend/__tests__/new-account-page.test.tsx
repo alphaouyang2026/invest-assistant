@@ -15,6 +15,8 @@ const STRATEGIES = [
     universe_rule: "prime_common_stock", suggested_rules: STOCK_RULES },
   { name: "topix_buy_and_hold_v1", defaults: { warmup_sessions: 1 },
     universe_rule: "topix_etf", suggested_rules: { max_positions: 1, max_weight: 1, cash_floor: 0.05 } },
+  { name: "topix_ma_v1", defaults: { ma_sessions: 200, band: 0.01, warmup_sessions: 200 },
+    universe_rule: "topix_etf", suggested_rules: { max_positions: 1, max_weight: 1, cash_floor: 0.05 } },
 ];
 
 function fakeBackend(created: { status: number; body: unknown }) {
@@ -97,6 +99,58 @@ describe("新建账户", () => {
       initial_cash: 10000000, max_positions: 1, max_weight: 1, cash_floor: 0.05,
       commission_rate: 0, commission_min: 0, slippage: 0.001,
     }]);
+  });
+
+  it("TOPIX 均线：参数有均线窗口和缓冲带，预热期和它的提示跟着均线窗口变", async () => {
+    backend = fakeBackend({ status: 201, body: { id: 9, advance_job_id: "job3", advance_refused: null } });
+    vi.stubGlobal("fetch", backend.fetch);
+    const user = userEvent.setup();
+    render(<NewAccount />);
+
+    await user.click(await screen.findByRole("radio", { name: /TOPIX 均线/ }));
+    expect(screen.getByRole("radio", { name: /TOPIX 均线/ })).toHaveAccessibleName(/超过缓冲带（默认 1%）就买入/);
+    expect(screen.getByLabelText("均线窗口")).toHaveValue(200);
+    expect(screen.getByLabelText("缓冲带")).toHaveValue(0.01);
+    expect(screen.getByText(/比例，0\.01 表示 1%/)).toBeInTheDocument();
+    expect(screen.getByText(/之前至少有 200 个交易日的数据/)).toBeInTheDocument();
+    expect(["最多持有", "单只上限", "现金下限"].map((label) => screen.getByLabelText(label))
+      .map((input) => (input as HTMLInputElement).value)).toEqual(["1", "100", "5"]);
+
+    await user.clear(screen.getByLabelText("均线窗口"));
+    await user.type(screen.getByLabelText("均线窗口"), "120");
+    expect(screen.getByLabelText("预热期")).toHaveValue(120);
+    expect(screen.getByText(/之前至少有 120 个交易日的数据/)).toBeInTheDocument();
+
+    await user.type(screen.getByLabelText("账户名称"), "均线 120");
+    fireEvent.change(screen.getByLabelText("起始日"), { target: { value: "2022-10-06" } });
+    await user.click(screen.getByRole("button", { name: "新建并开始回测" }));
+
+    await vi.waitFor(() => expect(pushed).toEqual(["/accounts/9"]));
+    expect(backend.posted).toEqual([{
+      name: "均线 120", strategy: "topix_ma_v1", start_date: "2022-10-06",
+      strategy_params: { ma_sessions: 120, warmup_sessions: 120 },
+      initial_cash: 10000000, max_positions: 1, max_weight: 1, cash_floor: 0.05,
+      commission_rate: 0, commission_min: 0, slippage: 0.001,
+    }]);
+  });
+
+  it("预热期设得比均线窗口短时，送出的就是填的值，被拒绝并说明原因", async () => {
+    const why = "topix_ma_v1 的预热期 100 比均线窗口 200 短：均线还算不出来";
+    backend = fakeBackend({ status: 422, body: { detail: why } });
+    vi.stubGlobal("fetch", backend.fetch);
+    const user = userEvent.setup();
+    render(<NewAccount />);
+
+    await user.click(await screen.findByRole("radio", { name: /TOPIX 均线/ }));
+    await user.clear(screen.getByLabelText("预热期"));
+    await user.type(screen.getByLabelText("预热期"), "100");
+    await user.type(screen.getByLabelText("账户名称"), "太短");
+    fireEvent.change(screen.getByLabelText("起始日"), { target: { value: "2022-10-06" } });
+    await user.click(screen.getByRole("button", { name: "新建并开始回测" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(why);
+    expect(backend.posted).toEqual([expect.objectContaining({ strategy_params: { warmup_sessions: 100 } })]);
+    expect(pushed).toEqual([]);
   });
 
   it("建不了时显示原因", async () => {

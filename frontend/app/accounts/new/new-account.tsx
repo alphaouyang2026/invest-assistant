@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useId, useState } from "react";
 
 import { api, type Schemas } from "@/lib/api/client";
-import { DEFAULT_STRATEGY, PARAMS, STRATEGIES } from "@/lib/labels";
+import { DEFAULT_STRATEGY, PARAMS, STRATEGIES, WARMUP_FOLLOWS } from "@/lib/labels";
 
 type StrategyInfo = Schemas["StrategyOut"];
 
@@ -69,6 +69,18 @@ export function NewAccount() {
     // rules; what is typed afterwards stays until the strategy changes
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [strategy, strategies]);
+
+  /** A window the warm-up follows takes the warm-up with it, so the hint
+   * below the start date and the backend's check agree. */
+  const setParam = (key: string, value: string) => {
+    const follows = WARMUP_FOLLOWS[key];
+    const window = Number(value);
+    const next: Record<string, string> = { ...params, [key]: value };
+    if (follows && value.trim() !== "" && Number.isInteger(window) && window >= 1) {
+      next.warmup_sessions = String(follows(window));
+    }
+    setParams(next);
+  };
 
   const rule = (key: RuleKey) => {
     const found = RULES.find((r) => r.key === key)!;
@@ -167,7 +179,7 @@ export function NewAccount() {
                   {PARAMS[key] && <span className="mono sub"> {key}</span>}
                 </div>
                 <input id={`${id}-${key}`} className="input" type="number" step="any" value={params[key]}
-                       onChange={(event) => setParams({ ...params, [key]: event.target.value })} />
+                       onChange={(event) => setParam(key, event.target.value)} />
                 {PARAMS[key] && <div className="hint">{PARAMS[key].hint}</div>}
               </div>
             ))}

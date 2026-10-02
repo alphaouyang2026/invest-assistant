@@ -5,7 +5,9 @@ import { useEffect, useId, useState } from "react";
 
 import { api, type Schemas } from "@/lib/api/client";
 import { displayCode } from "@/lib/format";
-import { DEFAULT_STRATEGY, STRATEGIES, type StrategyName, market, reason, reasonTone } from "@/lib/labels";
+import {
+  DEFAULT_STRATEGY, STRATEGIES, type StrategyName, TOPIX_ETF, market, reason, reasonTone,
+} from "@/lib/labels";
 
 import { Pager, range } from "../pager";
 
@@ -35,6 +37,7 @@ export function SignalBoard() {
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [found, setFound] = useState<Instrument[] | null>(null);
+  const [universeRules, setUniverseRules] = useState<Record<string, string>>({});
 
   const search = async () => {
     if (!query.trim()) return;
@@ -64,6 +67,15 @@ export function SignalBoard() {
       current = false;
     };
   }, [strategy, date]);
+
+  // Each strategy's universe rule: a TOPIX ETF strategy with no candidate
+  // is saying something about 1306 in particular.
+  useEffect(() => {
+    void (async () => {
+      const { data } = await api.GET("/api/strategies");
+      if (Array.isArray(data)) setUniverseRules(Object.fromEntries(data.map((s) => [s.name, s.universe_rule])));
+    })();
+  }, []);
 
   const candidates = signals?.candidates ?? [];
   const pages = Math.max(1, Math.ceil(candidates.length / PAGE_SIZE));
@@ -129,7 +141,12 @@ export function SignalBoard() {
             <h2 id="candidates">{candidates.length} 只入场候选</h2>
             <span className="aside">{signals.date} 收盘 · 按排序值从高到低</span>
           </div>
-          {candidates.length === 0 ? (
+          {candidates.length === 0 && universeRules[strategy] === "topix_etf" ? (
+            <div className="empty">
+              {date ? "这一天" : "今天"}不持有 {TOPIX_ETF.label} ·{" "}
+              <Link href={`/signals/${TOPIX_ETF.code}?strategy=${strategy}`}>看 {TOPIX_ETF.label} 的详情</Link>
+            </div>
+          ) : candidates.length === 0 ? (
             <div className="empty">这一天没有入场候选</div>
           ) : (
             <>
