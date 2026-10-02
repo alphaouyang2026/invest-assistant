@@ -11,7 +11,7 @@ from decimal import Decimal
 import pytest
 
 from app.accounts import Accounts, AccountSpec
-from app.market_data import UniverseRule
+from app.market_data import TOPIX, UniverseRule
 from app.strategies import Disposition
 from tests.account_market import ETF_LISTINGS, SESSIONS, TOPIX_ETF, Script, synced
 
@@ -51,6 +51,23 @@ def test_an_account_buys_only_from_the_universe_its_strategy_declares(migrated_d
         UniverseRule.PRIME_COMMON_STOCK: [("buy", "13010", "filled")],
         UniverseRule.TOPIX_ETF: [("buy", TOPIX_ETF, "filled")],
     }
+
+
+def test_an_account_reads_its_strategys_reference_series_and_never_trades_it(migrated_database) -> None:
+    """TOPIX is in the frame the strategy is given. Told to hold TOPIX as
+    well as 1306, the account buys 1306 alone: TOPIX is in no universe."""
+    market = synced(migrated_database, {TOPIX_ETF: ["2000"] * 10}, listings=ETF_LISTINGS)
+    script = Script({SESSIONS[1]: {TOPIX: Disposition.HOLD, TOPIX_ETF: Disposition.HOLD}},
+                    UniverseRule.TOPIX_ETF, reference_series=(TOPIX,))
+    accounts = Accounts(migrated_database, market, build_strategy=lambda name, params: script)
+    account = accounts.create(AccountSpec(name="参照", strategy="script", start_date=SESSIONS[1]))
+
+    accounts.advance(account, through=SESSIONS[3])
+
+    report = accounts.report(account)
+    assert script.read == {TOPIX_ETF, TOPIX}
+    assert [(o.kind, o.code, o.status) for o in report.orders] == [("buy", TOPIX_ETF, "filled")]
+    assert [h.code for h in report.holdings] == [TOPIX_ETF]
 
 
 def comparable(orders) -> list[tuple]:

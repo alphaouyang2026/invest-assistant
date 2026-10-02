@@ -72,6 +72,10 @@ class Strategy(Protocol):
     # Where it opens positions (spec §6.1): callers ask the market data
     # module for this universe; the strategy judges whatever is in the frame.
     universe_rule: UniverseRule
+    # Codes it reads but never trades (CONTEXT.md 参照行情) — TOPIX, say:
+    # callers add them to what they read; `evaluate` takes them as input
+    # only and never gives one of them a signal.
+    reference_series: tuple[str, ...]
 
     def evaluate(self, frame: MarketFrame, day: date, holdings: Sequence[Holding]) -> list[Signal]: ...
 
@@ -120,6 +124,7 @@ class IndicatorStrategy:
     warmup_sessions: int
     plots: tuple[Plot, ...]
     universe_rule: UniverseRule = UniverseRule.PRIME_COMMON_STOCK
+    reference_series: tuple[str, ...] = ()  # its lines come from each code's own bars
 
     def __init__(self, params: Mapping[str, Any]) -> None:
         self.params = params

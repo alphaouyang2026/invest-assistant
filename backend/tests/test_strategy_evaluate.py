@@ -126,6 +126,13 @@ def test_the_stock_strategies_buy_from_prime_common_stock() -> None:
         assert build_strategy(name, {}).universe_rule is UniverseRule.PRIME_COMMON_STOCK
 
 
+def test_the_stock_strategies_and_the_control_group_read_no_reference_series() -> None:
+    """The reference series a strategy declares when it says nothing (spec
+    §6.2): their lines come from each code's own bars."""
+    for name in ("trend_pullback_v1", "technical_rating_v1", "topix_buy_and_hold_v1"):
+        assert build_strategy(name, {}).reference_series == ()
+
+
 def test_a_parameter_the_strategy_does_not_know_is_refused() -> None:
     """A misspelt name would otherwise leave the default in place without a word."""
     with pytest.raises(ValueError, match="rsi_oversld"):

@@ -32,6 +32,7 @@ class StandIn:
     warmup_sessions = 3
     plots = (Plot("close", "price"), Plot("double", "separate"))
     universe_rule = UniverseRule.PRIME_COMMON_STOCK
+    reference_series: tuple[str, ...] = ()
 
     def evaluate(self, frame, day, holdings):
         closes = frame.wide(CLOSE)

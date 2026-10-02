@@ -23,20 +23,25 @@ ETF_LISTINGS = {TOPIX_ETF: listed(TOPIX_ETF, market="0109", product="014", name=
 
 class Script:
     """A strategy that holds and sells on a script: `plan[day][code]`. It
-    buys from Prime common stock unless told another universe rule."""
+    buys from Prime common stock unless told another universe rule, and
+    reads no reference series unless told some."""
 
     name = "script"
     warmup_sessions = 1
     plots: tuple[Plot, ...] = ()
 
     def __init__(self, plan: dict[date, dict[str, Disposition]],
-                 universe_rule: UniverseRule = UniverseRule.PRIME_COMMON_STOCK) -> None:
+                 universe_rule: UniverseRule = UniverseRule.PRIME_COMMON_STOCK,
+                 reference_series: tuple[str, ...] = ()) -> None:
         self.plan = plan
         self.universe_rule = universe_rule
+        self.reference_series = reference_series
         self.asked: list[tuple[date, list]] = []
+        self.read: set[str] = set()  # every code in the frames it was given
 
     def evaluate(self, frame, day, holdings):
         self.asked.append((day, sorted((h.code, h.quantity, h.opened_on) for h in holdings)))
+        self.read.update(frame.data.index.unique("code"))
         return [Signal(code, disposition, ("scripted",), {}, 0.5) for code, disposition in self.plan.get(day, {}).items()]
 
 

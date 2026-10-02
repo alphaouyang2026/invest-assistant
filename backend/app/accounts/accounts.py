@@ -291,9 +291,9 @@ class Accounts:
     def _prices(self, strategy: Strategy, ledger: Ledger, universes: Mapping[date, list[str]],
                 days: list[date]) -> Prices:
         """One read for the whole run: every code that could be bought or is
-        held, from far enough back for the strategy's warm-up and for the
-        oldest holding's opening."""
-        codes = set(ledger.positions) | {order.code for order in ledger.pending}
+        held, and the strategy's reference series, from far enough back for
+        the strategy's warm-up and for the oldest holding's opening."""
+        codes = set(ledger.positions) | {order.code for order in ledger.pending} | set(strategy.reference_series)
         for listed in universes.values():
             codes.update(listed)
         sessions = [d for d in self._market.calendar().sessions() if d < days[0]]
