@@ -11,6 +11,12 @@ export const STRATEGIES = [
     label: "技术评级 v1",
     about: "复刻 TradingView 技术评级：26 项指标的总评高于入场线就买入，持仓的总评低于退出线就卖出",
   },
+  {
+    name: "topix_buy_and_hold_v1",
+    label: "TOPIX ETF 一直持有",
+    about:
+      "对照组：只交易 1306（NEXT FUNDS TOPIX 連動型上場投信），能买就买入，之后一直持有、从不卖出。成交、滑点、拆股和其他策略同一套规则；ETF 分配金不入账，每年 7 月落权那天约少算 2%",
+  },
 ] as const;
 
 export type StrategyName = (typeof STRATEGIES)[number]["name"];
@@ -37,7 +43,8 @@ export const PARAMS: Record<string, { label: string; hint: string }> = {
   exit_below: { label: "退出线", hint: "持仓的总评低于它就卖出" },
 };
 
-const MARKETS: Record<string, string> = { "0111": "Prime", "0112": "Standard", "0113": "Growth" };
+/** J-Quants' market codes; ETFs such as 1306 are listed under その他. */
+const MARKETS: Record<string, string> = { "0109": "その他", "0111": "Prime", "0112": "Standard", "0113": "Growth" };
 
 export const market = (code: string | null | undefined) => (code ? (MARKETS[code] ?? code) : "已退市");
 
@@ -57,6 +64,8 @@ const REASONS: Record<string, string> = {
   neutral: "中性",
   sell: "卖出",
   strong_sell: "强烈卖出",
+  // TOPIX ETF 一直持有
+  always_hold: "一直持有（对照组）",
 };
 
 export const reason = (code: string) => REASONS[code] ?? code;
@@ -65,6 +74,7 @@ export const reason = (code: string) => REASONS[code] ?? code;
 const REASON_TONES: Record<string, string> = {
   strong_buy: "up", buy: "up", sell: "down", strong_sell: "down",
   trailing_stop: "down", trend_broken: "down", overbought_fade: "down", time_exit: "",
+  always_hold: "up",
 };
 
 export const reasonTone = (code: string) => REASON_TONES[code] ?? "up";

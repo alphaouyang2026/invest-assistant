@@ -4,6 +4,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { SignalBoard } from "@/app/signals/signal-board";
 
+const CANDIDATES: Record<string, unknown[]> = {
+  trend_pullback_v1: [
+    { code: "72030", name: "トヨタ自動車", market: "0111", priority: 0.2718, reason_codes: ["ema_uptrend", "rsi_recovery"] },
+  ],
+  technical_rating_v1: [
+    { code: "67580", name: "ソニーグループ", market: "0111", priority: 0.61, reason_codes: ["strong_buy"] },
+  ],
+  topix_buy_and_hold_v1: [
+    { code: "13060", name: "ＮＥＸＴ　ＦＵＮＤＳ　ＴＯＰＩＸ連動型上場投信", market: "0109", priority: 1, reason_codes: ["always_hold"] },
+  ],
+};
+
 /**
  * A stand-in for the backend: answers `/api/signals` and `/api/instruments`
  * and records what the page asked for.
@@ -15,14 +27,11 @@ function fakeBackend() {
     asked.push(url.pathname + url.search);
     const json = (body: unknown) => new Response(JSON.stringify(body), { headers: { "Content-Type": "application/json" } });
     if (url.pathname === "/api/signals") {
-      const strategy = url.searchParams.get("strategy");
+      const strategy = url.searchParams.get("strategy") ?? "";
       return json({
         strategy,
         date: url.searchParams.get("date") ?? "2026-09-24",
-        candidates:
-          strategy === "trend_pullback_v1"
-            ? [{ code: "72030", name: "トヨタ自動車", market: "0111", priority: 0.2718, reason_codes: ["ema_uptrend", "rsi_recovery"] }]
-            : [{ code: "67580", name: "ソニーグループ", market: "0111", priority: 0.61, reason_codes: ["strong_buy"] }],
+        candidates: CANDIDATES[strategy] ?? [],
       });
     }
     if (url.pathname === "/api/instruments") {
@@ -74,6 +83,21 @@ describe("信号页", () => {
     // passes through invalid values, which the input throws away.
     fireEvent.change(screen.getByLabelText("收盘日"), { target: { value: "2026-09-18" } });
     await waitFor(() => expect(backend.asked.at(-1)).toBe("/api/signals?strategy=technical_rating_v1&date=2026-09-18"));
+  });
+
+  it("TOPIX ETF 一直持有的入场候选是 1306：市场显示その他，理由是一直持有（对照组）", async () => {
+    const user = userEvent.setup();
+    render(<SignalBoard />);
+    await screen.findByRole("table", { name: "入场候选" });
+
+    await user.click(screen.getByRole("button", { name: "TOPIX ETF 一直持有" }));
+
+    const link = await screen.findByRole("link", { name: "1306" });
+    expect(link).toHaveAttribute("href", "/signals/13060?strategy=topix_buy_and_hold_v1");
+    const row = link.closest("tr") as HTMLElement;
+    expect(within(row).getByText("その他")).toBeInTheDocument();
+    expect(within(row).getByText("一直持有（对照组）")).toHaveClass("badge", "up");
+    expect(within(row).getByText("1.00")).toBeInTheDocument();
   });
 
   it("搜索证券，结果链接到详情页", async () => {

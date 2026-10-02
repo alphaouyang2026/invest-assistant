@@ -9,8 +9,9 @@ import { DEFAULT_STRATEGY, PARAMS, STRATEGIES } from "@/lib/labels";
 
 type StrategyInfo = Schemas["StrategyOut"];
 
-/** Portfolio rules and costs (spec §3.5), with their defaults. A `percent`
- * one is typed as a percentage and sent as a fraction. */
+/** Portfolio rules and costs (spec §3.5), with their defaults — until the
+ * strategies arrive, whose suggested portfolio rules then replace them. A
+ * `percent` one is typed as a percentage and sent as a fraction. */
 const RULES = [
   { key: "initial_cash", label: "初始资金", value: "10000000", unit: "日元", step: 100_000 },
   { key: "max_positions", label: "最多持有", value: "10", unit: "只", step: 1 },
@@ -26,6 +27,9 @@ type RuleKey = (typeof RULES)[number]["key"];
 /** "0.1" (%) → 0.001, without 0.1 / 100's floating-point tail. */
 const fraction = (text: string) => Number((Number(text) / 100).toPrecision(12));
 
+/** 0.05 → "5" (%), the other way. */
+const percentText = (value: number) => String(Number((value * 100).toPrecision(12)));
+
 export function NewAccount() {
   const router = useRouter();
   const id = useId();
@@ -40,7 +44,8 @@ export function NewAccount() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const defaults = strategies.find((s) => s.name === strategy)?.defaults ?? {};
+  const chosen = strategies.find((s) => s.name === strategy);
+  const defaults = chosen?.defaults ?? {};
 
   useEffect(() => {
     void (async () => {
@@ -51,7 +56,17 @@ export function NewAccount() {
 
   useEffect(() => {
     setParams(Object.fromEntries(Object.entries(defaults).map(([key, value]) => [key, String(value)])));
-    // a new strategy starts from its own defaults
+    const suggested = chosen?.suggested_rules;
+    if (suggested) {
+      setRules((now) => ({
+        ...now,
+        max_positions: String(suggested.max_positions),
+        max_weight: percentText(suggested.max_weight),
+        cash_floor: percentText(suggested.cash_floor),
+      }));
+    }
+    // a new strategy starts from its own defaults and suggested portfolio
+    // rules; what is typed afterwards stays until the strategy changes
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [strategy, strategies]);
 
@@ -162,6 +177,7 @@ export function NewAccount() {
         <section className="card">
           <div className="card-h">
             <h2>组合规则与费用</h2>
+            <span className="aside">选策略时按它建议的组合规则填好，可以再改</span>
           </div>
           <div className="form three">
             {RULES.map((r) => (
