@@ -17,6 +17,7 @@ from fastapi.testclient import TestClient
 from app.config import Settings
 from app.main import create_app
 from app.market_data import CLOSE, UniverseRule
+from app.market_data.jquants import IndexBar
 from app.strategies import Disposition, Plot, Signal
 from tests.fakes import FakeJQuants, bar, listed
 
@@ -77,6 +78,54 @@ def real_strategies(migrated_database):
     with TestClient(app) as client:
         app.state.market.sync()
         yield client
+
+
+TOPIX_SESSIONS = [date(2026, 1, 5) + timedelta(days=n) for n in range(203)]
+# On its 200-close average of 100 until the last two sessions, then 102 and 104.
+TOPIX_CLOSES = ["100"] * 201 + ["102", "104"]
+
+
+@pytest.fixture
+def topix_market(migrated_database):
+    """The real strategies, with their default parameters, on 1306 at 3,000
+    and TOPIX as above: a year of sessions, enough for a 200-close average."""
+    bars = {day: [bar("13060", day, "3000", turnover=LIQUID)] for day in TOPIX_SESSIONS}
+    roster = [listed("13060", "0109", product="014", name="ＴＯＰＩＸ連動型上場投信")]
+    topix = [IndexBar(day, *[Decimal(close)] * 4) for day, close in zip(TOPIX_SESSIONS, TOPIX_CLOSES)]
+    fake = FakeJQuants(TOPIX_SESSIONS, bars=bars, roster=roster, topix=topix)
+    app = create_app(Settings(_env_file=None), client=fake, today=lambda: TOPIX_SESSIONS[-1])
+    with TestClient(app) as client:
+        app.state.market.sync()
+        yield client
+
+
+def test_the_moving_average_strategy_has_1306_as_its_candidate_or_none(topix_market) -> None:
+    """On the latest session TOPIX closes at 104, over 1% above its average:
+    1306. Two sessions earlier it sat on its average: nothing."""
+    latest = topix_market.get("/api/signals", params={"strategy": "topix_ma_v1"}).json()
+    on_the_average = topix_market.get("/api/signals", params={
+        "strategy": "topix_ma_v1", "date": TOPIX_SESSIONS[-3].isoformat()}).json()
+
+    [candidate] = latest["candidates"]
+    assert (candidate["code"], candidate["market"], candidate["reason_codes"]) == ("13060", "0109", ["topix_above_ma"])
+    assert candidate["priority"] == pytest.approx(104 / ((198 * 100 + 102 + 104) / 200) - 1)
+    assert on_the_average["candidates"] == []
+
+
+def test_1306s_bars_come_with_topix_and_its_average_and_the_days_it_would_have_been_bought(topix_market) -> None:
+    days = [day.isoformat() for day in TOPIX_SESSIONS[-3:]]
+
+    body = topix_market.get("/api/instruments/13060/bars",
+                            params={"strategy": "topix_ma_v1", "from": days[0], "to": days[-1]}).json()
+
+    assert [b["date"] for b in body["bars"]] == days and {b["close"] for b in body["bars"]} == {3000.0}
+    assert body["plots"] == [{"indicator": "topix_close", "pane": "separate"},
+                             {"indicator": "topix_ma", "pane": "separate"}]
+    assert {name: [point["date"] for point in line] for name, line in body["lines"].items()} == {
+        "topix_close": days, "topix_ma": days}
+    assert [point["value"] for point in body["lines"]["topix_close"]] == [100.0, 102.0, 104.0]
+    assert [point["value"] for point in body["lines"]["topix_ma"]] == pytest.approx([100.0, 100.01, 100.03])
+    assert body["entries"] == days[1:]
 
 
 def test_the_control_group_has_1306_as_its_entry_candidate(real_strategies) -> None:
