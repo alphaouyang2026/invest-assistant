@@ -146,7 +146,7 @@ class Accounts:
         rules, costs, initial_cash = trading_terms(account)
         ledger = Ledger(initial_cash, self._records(account_id))
         strategy = self._build_strategy(account["strategy"], account["strategy_params"])
-        universes = self._market.universe(days[0], days[-1])
+        universes = self._market.universe(days[0], days[-1], rule=strategy.universe_rule)
         prices = self._prices(strategy, ledger, universes, days)
 
         warnings: list[str] = []

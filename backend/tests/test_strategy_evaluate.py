@@ -9,7 +9,7 @@ from __future__ import annotations
 import pytest
 
 from app import indicators
-from app.market_data import CLOSE, HIGH, LOW, MarketFrame
+from app.market_data import CLOSE, HIGH, LOW, MarketFrame, UniverseRule
 from app.strategies import Disposition, Holding, build_strategy
 from tests.frames import NO_BAR, frame_of, sessions
 
@@ -118,6 +118,12 @@ def test_the_indicators_are_worked_out_once_per_frame(monkeypatch) -> None:
         strategy.evaluate(frame, day, [])
 
     assert len(calls) == 1
+
+
+def test_the_stock_strategies_buy_from_prime_common_stock() -> None:
+    """The universe rule a strategy declares when it says nothing (spec §6.1)."""
+    for name in ("trend_pullback_v1", "technical_rating_v1"):
+        assert build_strategy(name, {}).universe_rule is UniverseRule.PRIME_COMMON_STOCK
 
 
 def test_a_parameter_the_strategy_does_not_know_is_refused() -> None:

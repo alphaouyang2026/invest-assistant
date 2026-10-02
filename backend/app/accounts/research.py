@@ -174,7 +174,7 @@ class ResearchRuns:
             # Stored only once the input is accepted: it is what this run replayed, and
             # what a batch segment's retry compares with — never data that was refused.
             self._set(run_id, input_identity=fingerprint)
-            universes = self._market.universe(start, end)
+            universes = self._market.universe(start, end, rule=strategy.universe_rule)
             codes = sorted({code for listed in universes.values() for code in listed})
             prices = Prices(self._market.read(codes, warmup, end))
             topix = self._market.read([TOPIX], start, end).wide(EXEC_CLOSE)[TOPIX]

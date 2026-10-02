@@ -9,26 +9,28 @@ from __future__ import annotations
 from datetime import date, timedelta
 from decimal import Decimal
 
-from app.market_data import CLOSE, MarketData
+from app.market_data import CLOSE, MarketData, UniverseRule
 from app.strategies import Disposition, Plot, Signal, entry_candidates, history
 from tests.fakes import FakeJQuants, bar, listed
 
 SESSIONS = [date(2026, 8, 3) + timedelta(days=n) for n in range(30)]
 DAY = SESSIONS[-1]
-PRIME, STANDARD = "0111", "0112"
+PRIME, STANDARD, OTHER_MARKET = "0111", "0112", "0109"
 LIQUID = Decimal("600000000")
 
 
 class StandIn:
     """Holds whatever codes it is told to, ranked as it is told; records
-    the frame and day it was asked about."""
+    the frame and day it was asked about. Buys from Prime common stock
+    unless told another universe rule."""
 
     name = "stand_in"
     warmup_sessions = 5
     plots = (Plot("close", "price"),)
 
-    def __init__(self, holdable: dict[str, float], on: set[date] | None = None) -> None:
-        self.holdable, self.on = holdable, on
+    def __init__(self, holdable: dict[str, float], on: set[date] | None = None,
+                 universe_rule: UniverseRule = UniverseRule.PRIME_COMMON_STOCK) -> None:
+        self.holdable, self.on, self.universe_rule = holdable, on, universe_rule
         self.asked: list[tuple] = []
 
     def evaluate(self, frame, day, holdings):
@@ -67,6 +69,22 @@ def test_candidates_come_from_the_universe_best_first_with_their_names(migrated_
     [(codes, first_day, day)] = strategy.asked
     assert codes == ["13010", "13020", "13030", "13040"]  # 13050 is not Prime: never read
     assert (first_day, day) == (SESSIONS[-5], DAY)         # the warm-up, the day included
+
+
+def test_candidates_come_from_the_universe_the_strategy_declares(migrated_database) -> None:
+    market = synced(migrated_database, [
+        listed("13010", PRIME, name="甲"),
+        listed("13060", OTHER_MARKET, product="014", name="ＴＯＰＩＸ連動型上場投信"),
+    ])
+    strategy = StandIn({"13010": 0.9, "13060": 1.0}, universe_rule=UniverseRule.TOPIX_ETF)
+
+    candidates = entry_candidates(market, strategy, DAY)
+
+    assert [(c.instrument.code, c.instrument.name, c.instrument.market) for c in candidates] == [
+        ("13060", "ＴＯＰＩＸ連動型上場投信", OTHER_MARKET),
+    ]
+    [(codes, _, _)] = strategy.asked
+    assert codes == ["13060"]  # the Prime stock is not read
 
 
 def test_history_gives_the_bars_the_plotted_lines_and_the_days_it_would_have_been_bought(migrated_database) -> None:

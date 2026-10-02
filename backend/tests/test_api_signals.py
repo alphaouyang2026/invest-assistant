@@ -16,7 +16,7 @@ from fastapi.testclient import TestClient
 
 from app.config import Settings
 from app.main import create_app
-from app.market_data import CLOSE
+from app.market_data import CLOSE, UniverseRule
 from app.strategies import Disposition, Plot, Signal
 from tests.fakes import FakeJQuants, bar, listed
 
@@ -31,6 +31,7 @@ class StandIn:
     name = "stand_in"
     warmup_sessions = 3
     plots = (Plot("close", "price"), Plot("double", "separate"))
+    universe_rule = UniverseRule.PRIME_COMMON_STOCK
 
     def evaluate(self, frame, day, holdings):
         closes = frame.wide(CLOSE)

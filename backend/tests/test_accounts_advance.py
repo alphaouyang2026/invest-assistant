@@ -11,8 +11,9 @@ from decimal import Decimal
 import pytest
 
 from app.accounts import Accounts, AccountSpec
+from app.market_data import UniverseRule
 from app.strategies import Disposition
-from tests.account_market import SESSIONS, Script, synced
+from tests.account_market import ETF_LISTINGS, SESSIONS, TOPIX_ETF, Script, synced
 
 def summary(orders) -> list[tuple]:
     return [(o.kind, o.code, o.signal_date, o.execution_date, o.planned_quantity, o.status, o.filled_quantity,
@@ -32,6 +33,24 @@ def test_held_at_one_close_bought_at_the_next_open_sold_the_same_way(migrated_da
         ("sell", "13010", SESSIONS[4], SESSIONS[5], 900, "filled", 900, Decimal("999.000")),
     ]
     assert script.asked[3] == (SESSIONS[4], [("13010", 900, SESSIONS[2])])  # the strategy sees the holding
+
+
+def test_an_account_buys_only_from_the_universe_its_strategy_declares(migrated_database) -> None:
+    """Told to hold a Prime stock and 1306 alike, a strategy on Prime common
+    stock buys the stock and one on the TOPIX ETF rule buys 1306."""
+    market = synced(migrated_database, {"13010": ["1000"] * 10, TOPIX_ETF: ["2000"] * 10}, listings=ETF_LISTINGS)
+    both = {SESSIONS[1]: {"13010": Disposition.HOLD, TOPIX_ETF: Disposition.HOLD}}
+    bought = {}
+    for rule in UniverseRule:
+        accounts = Accounts(migrated_database, market, build_strategy=lambda name, params, rule=rule: Script(both, rule))
+        account = accounts.create(AccountSpec(name=rule.value, strategy="script", start_date=SESSIONS[1]))
+        accounts.advance(account, through=SESSIONS[3])
+        bought[rule] = [(o.kind, o.code, o.status) for o in accounts.report(account).orders]
+
+    assert bought == {
+        UniverseRule.PRIME_COMMON_STOCK: [("buy", "13010", "filled")],
+        UniverseRule.TOPIX_ETF: [("buy", TOPIX_ETF, "filled")],
+    }
 
 
 def comparable(orders) -> list[tuple]:

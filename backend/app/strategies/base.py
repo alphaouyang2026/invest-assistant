@@ -13,7 +13,7 @@ from typing import Any, Literal, Protocol
 import numpy as np
 import pandas as pd
 
-from app.market_data import CLOSE, HIGH, LOW, OPEN, QUALITY, VOLUME, MarketFrame
+from app.market_data import CLOSE, HIGH, LOW, OPEN, QUALITY, VOLUME, MarketFrame, UniverseRule
 
 UNTRADABLE = "untradable"
 
@@ -69,6 +69,9 @@ class Strategy(Protocol):
     name: str
     warmup_sessions: int
     plots: tuple[Plot, ...]
+    # Where it opens positions (spec §6.1): callers ask the market data
+    # module for this universe; the strategy judges whatever is in the frame.
+    universe_rule: UniverseRule
 
     def evaluate(self, frame: MarketFrame, day: date, holdings: Sequence[Holding]) -> list[Signal]: ...
 
@@ -116,6 +119,7 @@ class IndicatorStrategy:
     name: str
     warmup_sessions: int
     plots: tuple[Plot, ...]
+    universe_rule: UniverseRule = UniverseRule.PRIME_COMMON_STOCK
 
     def __init__(self, params: Mapping[str, Any]) -> None:
         self.params = params

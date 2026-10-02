@@ -1,8 +1,8 @@
 """`entry_candidates` and `history` (spec A.3): not a seam, but the one
-place that knows how a strategy is fed — take the universe, read back as
-far as the warm-up needs, evaluate, add names. The signal page and the
-security page call these; the accounts module reads its own long frame
-and calls `evaluate` directly.
+place that knows how a strategy is fed — take the universe its rule
+gives, read back as far as the warm-up needs, evaluate, add names. The
+signal page and the security page call these; the accounts module reads
+its own long frame and calls `evaluate` directly.
 """
 
 from __future__ import annotations
@@ -23,9 +23,9 @@ class Candidate:
 
 
 def entry_candidates(market: MarketData, strategy: Strategy, day: date) -> list[Candidate]:
-    """Who can be held from `day`'s close, seen from holding nothing:
-    highest priority first, then by code."""
-    universe = market.universe(day).get(day, [])
+    """Who in the strategy's universe can be held from `day`'s close, seen
+    from holding nothing: highest priority first, then by code."""
+    universe = market.universe(day, rule=strategy.universe_rule).get(day, [])
     if not universe:
         return []
     frame = market.read(universe, _warm_up_start(market, strategy, day), day)
