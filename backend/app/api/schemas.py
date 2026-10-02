@@ -222,6 +222,16 @@ class NavPointOut(BaseModel):
     drawdown: float     # below the highest NAV so far, 0 or more
 
 
+class SuggestedRulesOut(BaseModel):
+    """The portfolio rules the new-account page fills in for a strategy."""
+
+    max_positions: int
+    max_weight: float  # of the NAV
+    cash_floor: float  # of the NAV
+
+
 class StrategyOut(BaseModel):
     name: str
     defaults: dict[str, Any]
+    universe_rule: str  # "prime_common_stock" / "topix_etf": where it opens positions
+    suggested_rules: SuggestedRulesOut

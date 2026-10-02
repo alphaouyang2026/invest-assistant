@@ -116,8 +116,18 @@ def test_stopping_and_deleting_and_a_missing_account_is_a_404(api) -> None:
 
 
 def test_the_strategies_and_their_defaults_for_the_new_account_page(api) -> None:
-    listed = {s["name"]: s["defaults"] for s in api.get("/api/strategies").json()}
+    """Each with its parameters' defaults, the universe rule it buys under,
+    and the portfolio rules the page fills in for it."""
+    listed = {s["name"]: s for s in api.get("/api/strategies").json()}
 
     assert set(listed) == {"trend_pullback_v1", "technical_rating_v1", "topix_buy_and_hold_v1"}
-    assert listed["technical_rating_v1"]["entry_above"] == 0.5
-    assert listed["topix_buy_and_hold_v1"] == {"warmup_sessions": 1}
+    assert listed["technical_rating_v1"]["defaults"]["entry_above"] == 0.5
+    for stock_strategy in ("trend_pullback_v1", "technical_rating_v1"):
+        assert (listed[stock_strategy]["universe_rule"], listed[stock_strategy]["suggested_rules"]) == (
+            "prime_common_stock", {"max_positions": 10, "max_weight": 0.1, "cash_floor": 0.05})
+    assert listed["topix_buy_and_hold_v1"] == {
+        "name": "topix_buy_and_hold_v1",
+        "defaults": {"warmup_sessions": 1},
+        "universe_rule": "topix_etf",
+        "suggested_rules": {"max_positions": 1, "max_weight": 1.0, "cash_floor": 0.05},  # about 95% in 1306
+    }

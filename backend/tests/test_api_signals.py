@@ -64,6 +64,29 @@ def api(migrated_database, monkeypatch):
         yield client
 
 
+@pytest.fixture
+def real_strategies(migrated_database):
+    """The real strategies, on a market where 1306 is listed as an ETF
+    (その他, 0109) beside a Prime stock."""
+    bars = {day: [bar("13010", day, turnover=LIQUID), bar("13060", day, "3000", turnover=LIQUID)]
+            for day in SESSIONS}
+    roster = [listed("13010"), listed("13060", "0109", product="014", name="ＴＯＰＩＸ連動型上場投信")]
+    fake = FakeJQuants(SESSIONS, bars=bars, roster=roster)
+    app = create_app(Settings(_env_file=None), client=fake, today=lambda: DAY)
+    with TestClient(app) as client:
+        app.state.market.sync()
+        yield client
+
+
+def test_the_control_group_has_1306_as_its_entry_candidate(real_strategies) -> None:
+    body = real_strategies.get("/api/signals", params={"strategy": "topix_buy_and_hold_v1"}).json()
+
+    assert body["candidates"] == [
+        {"code": "13060", "name": "ＴＯＰＩＸ連動型上場投信", "market": "0109", "priority": 1.0,
+         "reason_codes": ["always_hold"]},
+    ]
+
+
 def test_signals_list_the_entry_candidates_of_the_latest_session_by_default(api) -> None:
     body = api.get("/api/signals", params={"strategy": "stand_in"}).json()
 

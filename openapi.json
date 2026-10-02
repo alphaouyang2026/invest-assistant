@@ -324,7 +324,7 @@
           "accounts"
         ],
         "summary": "Strategies",
-        "description": "Each strategy's parameters with their defaults, for the new-account page.",
+        "description": "Each strategy's parameters with their defaults, the universe rule it\nbuys under, and the portfolio rules suggested for it — for the\nnew-account page.",
         "operationId": "strategies_api_strategies_get",
         "responses": {
           "200": {
@@ -4645,14 +4645,47 @@
             "additionalProperties": true,
             "type": "object",
             "title": "Defaults"
+          },
+          "universe_rule": {
+            "type": "string",
+            "title": "Universe Rule"
+          },
+          "suggested_rules": {
+            "$ref": "#/components/schemas/SuggestedRulesOut"
           }
         },
         "type": "object",
         "required": [
           "name",
-          "defaults"
+          "defaults",
+          "universe_rule",
+          "suggested_rules"
         ],
         "title": "StrategyOut"
+      },
+      "SuggestedRulesOut": {
+        "properties": {
+          "max_positions": {
+            "type": "integer",
+            "title": "Max Positions"
+          },
+          "max_weight": {
+            "type": "number",
+            "title": "Max Weight"
+          },
+          "cash_floor": {
+            "type": "number",
+            "title": "Cash Floor"
+          }
+        },
+        "type": "object",
+        "required": [
+          "max_positions",
+          "max_weight",
+          "cash_floor"
+        ],
+        "title": "SuggestedRulesOut",
+        "description": "The portfolio rules the new-account page fills in for a strategy."
       },
       "SyncAccepted": {
         "properties": {

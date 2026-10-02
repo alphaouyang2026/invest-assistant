@@ -135,7 +135,9 @@ export interface paths {
         };
         /**
          * Strategies
-         * @description Each strategy's parameters with their defaults, for the new-account page.
+         * @description Each strategy's parameters with their defaults, the universe rule it
+         *     buys under, and the portfolio rules suggested for it — for the
+         *     new-account page.
          */
         get: operations["strategies_api_strategies_get"];
         put?: never;
@@ -1612,6 +1614,21 @@ export interface components {
             defaults: {
                 [key: string]: unknown;
             };
+            /** Universe Rule */
+            universe_rule: string;
+            suggested_rules: components["schemas"]["SuggestedRulesOut"];
+        };
+        /**
+         * SuggestedRulesOut
+         * @description The portfolio rules the new-account page fills in for a strategy.
+         */
+        SuggestedRulesOut: {
+            /** Max Positions */
+            max_positions: number;
+            /** Max Weight */
+            max_weight: number;
+            /** Cash Floor */
+            cash_floor: number;
         };
         /** SyncAccepted */
         SyncAccepted: {
