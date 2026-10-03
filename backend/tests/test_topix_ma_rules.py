@@ -13,8 +13,8 @@ import pytest
 from app.market_data import TOPIX, MarketFrame, UniverseRule
 from app.strategies import STRATEGY_DEFAULTS, Disposition, Holding, Plot, build_strategy
 from tests.frames import NO_BAR, frame_of, sessions
+from tests.topix_etf import ETF, etf_signal, outcome
 
-ETF = "13060"  # 1306
 HOLD, EXIT, STAY_OUT = Disposition.HOLD, Disposition.EXIT, Disposition.STAY_OUT
 ABOVE, NEAR, BELOW = ("topix_above_ma",), ("topix_near_ma",), ("topix_below_ma",)
 
@@ -26,16 +26,12 @@ def moving_average(**params):
 def last_signal(topix: list[float], *, held: bool = False, **params):
     """1306's signal on the last of `topix`'s sessions, from an average over
     all of them unless told another window."""
-    days = sessions(len(topix))
-    frame = frame_of({TOPIX: topix, ETF: [2000.0] * len(topix)}, days)
     strategy = moving_average(**{"ma_sessions": len(topix), "warmup_sessions": len(topix), **params})
-    [signal] = strategy.evaluate(frame, days[-1], [Holding(ETF, 4700, days[0])] if held else [])
-    return signal
+    return etf_signal(strategy, topix, sessions(len(topix)), held=held)
 
 
 def judged(topix: list[float], *, held: bool = False, **params) -> tuple:
-    signal = last_signal(topix, held=held, **params)
-    return signal.disposition, signal.reason_codes
+    return outcome(last_signal(topix, held=held, **params))
 
 
 def test_it_buys_1306_on_topix_and_draws_topix_and_its_average_in_a_pane_of_their_own() -> None:

@@ -14,8 +14,8 @@ import pytest
 from app.market_data import TOPIX, MarketFrame, UniverseRule
 from app.strategies import STRATEGY_DEFAULTS, Disposition, Holding, Plot, build_strategy
 from tests.frames import NO_BAR, frame_of, sessions
+from tests.topix_etf import ETF, etf_signal, outcome
 
-ETF = "13060"  # 1306
 HOLD, EXIT, STAY_OUT = Disposition.HOLD, Disposition.EXIT, Disposition.STAY_OUT
 UP, FLAT, DOWN = ("topix_momentum_up",), ("topix_momentum_flat",), ("topix_momentum_down",)
 NOT_CHECK_DAY = ("not_check_day",)
@@ -41,16 +41,12 @@ def weekdays_through(last: date, count: int) -> list[date]:
 def last_signal(topix: list[float], on: date, *, held: bool = False, **params):
     """1306's signal on `on`, the last of `topix`'s sessions, from a past
     return over all of them unless told another lookback."""
-    days = weekdays_through(on, len(topix))
-    frame = frame_of({TOPIX: topix, ETF: [2000.0] * len(topix)}, days)
     strategy = momentum(**{"lookback_sessions": len(topix) - 1, "warmup_sessions": len(topix), **params})
-    [signal] = strategy.evaluate(frame, on, [Holding(ETF, 4700, days[0])] if held else [])
-    return signal
+    return etf_signal(strategy, topix, weekdays_through(on, len(topix)), held=held)
 
 
 def judged(topix: list[float], on: date, *, held: bool = False) -> tuple:
-    signal = last_signal(topix, on, held=held)
-    return signal.disposition, signal.reason_codes
+    return outcome(last_signal(topix, on, held=held))
 
 
 def test_it_buys_1306_on_topix_and_draws_the_past_return_in_a_pane_of_its_own() -> None:
