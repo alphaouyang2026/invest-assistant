@@ -324,7 +324,7 @@
           "accounts"
         ],
         "summary": "Strategies",
-        "description": "Each strategy's parameters with their defaults, for the new-account page.",
+        "description": "Each strategy's parameters with their defaults, the universe rule it\nbuys under and the codes that rule names, how its warm-up follows its\nwindow, and the portfolio rules suggested for it — for the new-account\nand signal pages.",
         "operationId": "strategies_api_strategies_get",
         "responses": {
           "200": {
@@ -4645,14 +4645,65 @@
             "additionalProperties": true,
             "type": "object",
             "title": "Defaults"
+          },
+          "universe_rule": {
+            "$ref": "#/components/schemas/UniverseRule"
+          },
+          "pool_codes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Pool Codes"
+          },
+          "warmup_follows": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WarmupFollowsOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "suggested_rules": {
+            "$ref": "#/components/schemas/SuggestedRulesOut"
           }
         },
         "type": "object",
         "required": [
           "name",
-          "defaults"
+          "defaults",
+          "universe_rule",
+          "pool_codes",
+          "warmup_follows",
+          "suggested_rules"
         ],
         "title": "StrategyOut"
+      },
+      "SuggestedRulesOut": {
+        "properties": {
+          "max_positions": {
+            "type": "integer",
+            "title": "Max Positions"
+          },
+          "max_weight": {
+            "type": "number",
+            "title": "Max Weight"
+          },
+          "cash_floor": {
+            "type": "number",
+            "title": "Cash Floor"
+          }
+        },
+        "type": "object",
+        "required": [
+          "max_positions",
+          "max_weight",
+          "cash_floor"
+        ],
+        "title": "SuggestedRulesOut",
+        "description": "The portfolio rules the new-account page fills in for a strategy."
       },
       "SyncAccepted": {
         "properties": {
@@ -4666,6 +4717,15 @@
           "job_id"
         ],
         "title": "SyncAccepted"
+      },
+      "UniverseRule": {
+        "type": "string",
+        "enum": [
+          "prime_common_stock",
+          "topix_etf"
+        ],
+        "title": "UniverseRule",
+        "description": "Where a universe's codes come from (spec §6.1). Each strategy\ndeclares its own; the turnover floor and the tradable bar that day are\nthe same under either."
       },
       "ValidationError": {
         "properties": {
@@ -4706,6 +4766,25 @@
           "type"
         ],
         "title": "ValidationError"
+      },
+      "WarmupFollowsOut": {
+        "properties": {
+          "parameter": {
+            "type": "string",
+            "title": "Parameter"
+          },
+          "extra": {
+            "type": "integer",
+            "title": "Extra"
+          }
+        },
+        "type": "object",
+        "required": [
+          "parameter",
+          "extra"
+        ],
+        "title": "WarmupFollowsOut",
+        "description": "How a strategy's warm-up follows one of its window parameters: the\nnew-account page sets the warm-up to that parameter's value plus\n`extra` whenever it changes, which is what the strategy checks."
       },
       "WorstExcessSegment": {
         "properties": {

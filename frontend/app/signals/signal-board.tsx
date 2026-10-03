@@ -35,6 +35,7 @@ export function SignalBoard() {
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [found, setFound] = useState<Instrument[] | null>(null);
+  const [pools, setPools] = useState<Record<string, string[]>>({});
 
   const search = async () => {
     if (!query.trim()) return;
@@ -65,7 +66,17 @@ export function SignalBoard() {
     };
   }, [strategy, date]);
 
+  // The codes each strategy's universe rule names: a strategy that buys
+  // only 1306, with no candidate, is saying it would not buy 1306.
+  useEffect(() => {
+    void (async () => {
+      const { data } = await api.GET("/api/strategies");
+      if (Array.isArray(data)) setPools(Object.fromEntries(data.map((s) => [s.name, s.pool_codes])));
+    })();
+  }, []);
+
   const candidates = signals?.candidates ?? [];
+  const [only] = pools[strategy] ?? [];
   const pages = Math.max(1, Math.ceil(candidates.length / PAGE_SIZE));
   const shown = candidates.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
@@ -129,7 +140,14 @@ export function SignalBoard() {
             <h2 id="candidates">{candidates.length} 只入场候选</h2>
             <span className="aside">{signals.date} 收盘 · 按排序值从高到低</span>
           </div>
-          {candidates.length === 0 ? (
+          {candidates.length === 0 && only ? (
+            <div className="empty">
+              {/* Seen from holding nothing, as every candidate is: an account
+                  already holding it may well keep it. */}
+              <span>空仓的话，{date ? "这一天" : "今天"}收盘后不会买入 {displayCode(only)}</span>
+              <Link href={`/signals/${only}?strategy=${strategy}`}>看 {displayCode(only)} 的详情</Link>
+            </div>
+          ) : candidates.length === 0 ? (
             <div className="empty">这一天没有入场候选</div>
           ) : (
             <>

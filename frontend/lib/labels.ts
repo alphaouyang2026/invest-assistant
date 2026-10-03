@@ -11,6 +11,24 @@ export const STRATEGIES = [
     label: "技术评级 v1",
     about: "复刻 TradingView 技术评级：26 项指标的总评高于入场线就买入，持仓的总评低于退出线就卖出",
   },
+  {
+    name: "topix_buy_and_hold_v1",
+    label: "TOPIX ETF 一直持有",
+    about:
+      "对照组：只交易 1306（NEXT FUNDS TOPIX 連動型上場投信），能买就买入，之后一直持有、从不卖出。成交、滑点、拆股和其他策略同一套规则；ETF 分配金不入账，每年 7 月落权那天约少算 2%",
+  },
+  {
+    name: "topix_ma_v1",
+    label: "TOPIX 均线",
+    about:
+      "只交易 1306，每个开市日收盘看 TOPIX：收盘高出均线（默认 200 个开市日）超过缓冲带（默认 1%）就买入，低于均线超过缓冲带就全部卖出、持有现金，在缓冲带内（含恰好在门槛上）不改变状态。成交、滑点、拆股和其他策略同一套规则；ETF 分配金不入账",
+  },
+  {
+    name: "topix_momentum_v1",
+    label: "TOPIX 动量",
+    about:
+      "只交易 1306，每月第一个开市日判断，月中建的账户等到下个月才可能买入。判断日收盘看 TOPIX 的过去收益（当天收盘比回看长度个开市日前的收盘涨了多少，默认 252 个开市日，约 12 个月）：为正就买入，为负就全部卖出、持有现金，恰好为 0 不改变状态；月中其他日子不买也不卖。成交、滑点、拆股和其他策略同一套规则；ETF 分配金不入账",
+  },
 ] as const;
 
 export type StrategyName = (typeof STRATEGIES)[number]["name"];
@@ -35,9 +53,18 @@ export const PARAMS: Record<string, { label: string; hint: string }> = {
   // 技术评级 v1
   entry_above: { label: "入场线", hint: "总评高于它才买入" },
   exit_below: { label: "退出线", hint: "持仓的总评低于它就卖出" },
+  // TOPIX 均线
+  ma_sessions: { label: "均线窗口", hint: "TOPIX 收盘的个数（开市日），含当天；预热期跟着它变" },
+  band: { label: "缓冲带", hint: "比例，0.01 表示 1%：TOPIX 高出均线超过它才买入，低于均线超过它才卖出" },
+  // TOPIX 动量
+  lookback_sessions: {
+    label: "回看长度",
+    hint: "开市日：TOPIX 当天收盘和这么多个开市日前的收盘相比，就是过去收益；252 约 12 个月。预热期跟着它变，比它多 1（含当天）",
+  },
 };
 
-const MARKETS: Record<string, string> = { "0111": "Prime", "0112": "Standard", "0113": "Growth" };
+/** J-Quants' market codes; ETFs such as 1306 are listed under その他. */
+const MARKETS: Record<string, string> = { "0109": "その他", "0111": "Prime", "0112": "Standard", "0113": "Growth" };
 
 export const market = (code: string | null | undefined) => (code ? (MARKETS[code] ?? code) : "已退市");
 
@@ -57,6 +84,17 @@ const REASONS: Record<string, string> = {
   neutral: "中性",
   sell: "卖出",
   strong_sell: "强烈卖出",
+  // TOPIX ETF 一直持有
+  always_hold: "一直持有（对照组）",
+  // TOPIX 均线
+  topix_above_ma: "TOPIX 在均线之上",
+  topix_near_ma: "TOPIX 在均线附近（缓冲带内）",
+  topix_below_ma: "TOPIX 在均线之下",
+  // TOPIX 动量
+  topix_momentum_up: "TOPIX 过去收益为正",
+  topix_momentum_flat: "TOPIX 过去收益为 0",
+  topix_momentum_down: "TOPIX 过去收益为负",
+  not_check_day: "不是每月判断日",
 };
 
 export const reason = (code: string) => REASONS[code] ?? code;
@@ -65,6 +103,9 @@ export const reason = (code: string) => REASONS[code] ?? code;
 const REASON_TONES: Record<string, string> = {
   strong_buy: "up", buy: "up", sell: "down", strong_sell: "down",
   trailing_stop: "down", trend_broken: "down", overbought_fade: "down", time_exit: "",
+  always_hold: "up",
+  topix_above_ma: "up", topix_near_ma: "", topix_below_ma: "down",
+  topix_momentum_up: "up", topix_momentum_flat: "", topix_momentum_down: "down", not_check_day: "",
 };
 
 export const reasonTone = (code: string) => REASON_TONES[code] ?? "up";

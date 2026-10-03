@@ -4,9 +4,40 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { SignalBoard } from "@/app/signals/signal-board";
 
+const CANDIDATES: Record<string, unknown[]> = {
+  trend_pullback_v1: [
+    { code: "72030", name: "トヨタ自動車", market: "0111", priority: 0.2718, reason_codes: ["ema_uptrend", "rsi_recovery"] },
+  ],
+  technical_rating_v1: [
+    { code: "67580", name: "ソニーグループ", market: "0111", priority: 0.61, reason_codes: ["strong_buy"] },
+  ],
+  topix_buy_and_hold_v1: [
+    { code: "13060", name: "ＮＥＸＴ　ＦＵＮＤＳ　ＴＯＰＩＸ連動型上場投信", market: "0109", priority: 1, reason_codes: ["always_hold"] },
+  ],
+};
+// TOPIX 均线 holds 1306 from the close of 2026-09-18 only; on the quiet
+// day no strategy has a candidate.
+const ABOVE_THE_AVERAGE = "2026-09-18";
+const QUIET_DAY = "2026-09-16";
+const MA_CANDIDATE = {
+  code: "13060", name: "ＮＥＸＴ　ＦＵＮＤＳ　ＴＯＰＩＸ連動型上場投信", market: "0109", priority: 0.0312,
+  reason_codes: ["topix_above_ma"],
+};
+// TOPIX 动量 judges on the first session of the month alone: 1306 on
+// 2026-09-01, nothing on the latest session.
+const CHECK_DAY = "2026-09-01";
+const MOMENTUM_CANDIDATE = {
+  code: "13060", name: "ＮＥＸＴ　ＦＵＮＤＳ　ＴＯＰＩＸ連動型上場投信", market: "0109", priority: 0.1834,
+  reason_codes: ["topix_momentum_up"],
+};
+const POOL_CODES: Record<string, string[]> = {
+  trend_pullback_v1: [], technical_rating_v1: [],
+  topix_buy_and_hold_v1: ["13060"], topix_ma_v1: ["13060"], topix_momentum_v1: ["13060"],
+};
+
 /**
- * A stand-in for the backend: answers `/api/signals` and `/api/instruments`
- * and records what the page asked for.
+ * A stand-in for the backend: answers `/api/signals`, `/api/instruments`
+ * and `/api/strategies`, and records what the page asked for.
  */
 function fakeBackend() {
   const asked: string[] = [];
@@ -15,15 +46,22 @@ function fakeBackend() {
     asked.push(url.pathname + url.search);
     const json = (body: unknown) => new Response(JSON.stringify(body), { headers: { "Content-Type": "application/json" } });
     if (url.pathname === "/api/signals") {
-      const strategy = url.searchParams.get("strategy");
+      const strategy = url.searchParams.get("strategy") ?? "";
+      const date = url.searchParams.get("date") ?? "2026-09-24";
       return json({
         strategy,
-        date: url.searchParams.get("date") ?? "2026-09-24",
-        candidates:
-          strategy === "trend_pullback_v1"
-            ? [{ code: "72030", name: "トヨタ自動車", market: "0111", priority: 0.2718, reason_codes: ["ema_uptrend", "rsi_recovery"] }]
-            : [{ code: "67580", name: "ソニーグループ", market: "0111", priority: 0.61, reason_codes: ["strong_buy"] }],
+        date,
+        candidates: date === QUIET_DAY ? []
+          : strategy === "topix_ma_v1" ? (date === ABOVE_THE_AVERAGE ? [MA_CANDIDATE] : [])
+          : strategy === "topix_momentum_v1" ? (date === CHECK_DAY ? [MOMENTUM_CANDIDATE] : [])
+          : (CANDIDATES[strategy] ?? []),
       });
+    }
+    if (url.pathname === "/api/strategies") {
+      return json(Object.entries(POOL_CODES).map(([name, pool_codes]) => ({
+        name, defaults: {}, universe_rule: pool_codes.length ? "topix_etf" : "prime_common_stock", pool_codes,
+        warmup_follows: null, suggested_rules: { max_positions: 1, max_weight: 1, cash_floor: 0.05 },
+      })));
     }
     if (url.pathname === "/api/instruments") {
       return json([{ code: "72030", name: "トヨタ自動車", name_en: "TOYOTA MOTOR", market: "0111" }]);
@@ -74,6 +112,76 @@ describe("信号页", () => {
     // passes through invalid values, which the input throws away.
     fireEvent.change(screen.getByLabelText("收盘日"), { target: { value: "2026-09-18" } });
     await waitFor(() => expect(backend.asked.at(-1)).toBe("/api/signals?strategy=technical_rating_v1&date=2026-09-18"));
+  });
+
+  it("TOPIX ETF 一直持有的入场候选是 1306：市场显示その他，理由是一直持有（对照组）", async () => {
+    const user = userEvent.setup();
+    render(<SignalBoard />);
+    await screen.findByRole("table", { name: "入场候选" });
+
+    await user.click(screen.getByRole("button", { name: "TOPIX ETF 一直持有" }));
+
+    const link = await screen.findByRole("link", { name: "1306" });
+    expect(link).toHaveAttribute("href", "/signals/13060?strategy=topix_buy_and_hold_v1");
+    const row = link.closest("tr") as HTMLElement;
+    expect(within(row).getByText("その他")).toBeInTheDocument();
+    expect(within(row).getByText("一直持有（对照组）")).toHaveClass("badge", "up");
+    expect(within(row).getByText("1.00")).toBeInTheDocument();
+  });
+
+  it("TOPIX 均线没有候选时写明空仓的话今天收盘后不会买入 1306，链接到 1306 的详情页；有候选时理由是 TOPIX 在均线之上", async () => {
+    const user = userEvent.setup();
+    render(<SignalBoard />);
+    await screen.findByRole("table", { name: "入场候选" });
+
+    await user.click(screen.getByRole("button", { name: "TOPIX 均线" }));
+
+    // Seen from holding nothing: an account holding 1306 within the band
+    // keeps it, so the page does not say 1306 is not held.
+    expect(await screen.findByText(/空仓的话，今天收盘后不会买入 1306/)).toBeInTheDocument();
+    expect(screen.queryByText(/不持有/)).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "看 1306 的详情" })).toHaveAttribute(
+      "href", "/signals/13060?strategy=topix_ma_v1",
+    );
+    expect(screen.queryByText("这一天没有入场候选")).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("收盘日"), { target: { value: ABOVE_THE_AVERAGE } });
+    const link = await screen.findByRole("link", { name: "1306" });
+    const row = link.closest("tr") as HTMLElement;
+    expect(within(row).getByText("TOPIX 在均线之上")).toHaveClass("badge", "up");
+    expect(within(row).getByText("0.03")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("收盘日"), { target: { value: "2026-09-17" } });
+    expect(await screen.findByText(/空仓的话，这一天收盘后不会买入 1306/)).toBeInTheDocument();
+  });
+
+  it("TOPIX 动量在月中写明空仓的话不会买入 1306，在判断日的候选理由是 TOPIX 过去收益为正", async () => {
+    const user = userEvent.setup();
+    render(<SignalBoard />);
+    await screen.findByRole("table", { name: "入场候选" });
+
+    await user.click(screen.getByRole("button", { name: "TOPIX 动量" }));
+
+    expect(await screen.findByText(/空仓的话，今天收盘后不会买入 1306/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "看 1306 的详情" })).toHaveAttribute(
+      "href", "/signals/13060?strategy=topix_momentum_v1",
+    );
+
+    fireEvent.change(screen.getByLabelText("收盘日"), { target: { value: CHECK_DAY } });
+    const link = await screen.findByRole("link", { name: "1306" });
+    const row = link.closest("tr") as HTMLElement;
+    expect(within(row).getByText("TOPIX 过去收益为正")).toHaveClass("badge", "up");
+    expect(within(row).getByText("0.18")).toBeInTheDocument();
+  });
+
+  it("个股策略没有候选时仍是一般的说明", async () => {
+    render(<SignalBoard />);
+    await screen.findByRole("table", { name: "入场候选" });
+
+    fireEvent.change(screen.getByLabelText("收盘日"), { target: { value: QUIET_DAY } });
+
+    expect(await screen.findByText("这一天没有入场候选")).toBeInTheDocument();
+    expect(screen.queryByText(/不会买入 1306/)).not.toBeInTheDocument();
   });
 
   it("搜索证券，结果链接到详情页", async () => {

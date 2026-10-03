@@ -24,7 +24,7 @@ from app.accounts.research_jobs import (
 )
 from app.jobs import Job, JobOutcome, Progress
 from app.market_data import EXEC_CLOSE, TOPIX
-from app.strategies import STRATEGY_DEFAULTS, build_strategy
+from app.strategies import STRATEGY_DEFAULTS, build_strategy, codes_to_read
 from app.strategies.technical_rating import TechnicalRating
 
 # The one strategy research covers for now (04b).
@@ -174,9 +174,9 @@ class ResearchRuns:
             # Stored only once the input is accepted: it is what this run replayed, and
             # what a batch segment's retry compares with — never data that was refused.
             self._set(run_id, input_identity=fingerprint)
-            universes = self._market.universe(start, end)
-            codes = sorted({code for listed in universes.values() for code in listed})
-            prices = Prices(self._market.read(codes, warmup, end))
+            universes = self._market.universe(start, end, rule=strategy.universe_rule)
+            codes = {code for listed in universes.values() for code in listed}
+            prices = Prices(self._market.read(codes_to_read(strategy, codes), warmup, end))
             topix = self._market.read([TOPIX], start, end).wide(EXEC_CLOSE)[TOPIX]
             rules, costs, initial = trading_terms(config)
             ledger, points, warnings = Ledger(initial), [], []

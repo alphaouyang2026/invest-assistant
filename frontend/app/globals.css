@@ -348,8 +348,11 @@ h1 {
   opacity: 0.75;
 }
 
+/* Wraps rather than overflows: the strategy switches hold five strategies. */
 .seg {
   display: inline-flex;
+  flex-wrap: wrap;
+  max-width: 100%;
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 3px;

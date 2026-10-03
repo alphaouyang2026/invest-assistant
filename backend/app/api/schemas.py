@@ -8,6 +8,8 @@ from typing import Any
 
 from pydantic import BaseModel
 
+from app.market_data import UniverseRule
+
 
 class JobResultOut(BaseModel):
     id: str
@@ -222,6 +224,29 @@ class NavPointOut(BaseModel):
     drawdown: float     # below the highest NAV so far, 0 or more
 
 
+class SuggestedRulesOut(BaseModel):
+    """The portfolio rules the new-account page fills in for a strategy."""
+
+    max_positions: int
+    max_weight: float  # of the NAV
+    cash_floor: float  # of the NAV
+
+
+class WarmupFollowsOut(BaseModel):
+    """How a strategy's warm-up follows one of its window parameters: the
+    new-account page sets the warm-up to that parameter's value plus
+    `extra` whenever it changes, which is what the strategy checks."""
+
+    parameter: str
+    extra: int
+
+
 class StrategyOut(BaseModel):
     name: str
     defaults: dict[str, Any]
+    universe_rule: UniverseRule  # where it opens positions
+    # The codes its universe rule names outright (the TOPIX ETF: ["13060"]);
+    # empty when it draws on a market segment.
+    pool_codes: list[str]
+    warmup_follows: WarmupFollowsOut | None  # null when no single window decides it
+    suggested_rules: SuggestedRulesOut

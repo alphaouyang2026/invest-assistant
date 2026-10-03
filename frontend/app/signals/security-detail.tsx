@@ -41,23 +41,32 @@ function chartData(body: SecurityBars): ChartData {
 
 export function SecurityDetail({ code, strategy }: { code: string; strategy: StrategyName }) {
   const [data, setData] = useState<ChartData | null>(null);
+  // The codes the strategy's universe rule names, when this security is not
+  // one of them: the strategy never buys it, so no entry is marked.
+  const [onlyTrades, setOnlyTrades] = useState<string[] | null>(null);
   const [instrument, setInstrument] = useState<Instrument | null>(null);
   const [error, setError] = useState<string | null>(null);
   const palette = usePalette();
+  const label = STRATEGIES.find((s) => s.name === strategy)?.label ?? strategy;
 
   useEffect(() => {
     let current = true;
     void (async () => {
-      const { data: body, error: failed } = await api.GET("/api/instruments/{code}/bars", {
-        params: { path: { code }, query: { strategy } },
-      });
+      const [{ data: body, error: failed }, { data: strategies }] = await Promise.all([
+        api.GET("/api/instruments/{code}/bars", { params: { path: { code }, query: { strategy } } }),
+        api.GET("/api/strategies"),
+      ]);
       if (!current) return;
       if (failed) {
         setError(typeof failed.detail === "string" ? failed.detail : "读取行情失败");
         return;
       }
+      const pool = (Array.isArray(strategies) ? strategies : []).find((s) => s.name === strategy)?.pool_codes ?? [];
+      const outside = pool.length > 0 && !pool.includes(code);
+      const chart = chartData(body);
       setError(null);
-      setData(chartData(body));
+      setOnlyTrades(outside ? pool : null);
+      setData(outside ? { ...chart, entries: [] } : chart);
     })();
     return () => {
       current = false;
@@ -111,9 +120,13 @@ export function SecurityDetail({ code, strategy }: { code: string; strategy: Str
                     {line.name}
                   </span>
                 ))}
-              <span>
-                <span className="up">▲</span> 入场信号（连续几天只标第一天）
-              </span>
+              {onlyTrades ? (
+                <span>{`${label} 只交易 ${onlyTrades.map(displayCode).join("、")}，这里不标入场信号`}</span>
+              ) : (
+                <span>
+                  <span className="up">▲</span> 入场信号（连续几天只标第一天）
+                </span>
+              )}
             </div>
           </div>
           <div className="chart">

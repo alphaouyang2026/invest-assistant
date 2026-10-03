@@ -27,7 +27,7 @@ from app.market_data import (
     ADJUSTMENT_FACTOR, EX_RIGHTS_TYPE, EXEC_CLOSE, EXEC_HIGH, EXEC_LOW, EXEC_OPEN, LOWER_LIMIT_HIT, QUALITY, TOPIX,
     UPPER_LIMIT_HIT, MarketData, MarketFrame,
 )
-from app.strategies import Disposition, Holding, Strategy, build_strategy
+from app.strategies import Disposition, Holding, Strategy, build_strategy, codes_to_read
 
 UNTRADABLE = "untradable"
 
@@ -146,7 +146,7 @@ class Accounts:
         rules, costs, initial_cash = trading_terms(account)
         ledger = Ledger(initial_cash, self._records(account_id))
         strategy = self._build_strategy(account["strategy"], account["strategy_params"])
-        universes = self._market.universe(days[0], days[-1])
+        universes = self._market.universe(days[0], days[-1], rule=strategy.universe_rule)
         prices = self._prices(strategy, ledger, universes, days)
 
         warnings: list[str] = []
@@ -291,8 +291,8 @@ class Accounts:
     def _prices(self, strategy: Strategy, ledger: Ledger, universes: Mapping[date, list[str]],
                 days: list[date]) -> Prices:
         """One read for the whole run: every code that could be bought or is
-        held, from far enough back for the strategy's warm-up and for the
-        oldest holding's opening."""
+        held, and the strategy's reference series, from far enough back for
+        the strategy's warm-up and for the oldest holding's opening."""
         codes = set(ledger.positions) | {order.code for order in ledger.pending}
         for listed in universes.values():
             codes.update(listed)
@@ -300,7 +300,7 @@ class Accounts:
         start = sessions[max(0, len(sessions) - strategy.warmup_sessions)] if sessions else days[0]
         opened = [p.opened_on for p in ledger.positions.values()]
         start = min([start, *opened])
-        return Prices(self._market.read(sorted(codes), start, days[-1]))
+        return Prices(self._market.read(codes_to_read(strategy, codes), start, days[-1]))
 
 
 def replay_day(ledger: Ledger, prices: Prices, strategy: Strategy, universes: Mapping[date, list[str]],

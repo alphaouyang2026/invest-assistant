@@ -11,6 +11,7 @@ from decimal import ROUND_FLOOR, Decimal
 
 from app.accounts.ledger import Position
 from app.accounts.records import BUY, SELL, SKIPPED, Record
+from app.market_data import UniverseRule
 from app.strategies import Signal
 
 LOT = 100
@@ -21,6 +22,16 @@ class PortfolioRules:
     max_positions: int = 10
     max_weight: Decimal = Decimal("0.10")
     cash_floor: Decimal = Decimal("0.05")
+
+
+def suggested_rules(universe_rule: UniverseRule) -> PortfolioRules:
+    """The portfolio rules a new account starts from for a strategy buying
+    under `universe_rule`; the user may change them. A universe of one ETF
+    is held nearly whole — one position, up to all of the NAV, 5% kept as
+    cash, so about 95% in 1306; stocks keep the defaults."""
+    if universe_rule is UniverseRule.TOPIX_ETF:
+        return PortfolioRules(max_positions=1, max_weight=Decimal(1), cash_floor=Decimal("0.05"))
+    return PortfolioRules()
 
 
 def plan_orders(

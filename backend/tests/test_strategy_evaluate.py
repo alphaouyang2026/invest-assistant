@@ -9,7 +9,7 @@ from __future__ import annotations
 import pytest
 
 from app import indicators
-from app.market_data import CLOSE, HIGH, LOW, MarketFrame
+from app.market_data import CLOSE, HIGH, LOW, MarketFrame, UniverseRule
 from app.strategies import Disposition, Holding, build_strategy
 from tests.frames import NO_BAR, frame_of, sessions
 
@@ -100,7 +100,7 @@ def test_nothing_after_the_day_is_seen() -> None:
     cut = MarketFrame(whole.data[whole.data.index.get_level_values("date") <= day])
     holdings = [Holding("13020", 100, DAYS[182])]
 
-    for name in ("trend_pullback_v1",):
+    for name in ("trend_pullback_v1", "topix_buy_and_hold_v1"):
         strategy = build_strategy(name, {})
         assert strategy.evaluate(whole, day, holdings) == build_strategy(name, {}).evaluate(cut, day, holdings)
 
@@ -118,6 +118,19 @@ def test_the_indicators_are_worked_out_once_per_frame(monkeypatch) -> None:
         strategy.evaluate(frame, day, [])
 
     assert len(calls) == 1
+
+
+def test_the_stock_strategies_buy_from_prime_common_stock() -> None:
+    """The universe rule a strategy declares when it says nothing (spec §6.1)."""
+    for name in ("trend_pullback_v1", "technical_rating_v1"):
+        assert build_strategy(name, {}).universe_rule is UniverseRule.PRIME_COMMON_STOCK
+
+
+def test_the_stock_strategies_and_the_control_group_read_no_reference_series() -> None:
+    """The reference series a strategy declares when it says nothing (spec
+    §6.2): their lines come from each code's own bars."""
+    for name in ("trend_pullback_v1", "technical_rating_v1", "topix_buy_and_hold_v1"):
+        assert build_strategy(name, {}).reference_series == ()
 
 
 def test_a_parameter_the_strategy_does_not_know_is_refused() -> None:
