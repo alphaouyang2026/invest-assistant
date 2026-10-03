@@ -7,7 +7,7 @@ Run from backend:
 Copies the database with SQLite's backup API into the target directory
 (unless a copy is already there) and migrates the copy. Then, for each
 strategy (default: topix_buy_and_hold_v1), creates an account from
-2022-10-06 with the portfolio rules /api/strategies suggests, advances it
+2022-10-17 with the portfolio rules /api/strategies suggests, advances it
 to the latest session, and prints JSON lines: its fills with their reasons,
 the switches in and out of 1306 and the share of sessions it held 1306,
 its holdings and figures; the NAV either side of 1306's 10-for-1 split;
