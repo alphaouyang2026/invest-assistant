@@ -255,7 +255,8 @@ function Holdings({ detail }: { detail: Detail }) {
                         {displayCode(h.code)}
                       </Link>
                     </td>
-                    <td>{h.name ?? ""}</td>
+                    {/* a long name (1306's) wraps rather than scrolling the table sideways */}
+                    <td className="wrap">{h.name ?? ""}</td>
                     <td className="r">{h.quantity.toLocaleString("en-US")}</td>
                     <td className="num">{h.opened_on}</td>
                     <td className="r">{yen(h.cost)}</td>
