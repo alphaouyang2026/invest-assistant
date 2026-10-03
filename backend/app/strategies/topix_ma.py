@@ -29,7 +29,7 @@ import pandas as pd
 
 from app import indicators
 from app.market_data import TOPIX, UniverseRule
-from app.strategies.base import Disposition, Judgement, Plot, ReferenceSeriesStrategy
+from app.strategies.base import Disposition, Judgement, Plot, ReferenceSeriesStrategy, whole_sessions
 
 DEFAULTS: Mapping[str, Any] = {"ma_sessions": 200, "band": 0.01, "warmup_sessions": 200}  # band: 0.01 is 1%
 ABOVE, NEAR, BELOW = "topix_above_ma", "topix_near_ma", "topix_below_ma"
@@ -43,22 +43,21 @@ class TopixMovingAverage(ReferenceSeriesStrategy):
 
     def __init__(self, params: Mapping[str, Any]) -> None:
         super().__init__({**DEFAULTS, **params})
-        window, band = self.params["ma_sessions"], self.params["band"]
+        window = whole_sessions(self.name, "均线窗口", self.params["ma_sessions"])
+        band = self.params["band"]
         self.warmup_sessions = self.params["warmup_sessions"]
-        if not (isinstance(window, int | float) and window >= 1 and float(window).is_integer()):
-            raise ValueError(f"{self.name} 的均线窗口要是至少 1 个开市日的整数，收到 {window}")
         if not (isinstance(band, int | float) and math.isfinite(band) and band >= 0):
             raise ValueError(f"{self.name} 的缓冲带要是不小于 0 的比例（0.01 表示 1%），收到 {band}")
         if self.warmup_sessions < window:
             raise ValueError(f"{self.name} 的预热期 {self.warmup_sessions} 比均线窗口 {window} 短：均线还算不出来")
-        self._window = int(window)
+        self._window = window
 
     def lines(self, closes: pd.DataFrame) -> dict[str, pd.Series]:
         topix = closes[TOPIX]
         average = indicators.sma(topix, self._window)
         return {"topix_close": topix, "topix_ma": average, "deviation": topix / average - 1}
 
-    def judge(self, readings: dict[str, float], held: bool) -> Judgement:
+    def judge_on_reference(self, readings: dict[str, float], held: bool) -> Judgement:
         close, average, band = readings["topix_close"], readings["topix_ma"], self.params["band"]
         below = close < average * (1 - band)
         if held:

@@ -37,7 +37,7 @@ from typing import Any
 import pandas as pd
 
 from app.market_data import TOPIX, UniverseRule
-from app.strategies.base import Disposition, Judgement, Plot, ReferenceSeriesStrategy
+from app.strategies.base import Disposition, Judgement, Plot, ReferenceSeriesStrategy, whole_sessions
 
 DEFAULTS: Mapping[str, Any] = {"lookback_sessions": 252, "warmup_sessions": 253}  # about 12 months, and the day's own
 UP, FLAT, DOWN = "topix_momentum_up", "topix_momentum_flat", "topix_momentum_down"
@@ -52,11 +52,8 @@ class TopixMomentum(ReferenceSeriesStrategy):
 
     def __init__(self, params: Mapping[str, Any]) -> None:
         super().__init__({**DEFAULTS, **params})
-        lookback = self.params["lookback_sessions"]
+        self._lookback = whole_sessions(self.name, "回看长度", self.params["lookback_sessions"])
         self.warmup_sessions = self.params["warmup_sessions"]
-        if not (isinstance(lookback, int | float) and lookback >= 1 and float(lookback).is_integer()):
-            raise ValueError(f"{self.name} 的回看长度要是至少 1 个开市日的整数，收到 {lookback}")
-        self._lookback = int(lookback)
         if self.warmup_sessions < self._lookback + 1:
             raise ValueError(f"{self.name} 的预热期 {self.warmup_sessions} 少于回看长度加当天"
                              f"（{self._lookback + 1} 个开市日）：过去收益还算不出来")
@@ -72,7 +69,7 @@ class TopixMomentum(ReferenceSeriesStrategy):
             "check_day": (months != months.shift()).astype(float),  # 1 on the first session of a month
         }
 
-    def judge(self, readings: dict[str, float], held: bool) -> Judgement:
+    def judge_on_reference(self, readings: dict[str, float], held: bool) -> Judgement:
         if not readings["check_day"]:
             return Judgement(Disposition.HOLD) if held else Judgement(Disposition.STAY_OUT, (NOT_CHECK_DAY,))
         close, then = readings["topix_close"], readings["lookback_close"]
