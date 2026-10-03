@@ -8,11 +8,16 @@ Copies the database with SQLite's backup API into the target directory
 (unless a copy is already there) and migrates the copy. Then, for each
 strategy (default: topix_buy_and_hold_v1), creates an account from
 2022-10-06 with the portfolio rules /api/strategies suggests, advances it
-to the latest session, and prints JSON lines: its fills, holdings and
-figures; the NAV either side of 1306's 10-for-1 split; whether it held 1306
-on each distribution day, with that day's return beside TOPIX's; and the
-signal page's candidates. Last, 1306's own price return against TOPIX over
-each year from the start. The copy is kept for a page session against it.
+to the latest session, and prints JSON lines: its fills with their reasons,
+the switches in and out of 1306 and the share of sessions it held 1306,
+its holdings and figures; the NAV either side of 1306's 10-for-1 split;
+whether it held 1306 on each distribution day, with that day's return
+beside TOPIX's; and the signal page's candidates. With topix_ma_v1, also
+the switches TOPIX alone calls for — the spec's read-only count, taken from
+the TOPIX close and average 1306's security page draws — to set beside the
+account's. Last, a side-by-side summary of the accounts, and 1306's own
+price return against TOPIX over each year from the start. The copy is kept
+for a page session against it.
 """
 import json
 import os
@@ -66,6 +71,13 @@ def main() -> None:
         for name in strategies:
             accounts.append(demo(client, idle, listed[name]))
             show({"account": name, **accounts[-1]})
+        if "topix_ma_v1" in strategies:
+            show({"topix_alone": topix_alone(client, latest, listed["topix_ma_v1"]["defaults"]["band"])})
+        show({"side_by_side": [{"account": name, "trades": account["trades"], "held_share": account["held_share"],
+                                **{key: account["figures"][key] for key in (
+                                    "total_return", "annualised_return", "max_drawdown", "sharpe",
+                                    "excess_annualised_return")}, "topix_return": account["topix_return"]}
+                               for name, account in zip(strategies, accounts)]})
         show({"etf_against_topix": yearly(client, latest, accounts[0]["id"])})
 
 
@@ -101,6 +113,7 @@ def demo(client: TestClient, idle, strategy: dict) -> dict:
                                           "filled_quantity", "fill_price", "cash_delta")}
                   | {"reasons": o["reason"].get("reason_codes", [])} for o in fills],
         "trades": sum(o["kind"] in ("buy", "sell") for o in fills),
+        "held_share": round(sum(held_on(day) > 0 for day in days) / len(days), 4),
         "holdings": [{key: h[key] for key in ("code", "quantity", "opened_on", "close", "value")}
                      for h in detail["holdings"]],
         "pending": [(o["kind"], o["code"], o["execution_date"]) for o in detail["pending"]],
@@ -112,6 +125,29 @@ def demo(client: TestClient, idle, strategy: dict) -> dict:
         "topix_return": round(nav[days[-1]]["topix_curve"] - 1, 4),
         "signals": client.get("/api/signals", params={"strategy": strategy["name"]}).json(),
     }
+
+
+def topix_alone(client: TestClient, latest: str, band: float) -> dict:
+    """The moving average rule run on TOPIX's close and average alone, as
+    1306's security page draws them from the start: the day each switch is
+    called (an account fills it at the next open), the number of switches,
+    and the share of sessions held. 1306's own bars play no part."""
+    bars = client.get(f"/api/instruments/{TOPIX_ETF}/bars",
+                      params={"strategy": "topix_ma_v1", "from": START, "to": latest}).json()
+    closes, averages = ({point["date"]: point["value"] for point in bars["lines"][name]} for name in ("topix_close", "topix_ma"))
+    held, switches, sessions_held = False, [], 0
+    for day in sorted(closes):
+        close, average = closes[day], averages.get(day)
+        if close is None or average is None:
+            continue
+        if not held and close > average * (1 + band):
+            held = True
+            switches.append((day, "buy"))
+        elif held and close < average * (1 - band):
+            held = False
+            switches.append((day, "sell"))
+        sessions_held += held
+    return {"switches": len(switches), "called_on": switches, "held_share": round(sessions_held / len(closes), 4)}
 
 
 def yearly(client: TestClient, latest: str, account: int) -> list[dict]:
