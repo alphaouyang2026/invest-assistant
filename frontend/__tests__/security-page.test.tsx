@@ -43,6 +43,14 @@ const BARS = {
   entries: ["2026-09-18"],
 };
 
+// What the strategy list says each universe rule names: the TOPIX ETF
+// strategies buy 1306 alone.
+const STRATEGY_POOLS = [
+  { name: "trend_pullback_v1", pool_codes: [] },
+  { name: "topix_ma_v1", pool_codes: ["13060"] },
+  { name: "topix_momentum_v1", pool_codes: ["13060"] },
+];
+
 let asked: string[];
 
 beforeEach(() => {
@@ -57,6 +65,8 @@ function stubBackend(bars: typeof BARS) {
     asked.push(url.pathname + url.search);
     const body = url.pathname === "/api/instruments"
       ? [{ code: "72030", name: "トヨタ自動車", name_en: "TOYOTA MOTOR", market: "0111" }]
+      : url.pathname === "/api/strategies"
+      ? STRATEGY_POOLS
       : bars;
     return new Response(JSON.stringify(body), { headers: { "Content-Type": "application/json" } });
   }));
@@ -124,6 +134,34 @@ describe("证券详情页", () => {
     }]);
     expect(drawn.data?.entries).toEqual(["2026-09-01"]);
     expect(screen.getByRole("link", { name: "TOPIX 动量" })).toHaveAttribute("aria-current", "page");
+  });
+
+  it("TOPIX 均线下的 7203 照样画线，但不标入场点，并说明这个策略只交易 1306", async () => {
+    stubBackend({
+      ...BARS,
+      plots: [{ indicator: "topix_close", pane: "separate" }, { indicator: "topix_ma", pane: "separate" }],
+      lines: {
+        topix_close: [{ date: "2026-09-17", value: 3120.5 }, { date: "2026-09-18", value: 3150.25 }],
+        topix_ma: [{ date: "2026-09-17", value: 2950.1 }, { date: "2026-09-18", value: 2952.3 }],
+      } as unknown as typeof BARS.lines,
+      entries: ["2026-09-18"], // what the strategy would say holding nothing, were 7203 in its universe
+    });
+    render(<SecurityDetail code="72030" strategy="topix_ma_v1" />);
+
+    await screen.findByTestId("chart");
+    expect(drawn.data?.lines.map((line) => line.name)).toEqual(["topix_close", "topix_ma"]);
+    expect(drawn.data?.entries).toEqual([]);
+    expect(screen.getByText("TOPIX 均线 只交易 1306，这里不标入场信号")).toBeInTheDocument();
+    expect(screen.queryByText(/入场信号（连续几天只标第一天）/)).not.toBeInTheDocument();
+  });
+
+  it("个股策略下的 7203 照常标入场点", async () => {
+    render(<SecurityDetail code="72030" strategy="trend_pullback_v1" />);
+
+    await screen.findByTestId("chart");
+    expect(drawn.data?.entries).toEqual(["2026-09-18"]);
+    expect(screen.getByText(/入场信号（连续几天只标第一天）/)).toBeInTheDocument();
+    expect(screen.queryByText(/只交易/)).not.toBeInTheDocument();
   });
 
   it("把研究价格 K 线、成交量、策略的指标和历史入场点交给图表", async () => {
