@@ -1,6 +1,6 @@
 # TOPIX ETF 策略：一直持有对照组、TOPIX 均线、TOPIX 动量
 
-**Status:** ready-for-agent
+**Status:** done
 
 - 日期：2026-10-02
 - 术语：[CONTEXT.md](../../CONTEXT.md)。本文新增或改动的词（股票池规则、参照行情）在「实现决定 · 文档」里一并写回 CONTEXT.md。
