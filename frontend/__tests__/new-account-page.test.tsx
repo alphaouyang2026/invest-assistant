@@ -17,6 +17,8 @@ const STRATEGIES = [
     universe_rule: "topix_etf", suggested_rules: { max_positions: 1, max_weight: 1, cash_floor: 0.05 } },
   { name: "topix_ma_v1", defaults: { ma_sessions: 200, band: 0.01, warmup_sessions: 200 },
     universe_rule: "topix_etf", suggested_rules: { max_positions: 1, max_weight: 1, cash_floor: 0.05 } },
+  { name: "topix_momentum_v1", defaults: { lookback_sessions: 252, warmup_sessions: 253 },
+    universe_rule: "topix_etf", suggested_rules: { max_positions: 1, max_weight: 1, cash_floor: 0.05 } },
 ];
 
 function fakeBackend(created: { status: number; body: unknown }) {
@@ -129,6 +131,41 @@ describe("新建账户", () => {
     expect(backend.posted).toEqual([{
       name: "均线 120", strategy: "topix_ma_v1", start_date: "2022-10-06",
       strategy_params: { ma_sessions: 120, warmup_sessions: 120 },
+      initial_cash: 10000000, max_positions: 1, max_weight: 1, cash_floor: 0.05,
+      commission_rate: 0, commission_min: 0, slippage: 0.001,
+    }]);
+  });
+
+  it("TOPIX 动量：说明写明每月第一个开市日判断，参数有回看长度，预热期比它多 1 并跟着它变", async () => {
+    backend = fakeBackend({ status: 201, body: { id: 10, advance_job_id: "job4", advance_refused: null } });
+    vi.stubGlobal("fetch", backend.fetch);
+    const user = userEvent.setup();
+    render(<NewAccount />);
+
+    await user.click(await screen.findByRole("radio", { name: /TOPIX 动量/ }));
+    const chosen = screen.getByRole("radio", { name: /TOPIX 动量/ });
+    expect(chosen).toHaveAccessibleName(/每月第一个开市日判断，月中建的账户等到下个月才可能买入/);
+    expect(chosen).toHaveAccessibleName(/过去收益.*为正就买入，为负就全部卖出/);
+    expect(screen.getByLabelText("回看长度")).toHaveValue(252);
+    expect(screen.getByLabelText("预热期")).toHaveValue(253);
+    expect(screen.getByText(/252 约 12 个月/)).toBeInTheDocument();
+    expect(screen.getByText(/之前至少有 253 个交易日的数据/)).toBeInTheDocument();
+    expect(["最多持有", "单只上限", "现金下限"].map((label) => screen.getByLabelText(label))
+      .map((input) => (input as HTMLInputElement).value)).toEqual(["1", "100", "5"]);
+
+    await user.clear(screen.getByLabelText("回看长度"));
+    await user.type(screen.getByLabelText("回看长度"), "126");
+    expect(screen.getByLabelText("预热期")).toHaveValue(127);
+    expect(screen.getByText(/之前至少有 127 个交易日的数据/)).toBeInTheDocument();
+
+    await user.type(screen.getByLabelText("账户名称"), "动量半年");
+    fireEvent.change(screen.getByLabelText("起始日"), { target: { value: "2022-10-06" } });
+    await user.click(screen.getByRole("button", { name: "新建并开始回测" }));
+
+    await vi.waitFor(() => expect(pushed).toEqual(["/accounts/10"]));
+    expect(backend.posted).toEqual([{
+      name: "动量半年", strategy: "topix_momentum_v1", start_date: "2022-10-06",
+      strategy_params: { lookback_sessions: 126, warmup_sessions: 127 },
       initial_cash: 10000000, max_positions: 1, max_weight: 1, cash_floor: 0.05,
       commission_rate: 0, commission_min: 0, slippage: 0.001,
     }]);

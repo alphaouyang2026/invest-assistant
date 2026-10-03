@@ -102,6 +102,30 @@ describe("证券详情页", () => {
     expect(screen.getByRole("link", { name: "TOPIX 均线" })).toHaveAttribute("aria-current", "page");
   });
 
+  it("TOPIX 动量下，1306 的图在单独一栏画过去收益，入场点在每月第一个开市日", async () => {
+    const days = ["2026-08-31", "2026-09-01", "2026-09-02"];
+    stubBackend({
+      ...BARS,
+      code: "13060",
+      bars: days.map((date) => ({ date, open: 3000, high: 3010, low: 2990, close: 3005, volume: 90000 })),
+      plots: [{ indicator: "past_return", pane: "separate" }],
+      lines: {
+        past_return: days.map((date, n) => ({ date, value: [0.12, 0.11, 0.13][n] })),
+      } as unknown as typeof BARS.lines,
+      entries: ["2026-09-01"],
+    });
+    render(<SecurityDetail code="13060" strategy="topix_momentum_v1" />);
+
+    await screen.findByTestId("chart");
+    expect(asked[0]).toBe("/api/instruments/13060/bars?strategy=topix_momentum_v1");
+    expect(drawn.data?.lines).toEqual([{
+      name: "past_return", pane: "separate",
+      points: days.map((time, n) => ({ time, value: [0.12, 0.11, 0.13][n] })),
+    }]);
+    expect(drawn.data?.entries).toEqual(["2026-09-01"]);
+    expect(screen.getByRole("link", { name: "TOPIX 动量" })).toHaveAttribute("aria-current", "page");
+  });
+
   it("把研究价格 K 线、成交量、策略的指标和历史入场点交给图表", async () => {
     render(<SecurityDetail code="72030" strategy="trend_pullback_v1" />);
 

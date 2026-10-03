@@ -11,4 +11,15 @@ describe("理由的文字和颜色", () => {
         ["TOPIX 在均线之下", "down"],
       ]);
   });
+
+  it("TOPIX 动量：过去收益为正偏买，为 0 和不是判断日不着色，为负偏卖", () => {
+    expect(["topix_momentum_up", "topix_momentum_flat", "topix_momentum_down", "not_check_day"]
+      .map((code) => [reason(code), reasonTone(code)]))
+      .toEqual([
+        ["TOPIX 过去收益为正", "up"],
+        ["TOPIX 过去收益为 0", ""],
+        ["TOPIX 过去收益为负", "down"],
+        ["不是每月判断日", ""],
+      ]);
+  });
 });

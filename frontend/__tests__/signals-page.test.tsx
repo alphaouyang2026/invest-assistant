@@ -23,9 +23,16 @@ const MA_CANDIDATE = {
   code: "13060", name: "ＮＥＸＴ　ＦＵＮＤＳ　ＴＯＰＩＸ連動型上場投信", market: "0109", priority: 0.0312,
   reason_codes: ["topix_above_ma"],
 };
+// TOPIX 动量 judges on the first session of the month alone: 1306 on
+// 2026-09-01, nothing on the latest session.
+const CHECK_DAY = "2026-09-01";
+const MOMENTUM_CANDIDATE = {
+  code: "13060", name: "ＮＥＸＴ　ＦＵＮＤＳ　ＴＯＰＩＸ連動型上場投信", market: "0109", priority: 0.1834,
+  reason_codes: ["topix_momentum_up"],
+};
 const UNIVERSE_RULES: Record<string, string> = {
   trend_pullback_v1: "prime_common_stock", technical_rating_v1: "prime_common_stock",
-  topix_buy_and_hold_v1: "topix_etf", topix_ma_v1: "topix_etf",
+  topix_buy_and_hold_v1: "topix_etf", topix_ma_v1: "topix_etf", topix_momentum_v1: "topix_etf",
 };
 
 /**
@@ -46,6 +53,7 @@ function fakeBackend() {
         date,
         candidates: date === QUIET_DAY ? []
           : strategy === "topix_ma_v1" ? (date === ABOVE_THE_AVERAGE ? [MA_CANDIDATE] : [])
+          : strategy === "topix_momentum_v1" ? (date === CHECK_DAY ? [MOMENTUM_CANDIDATE] : [])
           : (CANDIDATES[strategy] ?? []),
       });
     }
@@ -141,6 +149,25 @@ describe("信号页", () => {
 
     fireEvent.change(screen.getByLabelText("收盘日"), { target: { value: "2026-09-17" } });
     expect(await screen.findByText(/这一天不持有 1306/)).toBeInTheDocument();
+  });
+
+  it("TOPIX 动量在月中不持有 1306，在判断日的候选理由是 TOPIX 过去收益为正", async () => {
+    const user = userEvent.setup();
+    render(<SignalBoard />);
+    await screen.findByRole("table", { name: "入场候选" });
+
+    await user.click(screen.getByRole("button", { name: "TOPIX 动量" }));
+
+    expect(await screen.findByText(/今天不持有 1306/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "看 1306 的详情" })).toHaveAttribute(
+      "href", "/signals/13060?strategy=topix_momentum_v1",
+    );
+
+    fireEvent.change(screen.getByLabelText("收盘日"), { target: { value: CHECK_DAY } });
+    const link = await screen.findByRole("link", { name: "1306" });
+    const row = link.closest("tr") as HTMLElement;
+    expect(within(row).getByText("TOPIX 过去收益为正")).toHaveClass("badge", "up");
+    expect(within(row).getByText("0.18")).toBeInTheDocument();
   });
 
   it("个股策略没有候选时仍是一般的说明", async () => {
