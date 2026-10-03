@@ -12,12 +12,18 @@ to the latest session, and prints JSON lines: its fills with their reasons,
 the switches in and out of 1306 and the share of sessions it held 1306,
 its holdings and figures; the NAV either side of 1306's 10-for-1 split;
 whether it held 1306 on each distribution day, with that day's return
-beside TOPIX's; and the signal page's candidates. With topix_ma_v1, also
-the switches TOPIX alone calls for — the spec's read-only count, taken from
-the TOPIX close and average 1306's security page draws — to set beside the
+beside TOPIX's; whether it held 1306 at every close of the year from
+2025-09-30 to 2026-09-29, and its return over that year; and the signal
+page's candidates. With topix_ma_v1 or topix_momentum_v1, also the
+switches TOPIX alone calls for — the spec's read-only count, taken from the
+lines 1306's security page draws (the TOPIX close and its average; the past
+return, judged on the first session of each month) — to set beside the
 account's. Last, a side-by-side summary of the accounts, and 1306's own
 price return against TOPIX over each year from the start. The copy is kept
 for a page session against it.
+
+    uv run python scripts/demo_topix_accounts.py ../var/invest.db /root/topix-acceptance/03 \
+        topix_buy_and_hold_v1 topix_ma_v1 topix_momentum_v1
 """
 import json
 import os
@@ -35,6 +41,9 @@ START = "2022-10-06"  # the first start all three TOPIX ETF strategies can warm 
 TOPIX_ETF = "13060"
 SPLIT = ("2026-03-27", "2026-03-30")  # the session before 1306's 10-for-1 split, and its ex-date
 DISTRIBUTION_DAYS = ["2023-07-07", "2024-07-09", "2025-07-09", "2026-07-09"]  # 1306 goes ex-distribution
+# Every session of it was an up-trend session: the spec expects the moving
+# average account to hold all year, no different from the control group.
+UP_YEAR = ("2025-09-30", "2026-09-29")
 
 
 def show(value) -> None:
@@ -73,10 +82,15 @@ def main() -> None:
             show({"account": name, **accounts[-1]})
         if "topix_ma_v1" in strategies:
             show({"topix_alone": topix_alone(client, latest, listed["topix_ma_v1"]["defaults"]["band"])})
+        if "topix_momentum_v1" in strategies:
+            show({"topix_alone_momentum": momentum_alone(client, latest)})
         show({"side_by_side": [{"account": name, "trades": account["trades"], "held_share": account["held_share"],
                                 **{key: account["figures"][key] for key in (
                                     "total_return", "annualised_return", "max_drawdown", "sharpe",
-                                    "excess_annualised_return")}, "topix_return": account["topix_return"]}
+                                    "excess_annualised_return")}, "topix_return": account["topix_return"],
+                                "held_on_distribution_days": {day: held["shares"] > 0 for day, held in
+                                                              account["distribution_days"].items()},
+                                "up_year": account["up_year"]}
                                for name, account in zip(strategies, accounts)]})
         show({"etf_against_topix": yearly(client, latest, accounts[0]["id"])})
 
@@ -121,6 +135,10 @@ def demo(client: TestClient, idle, strategy: dict) -> dict:
                         "topix": day_return(day, "topix_curve")} for day in SPLIT if day in nav and day != days[0]},
         "distribution_days": {day: {"shares": held_on(day), "account": day_return(day, "nav_curve"),
                                     "topix": day_return(day, "topix_curve")} for day in DISTRIBUTION_DAYS if day in nav},
+        "up_year": {"held_every_close": all(held_on(day) > 0 for day in days if UP_YEAR[0] <= day <= UP_YEAR[1]),
+                    "return": round(nav[UP_YEAR[1]]["nav_curve"] / nav[UP_YEAR[0]]["nav_curve"] - 1, 4),
+                    "topix": round(nav[UP_YEAR[1]]["topix_curve"] / nav[UP_YEAR[0]]["topix_curve"] - 1, 4)}
+                   if UP_YEAR[1] in nav else None,
         "figures": figures,
         "topix_return": round(nav[days[-1]]["topix_curve"] - 1, 4),
         "signals": client.get("/api/signals", params={"strategy": strategy["name"]}).json(),
@@ -148,6 +166,36 @@ def topix_alone(client: TestClient, latest: str, band: float) -> dict:
             switches.append((day, "sell"))
         sessions_held += held
     return {"switches": len(switches), "called_on": switches, "held_share": round(sessions_held / len(closes), 4)}
+
+
+def momentum_alone(client: TestClient, latest: str) -> dict:
+    """The momentum rule run on the past return alone, as 1306's security
+    page draws it from the start: judged on each session that opens a month
+    (the previous session falls in an earlier one), a session without a
+    value not judged and its month left as it is. 1306's own bars play no
+    part beyond giving the sessions."""
+    bars = client.get(f"/api/instruments/{TOPIX_ETF}/bars",
+                      params={"strategy": "topix_momentum_v1", "from": START, "to": latest}).json()
+    past = {point["date"]: point["value"] for point in bars["lines"]["past_return"]}
+    days = sorted(past)
+    held, switches, sessions_held, check_days = False, [], 0, []
+    for n, day in enumerate(days):
+        if n > 0 and days[n - 1][:7] != day[:7]:
+            check_days.append(day)
+            value = past[day]
+            if value is not None and not held and value > 0:
+                held = True
+                switches.append((day, "buy", round(value, 4)))
+            elif value is not None and held and value < 0:
+                held = False
+                switches.append((day, "sell", round(value, 4)))
+        sessions_held += held
+    turns = [day for n, day in enumerate(days[1:], 1)
+             if past[day] is not None and past[days[n - 1]] is not None and (past[day] > 0) != (past[days[n - 1]] > 0)]
+    return {"switches": len(switches), "called_on": switches, "held_share": round(sessions_held / len(days), 4),
+            "check_days": len(check_days), "entries_on_check_days_only": set(bars["entries"]) <= set(check_days),
+            "past_return_turns_daily": len(turns),
+            "past_return_on_check_days": {day: None if past[day] is None else round(past[day], 4) for day in check_days}}
 
 
 def yearly(client: TestClient, latest: str, account: int) -> list[dict]:
