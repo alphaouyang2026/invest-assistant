@@ -271,9 +271,9 @@ NaN 的处理也要显式规定并写进测试：宽表对齐后，某证券当�
 
 **参照行情**（CONTEXT.md）：策略读取、但永远不交易的行情代码，默认为空。两个个股策略和一直持有对照组不声明；TOPIX 均线和 TOPIX 动量声明 TOPIX（6.5）。
 
-- 调用方把它加进读取范围：信号页读「股票池 ∪ 参照行情」，证券详情页读「该证券 ∪ 参照行情」，模拟账户推进一次读「整段股票池的并集 ∪ 持仓 ∪ 挂单 ∪ 参照行情」。入场候选仍然只取当天股票池里的；建账户时的预热期校验不变，仍按 TOPIX 的开市日数计。
-- `evaluate` 把参照行情的代码只当作输入，永远不给它信号；`frame` 里其余每只能判断的证券照常得到一条信号。所以在任何证券的详情页选 TOPIX 均线或 TOPIX 动量都画得出线，但只有股票池里的证券会成为入场候选。
-- 规则只读参照行情的策略共用一个基类：对整个 `frame` 用参照行情算一次线，当天参照行情有收盘、而且收盘个数（含当天）够预热期时，其余每只当天有日线且不是 `untradable` 的证券都按同一组指标值得到信号；否则当天谁都没有信号。算线时拿到的是参照行情在 `frame` 全部日期上的收盘，所以也看得出哪天是每月第一个开市日（TOPIX 动量的判断日）。
+- 调用方把它加进读取范围：信号页读「股票池 ∪ 参照行情」，证券详情页读「该证券 ∪ 参照行情」，模拟账户推进一次读「整段股票池的并集 ∪ 持仓 ∪ 挂单 ∪ 参照行情」，研究运行读「整段股票池的并集 ∪ 参照行情」。「要评价的代码 ∪ 参照行情」只写在一个函数里（`codes_to_read`，附录 A.3），这些调用方都用它。入场候选仍然只取当天股票池里的；建账户时的预热期校验不变，仍按 TOPIX 的开市日数计（7.1）。
+- `evaluate` 把参照行情的代码只当作输入，永远不给它信号；`frame` 里其余每只能判断的证券照常得到一条信号。所以在任何证券的详情页选 TOPIX 均线或 TOPIX 动量都画得出线，但只有股票池里的证券会成为入场候选。证券详情页也只在股票池点名的代码（1306）上标入场点；在其他证券上照样画线，但不标入场点，并写明这个策略只交易 1306。
+- 规则只读参照行情的策略共用一个基类（`ReferenceSeriesStrategy`，规则写在 `judge_on_reference(readings, held)` 里，和个股策略基类的 `judge(readings, position)` 区分开；两个基类共用按 `frame` 缓存和按日取值的那一段）：对整个 `frame` 用参照行情算一次线，当天参照行情有收盘、而且收盘个数（含当天）够预热期时，其余每只当天有日线且不是 `untradable` 的证券都按同一组指标值得到信号；否则当天谁都没有信号。算线时拿到的是参照行情在 `frame` 全部日期上的收盘，所以也看得出哪天是每月第一个开市日（TOPIX 动量的判断日）。
 
 **frame 的起点**：递推类指标的值取决于输入从哪天开始。策略对整个 `frame` 把指标算一次，按 `frame` 对象缓存（缓存不属于 interface），之后每次 `evaluate` 只按日取值，所以按日循环调用的开销与只调用一次相近。代价是：同一证券同一交易日，`frame` 起点不同，指标值会略有不同（见第 12 节）。调用方至少要从第一个评价日往前读预热期那么多个开市日；`frame` 传入后不得再修改。一条测试守住「不看未来」：用整个 `frame` 在 `t` 日评价，结果等于把 `frame` 截到 `t` 日再评价。
 
@@ -341,6 +341,10 @@ RSI14[t−1] ≤ 30      且  RSI14[t] > 30
   - 改成按月判断之前，在全样本上数过进出次数（没有看收益），见 TOPIX ETF 策略规格「补充说明 · 进出次数检查」；以后把它放进 05 的研究流程时要如实披露。
   - 这些是策略自己的规则，不是市场形势：不读、不复用 `topix_trend_vol_v1` 的标签。
 
+**和市场形势的关系**：这些策略的持有期和 `topix_trend_vol_v1` 的「上涨」形势高度重合——都看 TOPIX 自己的趋势，持有的日子大多正是上涨形势的日子。所以按市场形势分组看它们的结果几乎没有信息量，不能当作「这个策略适合哪种形势」的证据。例如 2025-09-30 至 2026-09-29 这一年每天都是上涨形势，均线策略整年持有，和一直持有没有区别；以后把它们放进 05 的研究流程，盲测期也分不出它们和对照组。
+
+信号页从空仓角度给入场候选（6.2），所以 TOPIX 策略没有候选时写的是「空仓的话，今天收盘后不会买入 1306」，而不是「不持有」：已持有 1306 的账户这一天可能继续持有（动量的非判断日、均线的缓冲带内）。
+
 ## 7. 模拟账户
 
 ### 7.1 推进一个交易日 `t`
@@ -358,7 +362,10 @@ RSI14[t−1] ≤ 30      且  RSI14[t] > 30
 
 PaperAccount 从 `start_date` 逐日推进到最新交易日，追上后写 `backtest_data_mark`，之后每次同步成功继续推进新的交易日。研究运行使用复制的账户配置、同批一致的行情输入和独立账本，复用本节的交易规则，不随行情同步继续推进（ADR-0006）。已成交的 paper account 记录不因生产日线后来被修正而改写。
 
-新建账户时校验：`start_date` 必须是开市日，且之前至少有该策略预热期那么多个开市日的数据。
+新建账户时校验：`start_date` 必须是开市日，且之前至少有该策略预热期那么多个开市日的数据。具体数法：数 TOPIX 的日线（它和股票按同样的日期同步，只读一个代码），从交易日历的第一天数到 `start_date` 的前一天，要不少于 `warmup_sessions`。有两点要注意，都是现有行为、没有改：
+
+- 起始日当天不算，所以比规则本身多要一个开市日。策略的预热期含当天：TOPIX 动量默认 253，规则要的是起始日当天及之前共 253 个收盘，建账户却要起始日之前就有 253 个。
+- 从日历的第一天数，不是从 TOPIX 的第一根日线数。真实库的日历从 2021-10-04 开始，TOPIX 的日线从 2021-09-24 开始，前面这 6 个开市日不算。所以按默认预热期，三个 TOPIX ETF 策略最早的共同起始日是 2022-10-17（TOPIX ETF 策略规格「补充说明 · 最早起始日」）。
 
 ### 7.2 组合规则：从信号到订单
 
@@ -450,7 +457,7 @@ API（前缀 `/api`）：
 - `GET /instruments?q=`、`GET /instruments/{code}/bars?from=&to=&strategy=`（研究价格 + 所选策略的指标 + 历史入场点）
 - `GET /signals?strategy=&date=`
 - `GET /accounts`、`POST /accounts`、`GET /accounts/{id}`、`GET /accounts/{id}/nav`、`GET /accounts/{id}/orders`、`POST /accounts/{id}/stop`、`DELETE /accounts/{id}`
-- `GET /strategies`（每个策略的参数与默认值，即附录 A.3 的 `STRATEGY_DEFAULTS`；它的股票池规则名称；建议的组合规则：TOPIX ETF 策略为 1 只、100%、5%，个股策略为 10 只、10%、5%。给新建账户页展示）
+- `GET /strategies`（每个策略的参数与默认值，即附录 A.3 的 `STRATEGY_DEFAULTS`；它的股票池规则（枚举）和这条规则点名的代码，TOPIX ETF 为 `["13060"]`、Prime 普通股为空；预热期跟着哪个参数变、多几个，没有就为空；建议的组合规则：TOPIX ETF 策略为 1 只、100%、5%，个股策略为 10 只、10%、5%。给新建账户页、信号页和证券详情页用，前端不再自己写这些规则。内容由账户模块的 `strategy_choices()` 给出，处理函数只做转换）
 - `GET /jobs/current`
 
 04b-A API（前缀 `/api/research`）：
@@ -591,6 +598,8 @@ class Strategy(Protocol):
 
 def build_strategy(name: str, params: Mapping[str, Any]) -> Strategy: ...
 STRATEGY_DEFAULTS: Mapping[str, Mapping[str, Any]]   # 供新建账户页展示
+def strategy_infos() -> list[StrategyInfo]: ...      # 名称、默认参数、股票池规则、warmup_follows，不必建策略
+def codes_to_read(strategy: Strategy, codes: Iterable[str]) -> list[str]: ...  # codes ∪ 参照行情，读行情的调用方都用它
 
 def entry_candidates(market: MarketData, strategy: Strategy, day: date) -> list[Candidate]: ...
 def history(market: MarketData, strategy: Strategy, code: str,
@@ -612,7 +621,9 @@ class SecurityHistory:
                     entries: list[date]                             # 未持仓角度得到「可持有」的交易日
 ```
 
-只有一个方法：`frame` 里每只能判断的证券都得到一条信号（含「不参与」，带当天指标值）；`holdings` 传空，其中「可持有」的就是入场候选；传账户持仓，就同时得到该账户的清仓信号。参数在构造时就固定在策略对象里，不出现在方法签名上。指标对整个 `frame` 只算一次、按 `frame` 缓存，缓存不属于 interface（6.2「frame 的起点」）。股票池规则和参照行情跟 `warmup_sessions`、`plots` 一样是声明：策略自己仍不筛股票池、不查数据库，调用方按股票池规则取股票池（`entry_candidates`、模拟账户推进、研究运行），并把参照行情加进读取范围（`entry_candidates`、`history`、模拟账户推进）。参照行情的代码只是输入，`evaluate` 永远不给它信号。
+只有一个方法：`frame` 里每只能判断的证券都得到一条信号（含「不参与」，带当天指标值）；`holdings` 传空，其中「可持有」的就是入场候选；传账户持仓，就同时得到该账户的清仓信号。参数在构造时就固定在策略对象里，不出现在方法签名上。指标对整个 `frame` 只算一次、按 `frame` 缓存，缓存不属于 interface（6.2「frame 的起点」）。股票池规则和参照行情跟 `warmup_sessions`、`plots` 一样是声明：策略自己仍不筛股票池、不查数据库，调用方按股票池规则取股票池（`entry_candidates`、模拟账户推进、研究运行），并把参照行情加进读取范围（`entry_candidates`、`history`、模拟账户推进、研究运行，都经由 `codes_to_read`）。参照行情的代码只是输入，`evaluate` 永远不给它信号。
+
+策略类还可以声明 `warmup_follows: WarmupFollows | None`（参数名和多出的个数）：预热期至少是这个参数加上这个数，TOPIX 均线为 `ma_sessions` + 0，TOPIX 动量为 `lookback_sessions` + 1，其余为空。策略自己的校验和新建账户页都按它，规则只写一处。
 
 五个适配器：Trend-Pullback v1 和技术评级 v1（股票池规则取默认的 Prime 普通股，没有参照行情），TOPIX ETF 一直持有 v1（TOPIX ETF，没有参照行情），TOPIX 均线 v1 和 TOPIX 动量 v1（TOPIX ETF，参照行情 TOPIX）；后三个见 6.5。规则只读参照行情的这两个策略共用基类 `ReferenceSeriesStrategy`（6.2）。
 
@@ -633,6 +644,8 @@ class Accounts:
     def stop(self, account_id: AccountId) -> None: ...
     def delete(self, account_id: AccountId) -> None: ...
 ```
+
+另有一个普通函数 `strategy_choices()`：把每个策略的声明（`strategy_infos()`）和账户这边的结论配在一起——股票池规则点名的代码、建议的组合规则——供 `GET /strategies` 转成 JSON（第 9 节），API 里因此不写这层配对。
 
 `advance` 是模拟账户推进的入口：拆合股调整、退市结清、开盘成交、卖单重下、出信号、组合规则、写订单，全在它后面。它从 `advanced_through` 的下一个开市日推进到 `through`（默认最新交易日）；重复调用不会重复推进。paper account 的历史追赶和后续模拟交易都使用它；04b 增加独立研究入口，复用这些规则而不写 paper 账本（ADR-0006）。
 
