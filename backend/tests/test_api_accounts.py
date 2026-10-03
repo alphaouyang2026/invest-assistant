@@ -134,7 +134,8 @@ def test_the_strategies_and_their_defaults_for_the_new_account_page(api) -> None
     and the portfolio rules the page fills in for it."""
     listed = {s["name"]: s for s in api.get("/api/strategies").json()}
 
-    assert set(listed) == {"trend_pullback_v1", "technical_rating_v1", "topix_buy_and_hold_v1", "topix_ma_v1"}
+    assert set(listed) == {"trend_pullback_v1", "technical_rating_v1", "topix_buy_and_hold_v1", "topix_ma_v1",
+                           "topix_momentum_v1"}
     assert listed["technical_rating_v1"]["defaults"]["entry_above"] == 0.5
     for stock_strategy in ("trend_pullback_v1", "technical_rating_v1"):
         assert (listed[stock_strategy]["universe_rule"], listed[stock_strategy]["suggested_rules"]) == (
@@ -149,6 +150,12 @@ def test_the_strategies_and_their_defaults_for_the_new_account_page(api) -> None
     assert listed["topix_ma_v1"] == {
         "name": "topix_ma_v1",
         "defaults": {"ma_sessions": 200, "band": 0.01, "warmup_sessions": 200},
+        "universe_rule": "topix_etf",
+        "suggested_rules": one_etf,
+    }
+    assert listed["topix_momentum_v1"] == {
+        "name": "topix_momentum_v1",
+        "defaults": {"lookback_sessions": 252, "warmup_sessions": 253},
         "universe_rule": "topix_etf",
         "suggested_rules": one_etf,
     }

@@ -8,6 +8,7 @@ ones need a year of bars, and their rules are tested on their own.
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from datetime import date, timedelta
 from decimal import Decimal
 
@@ -85,17 +86,24 @@ TOPIX_SESSIONS = [date(2026, 1, 5) + timedelta(days=n) for n in range(203)]
 TOPIX_CLOSES = ["100"] * 201 + ["102", "104"]
 
 
-@pytest.fixture
-def topix_market(migrated_database):
+@contextmanager
+def topix_following(sessions: list[date], closes: list[str]):
     """The real strategies, with their default parameters, on 1306 at 3,000
-    and TOPIX as above: a year of sessions, enough for a 200-close average."""
-    bars = {day: [bar("13060", day, "3000", turnover=LIQUID)] for day in TOPIX_SESSIONS}
+    and TOPIX closing at `closes` over `sessions`."""
+    bars = {day: [bar("13060", day, "3000", turnover=LIQUID)] for day in sessions}
     roster = [listed("13060", "0109", product="014", name="ＴＯＰＩＸ連動型上場投信")]
-    topix = [IndexBar(day, *[Decimal(close)] * 4) for day, close in zip(TOPIX_SESSIONS, TOPIX_CLOSES)]
-    fake = FakeJQuants(TOPIX_SESSIONS, bars=bars, roster=roster, topix=topix)
-    app = create_app(Settings(_env_file=None), client=fake, today=lambda: TOPIX_SESSIONS[-1])
+    topix = [IndexBar(day, *[Decimal(close)] * 4) for day, close in zip(sessions, closes)]
+    fake = FakeJQuants(sessions, bars=bars, roster=roster, topix=topix)
+    app = create_app(Settings(_env_file=None), client=fake, today=lambda: sessions[-1])
     with TestClient(app) as client:
         app.state.market.sync()
+        yield client
+
+
+@pytest.fixture
+def topix_market(migrated_database):
+    """TOPIX as above: a year of sessions, enough for a 200-close average."""
+    with topix_following(TOPIX_SESSIONS, TOPIX_CLOSES) as client:
         yield client
 
 
@@ -126,6 +134,49 @@ def test_1306s_bars_come_with_topix_and_its_average_and_the_days_it_would_have_b
     assert [point["value"] for point in body["lines"]["topix_close"]] == [100.0, 102.0, 104.0]
     assert [point["value"] for point in body["lines"]["topix_ma"]] == pytest.approx([100.0, 100.01, 100.03])
     assert body["entries"] == days[1:]
+
+
+# Every day from New Year's Day 2025 to 1 December, TOPIX closing one point
+# higher each: the past return over 252 closes is positive from the
+# 253rd session, 10 September, on.
+MOMENTUM_SESSIONS = [date(2025, 1, 1) + timedelta(days=n) for n in range(335)]
+MOMENTUM_CLOSES = [str(100 + n) for n in range(335)]
+
+
+@pytest.fixture
+def momentum_market(migrated_database):
+    with topix_following(MOMENTUM_SESSIONS, MOMENTUM_CLOSES) as client:
+        yield client
+
+
+def test_the_momentum_strategy_has_1306_as_its_candidate_on_the_check_day_alone(momentum_market) -> None:
+    """The latest session, 1 December, is a check day: 1306, ranked by the
+    past return 434 ÷ 182 − 1. Mid-November the past return is just as
+    positive, but nothing is judged."""
+    latest = momentum_market.get("/api/signals", params={"strategy": "topix_momentum_v1"}).json()
+    mid_month = momentum_market.get("/api/signals", params={
+        "strategy": "topix_momentum_v1", "date": "2025-11-14"}).json()
+
+    [candidate] = latest["candidates"]
+    assert latest["date"] == "2025-12-01"
+    assert (candidate["code"], candidate["market"], candidate["reason_codes"]) == (
+        "13060", "0109", ["topix_momentum_up"])
+    assert candidate["priority"] == pytest.approx(434 / 182 - 1)
+    assert mid_month["candidates"] == []
+
+
+def test_1306s_bars_come_with_the_past_return_every_day_and_entries_on_the_check_days_alone(momentum_market) -> None:
+    days = [day.isoformat() for day in MOMENTUM_SESSIONS if date(2025, 10, 29) <= day <= date(2025, 11, 3)]
+
+    body = momentum_market.get("/api/instruments/13060/bars",
+                               params={"strategy": "topix_momentum_v1", "from": days[0], "to": days[-1]}).json()
+
+    assert [b["date"] for b in body["bars"]] == days
+    assert body["plots"] == [{"indicator": "past_return", "pane": "separate"}]
+    assert {name: [point["date"] for point in line] for name, line in body["lines"].items()} == {"past_return": days}
+    assert [point["value"] for point in body["lines"]["past_return"]] == pytest.approx(
+        [(100 + n) / (100 + n - 252) - 1 for n in range(301, 307)])
+    assert body["entries"] == ["2025-11-01"]
 
 
 def test_the_control_group_has_1306_as_its_entry_candidate(real_strategies) -> None:
