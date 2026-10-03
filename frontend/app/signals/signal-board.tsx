@@ -143,7 +143,7 @@ export function SignalBoard() {
           </div>
           {candidates.length === 0 && universeRules[strategy] === "topix_etf" ? (
             <div className="empty">
-              {date ? "这一天" : "今天"}不持有 {TOPIX_ETF.label} ·{" "}
+              <span>{date ? "这一天" : "今天"}不持有 {TOPIX_ETF.label}</span>
               <Link href={`/signals/${TOPIX_ETF.code}?strategy=${strategy}`}>看 {TOPIX_ETF.label} 的详情</Link>
             </div>
           ) : candidates.length === 0 ? (
