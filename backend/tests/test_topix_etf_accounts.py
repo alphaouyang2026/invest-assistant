@@ -6,6 +6,7 @@ has (spec §7)."""
 
 from __future__ import annotations
 
+from datetime import date, timedelta
 from decimal import Decimal
 
 import pytest
@@ -108,6 +109,41 @@ def test_the_moving_average_account_buys_1306_once_topix_crosses_above_its_band_
     assert report.orders[0].priority == pytest.approx(106 / (306.5 / 3) - 1)
     assert (report.holdings, report.pending) == ([], [])
     assert report.nav[SESSIONS[9]] == Decimal("9981400")
+
+
+# Ten sessions over a month end: 25 September to 4 October.
+MONTH_END = [date(2026, 9, 25) + timedelta(days=n) for n in range(10)]
+
+
+def test_the_momentum_account_waits_for_the_first_session_of_the_month_to_buy_and_to_sell(migrated_database) -> None:
+    """Past returns over two closes. TOPIX closes 100 three times, then 101
+    on M3: positive from M3 on, mid-September, and nothing is bought. M6, 1
+    October, is the check day: 104 against 102 holds 1306, bought at M7's
+    open. TOPIX then drops to 90, a negative past return from M7 on, but
+    not on a check day: the account keeps 1306.
+
+    ⌊10,000,000 × 95% ÷ 3,000 ÷ 100⌋ × 100 = 3,100 shares at 3,003."""
+    topix = ["100", "100", "100", "101", "102", "103", "104", "90", "90", "90"]
+    market = synced(migrated_database, {TOPIX_ETF: ["3000"] * 10}, listings=ETF_LISTINGS, topix=topix,
+                    sessions=MONTH_END)
+    accounts = Accounts(migrated_database, market)
+    account = accounts.create(AccountSpec(name="动量", strategy="topix_momentum_v1", start_date=MONTH_END[3],
+                                          strategy_params={"lookback_sessions": 2, "warmup_sessions": 3},
+                                          rules=ONE_ETF))
+
+    accounts.advance(account, through=MONTH_END[5])
+    in_september = accounts.report(account)
+    accounts.advance(account)
+    report = accounts.report(account)
+
+    assert (in_september.orders, in_september.holdings, in_september.pending) == ([], [], [])
+    assert summary(report.orders) == [
+        ("buy", TOPIX_ETF, MONTH_END[6], MONTH_END[7], 3100, "filled", 3100, Decimal("3003.000"))]
+    assert MONTH_END[6] == date(2026, 10, 1)
+    assert (report.orders[0].reason, report.orders[0].priority) == (
+        {"disposition": "hold", "reason_codes": ["topix_momentum_up"]}, pytest.approx(104 / 102 - 1))
+    assert [(h.code, h.quantity, h.opened_on) for h in report.holdings] == [(TOPIX_ETF, 3100, MONTH_END[7])]
+    assert report.pending == []
 
 
 def test_a_stock_account_trades_and_values_as_before_with_1306_in_the_market(migrated_database) -> None:

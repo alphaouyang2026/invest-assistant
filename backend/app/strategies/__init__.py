@@ -5,7 +5,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from app.strategies.base import Disposition, Holding, Judgement, Plot, Signal, Strategy
-from app.strategies import technical_rating, topix_buy_and_hold, topix_ma, trend_pullback
+from app.strategies import technical_rating, topix_buy_and_hold, topix_ma, topix_momentum, trend_pullback
 from app.strategies.assembly import Candidate, SecurityHistory, entry_candidates, history
 
 _STRATEGIES = {
@@ -13,12 +13,14 @@ _STRATEGIES = {
     technical_rating.TechnicalRating.name: technical_rating.TechnicalRating,
     topix_buy_and_hold.TopixBuyAndHold.name: topix_buy_and_hold.TopixBuyAndHold,
     topix_ma.TopixMovingAverage.name: topix_ma.TopixMovingAverage,
+    topix_momentum.TopixMomentum.name: topix_momentum.TopixMomentum,
 }
 STRATEGY_DEFAULTS: Mapping[str, Mapping[str, Any]] = {
     trend_pullback.TrendPullback.name: trend_pullback.DEFAULTS,
     technical_rating.TechnicalRating.name: technical_rating.DEFAULTS,
     topix_buy_and_hold.TopixBuyAndHold.name: topix_buy_and_hold.DEFAULTS,
     topix_ma.TopixMovingAverage.name: topix_ma.DEFAULTS,
+    topix_momentum.TopixMomentum.name: topix_momentum.DEFAULTS,
 }
 
 

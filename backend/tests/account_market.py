@@ -47,33 +47,33 @@ class Script:
 
 def fake_client(prices: dict[str, list[str | None]], *, extra: dict | None = None,
                 gone: dict | None = None, listings: Mapping[str, RosterEntry] | None = None,
-                topix: list[str] | None = None) -> FakeJQuants:
-    """`prices[code][n]` is the open = high = low = close on SESSIONS[n]; None,
-    a halt. `extra[(code, n)]` adds fields to that bar; a code in `gone`
-    leaves the roster (and has no bars) from SESSIONS[gone[code]] on. A code
-    is Prime common stock unless `listings` has its roster entry (an ETF's,
-    say: `ETF_LISTINGS`). TOPIX closes at `topix[n]`, 2,700 throughout unless
-    told otherwise."""
+                topix: list[str] | None = None, sessions: list[date] = SESSIONS) -> FakeJQuants:
+    """`prices[code][n]` is the open = high = low = close on `sessions[n]`
+    (SESSIONS unless told others); None, a halt. `extra[(code, n)]` adds
+    fields to that bar; a code in `gone` leaves the roster (and has no bars)
+    from `sessions[gone[code]]` on. A code is Prime common stock unless
+    `listings` has its roster entry (an ETF's, say: `ETF_LISTINGS`). TOPIX
+    closes at `topix[n]`, 2,700 throughout unless told otherwise."""
     extra, gone, listings = extra or {}, gone or {}, listings or {}
     bars = {day: [bar(code, day, series[n], turnover=LIQUID, **extra.get((code, n), {}))
-                  for code, series in prices.items() if n < gone.get(code, len(SESSIONS))]
-            for n, day in enumerate(SESSIONS)}
-    topix = [IndexBar(day, *[Decimal(close)] * 4) for day, close in zip(SESSIONS, topix or ["2700"] * len(SESSIONS))]
+                  for code, series in prices.items() if n < gone.get(code, len(sessions))]
+            for n, day in enumerate(sessions)}
+    topix = [IndexBar(day, *[Decimal(close)] * 4) for day, close in zip(sessions, topix or ["2700"] * len(sessions))]
 
     def roster(day):
-        n = SESSIONS.index(day)
-        return [listings.get(code) or listed(code) for code in prices if n < gone.get(code, len(SESSIONS))]
+        n = sessions.index(day)
+        return [listings.get(code) or listed(code) for code in prices if n < gone.get(code, len(sessions))]
 
     # J-Quants' calendar runs a year ahead of the data: the last session's
     # orders have a next session to go to.
-    ahead = [SESSIONS[-1] + timedelta(days=n) for n in (1, 2, 3)]
-    return FakeJQuants(SESSIONS + ahead, bars=bars, roster=roster, topix=topix)
+    ahead = [sessions[-1] + timedelta(days=n) for n in (1, 2, 3)]
+    return FakeJQuants(sessions + ahead, bars=bars, roster=roster, topix=topix)
 
 
 def synced(engine, prices: dict[str, list[str | None]], *, extra: dict | None = None,
            gone: dict | None = None, listings: Mapping[str, RosterEntry] | None = None,
-           topix: list[str] | None = None) -> MarketData:
-    market = MarketData(engine, fake_client(prices, extra=extra, gone=gone, listings=listings, topix=topix),
-                        today=lambda: SESSIONS[-1])
+           topix: list[str] | None = None, sessions: list[date] = SESSIONS) -> MarketData:
+    client = fake_client(prices, extra=extra, gone=gone, listings=listings, topix=topix, sessions=sessions)
+    market = MarketData(engine, client, today=lambda: sessions[-1])
     market.sync()
     return market
