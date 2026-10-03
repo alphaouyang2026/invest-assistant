@@ -4,7 +4,7 @@ adapters behind one seam."""
 from collections.abc import Mapping
 from typing import Any
 
-from app.strategies.base import Disposition, Holding, Judgement, Plot, Signal, Strategy
+from app.strategies.base import Disposition, Holding, Judgement, Plot, Signal, Strategy, codes_to_read
 from app.strategies import technical_rating, topix_buy_and_hold, topix_ma, topix_momentum, trend_pullback
 from app.strategies.assembly import Candidate, SecurityHistory, entry_candidates, history
 
@@ -37,5 +37,5 @@ def build_strategy(name: str, params: Mapping[str, Any]) -> Strategy:
 
 __all__ = [
     "STRATEGY_DEFAULTS", "Candidate", "Disposition", "Holding", "Judgement", "Plot", "SecurityHistory", "Signal",
-    "Strategy", "build_strategy", "entry_candidates", "history",
+    "Strategy", "build_strategy", "codes_to_read", "entry_candidates", "history",
 ]

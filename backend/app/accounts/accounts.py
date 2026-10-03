@@ -27,7 +27,7 @@ from app.market_data import (
     ADJUSTMENT_FACTOR, EX_RIGHTS_TYPE, EXEC_CLOSE, EXEC_HIGH, EXEC_LOW, EXEC_OPEN, LOWER_LIMIT_HIT, QUALITY, TOPIX,
     UPPER_LIMIT_HIT, MarketData, MarketFrame,
 )
-from app.strategies import Disposition, Holding, Strategy, build_strategy
+from app.strategies import Disposition, Holding, Strategy, build_strategy, codes_to_read
 
 UNTRADABLE = "untradable"
 
@@ -293,14 +293,14 @@ class Accounts:
         """One read for the whole run: every code that could be bought or is
         held, and the strategy's reference series, from far enough back for
         the strategy's warm-up and for the oldest holding's opening."""
-        codes = set(ledger.positions) | {order.code for order in ledger.pending} | set(strategy.reference_series)
+        codes = set(ledger.positions) | {order.code for order in ledger.pending}
         for listed in universes.values():
             codes.update(listed)
         sessions = [d for d in self._market.calendar().sessions() if d < days[0]]
         start = sessions[max(0, len(sessions) - strategy.warmup_sessions)] if sessions else days[0]
         opened = [p.opened_on for p in ledger.positions.values()]
         start = min([start, *opened])
-        return Prices(self._market.read(sorted(codes), start, days[-1]))
+        return Prices(self._market.read(codes_to_read(strategy, codes), start, days[-1]))
 
 
 def replay_day(ledger: Ledger, prices: Prices, strategy: Strategy, universes: Mapping[date, list[str]],

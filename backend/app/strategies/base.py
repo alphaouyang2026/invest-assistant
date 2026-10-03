@@ -4,7 +4,7 @@ the wiring from a `MarketFrame` to each strategy's rules."""
 from __future__ import annotations
 
 import weakref
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
 from enum import Enum
@@ -78,6 +78,13 @@ class Strategy(Protocol):
     reference_series: tuple[str, ...]
 
     def evaluate(self, frame: MarketFrame, day: date, holdings: Sequence[Holding]) -> list[Signal]: ...
+
+
+def codes_to_read(strategy: Strategy, codes: Iterable[str]) -> list[str]:
+    """What to read for `strategy` to judge `codes`: them and its reference
+    series, each once — every caller reading bars for a strategy asks this,
+    so none can leave the reference series out."""
+    return sorted({*codes, *strategy.reference_series})
 
 
 @dataclass(frozen=True)

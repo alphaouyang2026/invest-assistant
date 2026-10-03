@@ -15,7 +15,7 @@ import numpy as np
 import pandas as pd
 
 from app.market_data import Instrument, MarketData, MarketFrame
-from app.strategies.base import Disposition, Signal, Strategy
+from app.strategies.base import Disposition, Signal, Strategy, codes_to_read
 
 
 @dataclass(frozen=True)
@@ -31,7 +31,7 @@ def entry_candidates(market: MarketData, strategy: Strategy, day: date) -> list[
     universe = market.universe(day, rule=strategy.universe_rule).get(day, [])
     if not universe:
         return []
-    frame = market.read([*universe, *strategy.reference_series], _warm_up_start(market, strategy, day), day)
+    frame = market.read(codes_to_read(strategy, universe), _warm_up_start(market, strategy, day), day)
     listed = set(universe)
     holdable = [signal for signal in strategy.evaluate(frame, day, [])
                 if signal.disposition is Disposition.HOLD and signal.code in listed]
@@ -51,7 +51,7 @@ def history(market: MarketData, strategy: Strategy, code: str, start: date, end:
     """What the security page draws: the strategy asked about each of the
     security's sessions in turn — the same `evaluate`, no second way in
     (spec A.3) — with its reference series read beside the security."""
-    frame = market.read([code, *strategy.reference_series], _warm_up_start(market, strategy, start), end)
+    frame = market.read(codes_to_read(strategy, [code]), _warm_up_start(market, strategy, start), end)
     days = [day for day in frame.dates(code) if start <= day <= end]
     names = [plot.indicator for plot in strategy.plots]
     rows, entries = {}, []
