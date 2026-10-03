@@ -2,7 +2,7 @@
 
 **What to build:** 在可复现的研究回测流程中加入长趋势 / 绝对动量、短期反转、横截面 6-1 / 12-1 动量三类候选策略。先评估可行性和样本外表现；未通过预先声明的门槛前，不接入日常 paper account，也不晋级为 champion。
 
-**Design:** [策略扩展、精细回测与策略选定方案](../../strategy-backtesting-selection-research.md) §3、§5、§6、§9；[invest-assistant v1 系统设计](../spec.md) §6–§8
+**Design:** [05 Golden Path](../05-golden-path.md)；[策略扩展、精细回测与策略选定方案](../../strategy-backtesting-selection-research.md) §3、§5、§6、§9；[invest-assistant v1 系统设计](../spec.md) §6–§8
 
 **Blocked by:** [04b — 账户页面：固定区间策略研究回测](04b-research-backtest-account-ui.md)。04b 先用现有 `trend_pullback_v1` 与 `technical_rating_v1` 打通研究运行、复现和报告；05 再在同一页面和 SimulationEngine 中加入三个候选策略及月度再平衡。
 

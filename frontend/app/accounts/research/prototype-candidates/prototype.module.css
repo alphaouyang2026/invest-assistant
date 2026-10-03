@@ -1,0 +1,185 @@
+.stageTabs {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.stageTabs button {
+  min-height: 48px;
+  border: 0;
+  border-right: 1px solid var(--line);
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.stageTabs button:last-child { border-right: 0; }
+.stageTabs button[aria-pressed="true"] { background: var(--ink); color: var(--on-ink); font-weight: 600; }
+.stageTabs button span { font-family: var(--mono); margin-right: 8px; opacity: .65; }
+
+.eyebrow {
+  margin: 0 0 4px;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.guideGrid {
+  display: grid;
+  grid-template-columns: 190px minmax(0, 1fr) 250px;
+  align-items: start;
+  gap: 16px;
+}
+
+.rail, .workspace, .summary, .lineage, .gatePanel, .candidates, .evidence, .decision {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.rail { padding: 16px 10px; }
+.rail > p { padding: 0 8px 8px; }
+.rail button {
+  width: 100%;
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 10px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+.rail button:hover, .rail .activeRail { background: var(--surface2); color: var(--text); }
+.rail button i { width: 22px; height: 22px; border-radius: 50%; background: var(--quiet); display: grid; place-items: center; font: 11px var(--mono); font-style: normal; }
+.rail button span { display: flex; flex-direction: column; min-width: 0; }
+.rail button small { margin-top: 2px; color: var(--muted); line-height: 1.3; }
+
+.workspace { overflow: hidden; }
+.workspaceHead, .sectionTitle, .pipelineIntro {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--line);
+}
+.workspaceHead h2, .sectionTitle h2, .pipelineIntro h2, .gatePanel h2, .decision h2 { margin: 0; font-size: 18px; }
+.summary { padding: 16px; }
+
+.mockForm {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  padding: 20px;
+}
+.mockForm label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-weight: 500; }
+
+.summaryRows { margin: 0; }
+.summaryRows div { padding: 9px 0; border-bottom: 1px solid var(--line); }
+.summaryRows dt { color: var(--muted); font-size: 11px; }
+.summaryRows dd { margin: 2px 0 0; font-size: 13px; font-weight: 500; }
+.lockBox { display: flex; flex-direction: column; gap: 2px; margin-top: 14px; padding: 12px; border-radius: 8px; background: var(--surface2); }
+.lockBox span { color: var(--muted); font-size: 12px; }
+
+.primaryAction {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 20px;
+  border-top: 1px solid var(--line);
+  background: var(--surface2);
+}
+.primaryAction span { color: var(--muted); font-size: 12px; max-width: 48ch; }
+
+.versionList { padding: 18px 20px; }
+.versionList article { display: grid; grid-template-columns: 42px minmax(0, 1fr); gap: 12px; position: relative; padding-bottom: 22px; }
+.versionList article:last-child { padding-bottom: 0; }
+.versionList article:not(:last-child)::after { content: ""; position: absolute; left: 20px; top: 36px; bottom: 2px; width: 1px; background: var(--line); }
+.versionNode { width: 40px; height: 32px; border-radius: 16px; display: grid; place-items: center; background: var(--ink); color: var(--on-ink); font: 12px var(--mono); z-index: 1; }
+.versionTitle { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.versionList p { margin: 4px 0; color: var(--muted); }
+.versionList small { color: var(--muted); }
+
+.validationBlock { overflow: hidden; }
+.checks { display: flex; gap: 8px; flex-wrap: wrap; padding: 14px 20px; }
+.checks span { border-radius: 999px; padding: 5px 9px; background: var(--surface2); font-size: 12px; }
+
+.blindGate { display: grid; grid-template-columns: 48px minmax(0, 1fr); gap: 14px; padding: 22px 20px; }
+.blindGate p { margin: 3px 0 0; color: var(--muted); }
+.blindGate ul { grid-column: 2; margin: 0; padding-left: 18px; color: var(--muted); }
+.seal { width: 46px; height: 46px; border: 1px solid var(--warn); border-radius: 50%; display: grid; place-items: center; color: var(--warn); font-size: 20px; }
+
+.promotion { display: flex; gap: 16px; align-items: center; padding: 24px 20px; }
+.promotion h3, .promotion p { margin: 0; }
+.promotion p { margin-top: 4px; color: var(--muted); }
+.verdict { padding: 10px 14px; border: 1px solid var(--ok); border-radius: 8px; color: var(--ok); font: 600 16px var(--mono); transform: rotate(-3deg); }
+
+.inspector { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 12px; }
+.inspector summary { cursor: pointer; color: var(--muted); font-size: 12px; }
+.inspector pre { overflow: auto; padding: 10px; border-radius: 8px; background: var(--surface2); font: 11px/1.5 var(--mono); }
+
+.pipelinePage { max-width: 1320px; }
+.pipelineIntro { border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+.pipelineIntro { border-bottom: 1px solid var(--line); }
+.pipeline {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 2px;
+  background: var(--line);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.pipeline button { display: grid; grid-template-columns: auto 1fr; gap: 0 10px; padding: 14px; border: 0; background: var(--surface); color: var(--text); text-align: left; font: inherit; cursor: pointer; }
+.pipeline button > span { grid-row: 1 / 3; color: var(--muted); font: 12px var(--mono); }
+.pipeline button small { color: var(--muted); }
+.pipeline .pipelineActive { background: var(--ink); color: var(--on-ink); }
+.pipeline .pipelineActive span, .pipeline .pipelineActive small { color: inherit; opacity: .7; }
+.board { display: grid; grid-template-columns: 1.2fr .8fr; gap: 16px; align-items: start; }
+.lineage { overflow: hidden; }
+.gatePanel { padding: 20px; }
+.gatePanel .primaryAction { margin: 18px -20px -20px; }
+.bigCopy { font-size: 17px; line-height: 1.55; }
+.audit { display: grid; grid-template-columns: 1fr auto; gap: 8px 16px; padding: 14px 20px; border-top: 1px solid var(--line); font-size: 12px; }
+.audit span { color: var(--muted); }
+.miniMetrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 16px 0; }
+.miniMetrics div { display: flex; flex-direction: column; padding: 12px; border-radius: 8px; background: var(--surface2); }
+.miniMetrics span { color: var(--muted); font-size: 11px; }
+.miniMetrics b { margin-top: 3px; font-size: 18px; }
+
+.cockpitPage { max-width: 1400px; }
+.cockpit { display: grid; grid-template-columns: 210px minmax(0, 1fr) 280px; gap: 16px; align-items: start; }
+.candidates, .decision { padding: 14px; }
+.candidates > button { width: 100%; display: flex; justify-content: space-between; gap: 10px; padding: 12px 10px; border: 0; border-bottom: 1px solid var(--line); background: transparent; color: var(--text); text-align: left; font: inherit; cursor: pointer; }
+.candidates > button span { display: flex; flex-direction: column; }
+.candidates > button small, .candidates > button em { color: var(--muted); font-size: 11px; font-style: normal; }
+.candidates .selectedCandidate { background: var(--surface2); border-radius: 8px; border-bottom-color: transparent; }
+.evidence { overflow: hidden; }
+.decision .primaryAction { margin: 16px -14px -14px; padding: 14px; flex-direction: column; align-items: stretch; }
+.disclaimer { margin: 14px 20px 20px; padding: 10px 12px; border-radius: 8px; background: var(--warn-soft); color: var(--warn); font-size: 12px; }
+
+@media (max-width: 1000px) {
+  .guideGrid, .cockpit { grid-template-columns: 1fr; }
+  .rail { display: none; }
+  .summary { order: 2; }
+  .board { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 760px) {
+  .stageTabs { grid-template-columns: 1fr; }
+  .stageTabs button { border-right: 0; border-bottom: 1px solid var(--line); }
+  .pipeline { grid-template-columns: 1fr; }
+  .mockForm, .miniMetrics { grid-template-columns: 1fr; }
+  .primaryAction { align-items: stretch; flex-direction: column; }
+}

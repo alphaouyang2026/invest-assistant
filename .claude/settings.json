@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git push *)",
+      "Bash(gh pr create --draft --base main --head feat/04b-research-backtest --title 策略回测：指定区间回测（04b-A）与按市场形势选段批量回测（04b-B） --body ' *)",
+      "Bash(git worktree *)",
+      "Bash(timeout 600 uv run python -)",
+      "Bash(python3 -)",
+      "Bash(awk '/^## T1/,/^## T2/' contract.md)",
+      "Bash(git merge *)",
+      "Bash(ln -s /root/projects/invest-assistant/frontend/node_modules frontend/node_modules)",
+      "Bash(uv run *)",
+      "Bash(git -C /root/projects/invest-assistant/.claude/worktrees/agent-a9fe22b6fb1c2a2ab status --short)",
+      "Bash(git -C /root/projects/invest-assistant/.claude/worktrees/agent-a9fe22b6fb1c2a2ab add backend/app/accounts/regimes.py backend/tests/test_regimes.py)",
+      "Bash(git -C /root/projects/invest-assistant/.claude/worktrees/agent-a9fe22b6fb1c2a2ab commit -q -F -)",
+      "Bash(git -C /root/projects/invest-assistant/.claude/worktrees/agent-a9fe22b6fb1c2a2ab log --oneline -2)",
+      "Bash(cp __tests__/regime-research.test.tsx /tmp/claude-0/-root-projects-invest-assistant/948cfa92-b439-4295-98ff-89bcf7569a28/scratchpad/regime-test.bak)",
+      "Bash(sed -i 's|    if \\(path.includes\\(\"/batches/\"\\)\\) return response\\(batchOverride ?? batch\\);|    if \\(path.includes\\(\"/batches/\"\\)\\) { if \\(process.env.DEBUGPOLL\\) console.log\\(\"GET\", path, Date.now\\(\\), new Error\\(\\).stack?.split\\(\"\\\\\\\\n\"\\).slice\\(2,9\\).join\\(\" \\\\| \"\\)\\); return response\\(batchOverride ?? batch\\); }|' __tests__/regime-research.test.tsx)",
+      "Bash(DEBUGPOLL=1 npx vitest run __tests__/regime-research.test.tsx -t \"不再轮询\")"
+    ]
+  }
+}
