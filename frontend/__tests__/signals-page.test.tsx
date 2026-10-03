@@ -129,14 +129,17 @@ describe("信号页", () => {
     expect(within(row).getByText("1.00")).toBeInTheDocument();
   });
 
-  it("TOPIX 均线没有候选时写明今天不持有 1306，链接到 1306 的详情页；有候选时理由是 TOPIX 在均线之上", async () => {
+  it("TOPIX 均线没有候选时写明空仓的话今天收盘后不会买入 1306，链接到 1306 的详情页；有候选时理由是 TOPIX 在均线之上", async () => {
     const user = userEvent.setup();
     render(<SignalBoard />);
     await screen.findByRole("table", { name: "入场候选" });
 
     await user.click(screen.getByRole("button", { name: "TOPIX 均线" }));
 
-    expect(await screen.findByText(/今天不持有 1306/)).toBeInTheDocument();
+    // Seen from holding nothing: an account holding 1306 within the band
+    // keeps it, so the page does not say 1306 is not held.
+    expect(await screen.findByText(/空仓的话，今天收盘后不会买入 1306/)).toBeInTheDocument();
+    expect(screen.queryByText(/不持有/)).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "看 1306 的详情" })).toHaveAttribute(
       "href", "/signals/13060?strategy=topix_ma_v1",
     );
@@ -149,17 +152,17 @@ describe("信号页", () => {
     expect(within(row).getByText("0.03")).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("收盘日"), { target: { value: "2026-09-17" } });
-    expect(await screen.findByText(/这一天不持有 1306/)).toBeInTheDocument();
+    expect(await screen.findByText(/空仓的话，这一天收盘后不会买入 1306/)).toBeInTheDocument();
   });
 
-  it("TOPIX 动量在月中不持有 1306，在判断日的候选理由是 TOPIX 过去收益为正", async () => {
+  it("TOPIX 动量在月中写明空仓的话不会买入 1306，在判断日的候选理由是 TOPIX 过去收益为正", async () => {
     const user = userEvent.setup();
     render(<SignalBoard />);
     await screen.findByRole("table", { name: "入场候选" });
 
     await user.click(screen.getByRole("button", { name: "TOPIX 动量" }));
 
-    expect(await screen.findByText(/今天不持有 1306/)).toBeInTheDocument();
+    expect(await screen.findByText(/空仓的话，今天收盘后不会买入 1306/)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "看 1306 的详情" })).toHaveAttribute(
       "href", "/signals/13060?strategy=topix_momentum_v1",
     );
@@ -178,7 +181,7 @@ describe("信号页", () => {
     fireEvent.change(screen.getByLabelText("收盘日"), { target: { value: QUIET_DAY } });
 
     expect(await screen.findByText("这一天没有入场候选")).toBeInTheDocument();
-    expect(screen.queryByText(/不持有 1306/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/不会买入 1306/)).not.toBeInTheDocument();
   });
 
   it("搜索证券，结果链接到详情页", async () => {

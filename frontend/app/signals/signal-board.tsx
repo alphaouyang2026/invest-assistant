@@ -67,8 +67,7 @@ export function SignalBoard() {
   }, [strategy, date]);
 
   // The codes each strategy's universe rule names: a strategy that buys
-  // only 1306, with no candidate, is saying something about 1306 in
-  // particular.
+  // only 1306, with no candidate, is saying it would not buy 1306.
   useEffect(() => {
     void (async () => {
       const { data } = await api.GET("/api/strategies");
@@ -143,7 +142,9 @@ export function SignalBoard() {
           </div>
           {candidates.length === 0 && only ? (
             <div className="empty">
-              <span>{date ? "这一天" : "今天"}不持有 {displayCode(only)}</span>
+              {/* Seen from holding nothing, as every candidate is: an account
+                  already holding it may well keep it. */}
+              <span>空仓的话，{date ? "这一天" : "今天"}收盘后不会买入 {displayCode(only)}</span>
               <Link href={`/signals/${only}?strategy=${strategy}`}>看 {displayCode(only)} 的详情</Link>
             </div>
           ) : candidates.length === 0 ? (
