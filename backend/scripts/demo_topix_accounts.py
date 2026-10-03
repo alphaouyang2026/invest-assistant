@@ -37,7 +37,11 @@ from app.config import Settings
 from app.main import create_app
 from app.migrate import upgrade_to_head
 
-START = "2022-10-06"  # the first start all three TOPIX ETF strategies can warm up for
+# The first start all three TOPIX ETF strategies can warm up for: the warm-up
+# check counts TOPIX bars from the first calendar day (2021-10-04), and
+# momentum's 253 are there from 2022-10-17. (Counting from TOPIX's first bar,
+# 2021-09-24, the spec put it at 2022-10-06.)
+START = "2022-10-17"
 TOPIX_ETF = "13060"
 SPLIT = ("2026-03-27", "2026-03-30")  # the session before 1306's 10-for-1 split, and its ex-date
 DISTRIBUTION_DAYS = ["2023-07-07", "2024-07-09", "2025-07-09", "2026-07-09"]  # 1306 goes ex-distribution
