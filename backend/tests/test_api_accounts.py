@@ -17,7 +17,7 @@ from fastapi.testclient import TestClient
 
 from app.config import Settings
 from app.main import create_app
-from app.strategies import Disposition
+from app.strategies import Disposition, build_strategy
 from tests.account_market import ETF_LISTINGS, SESSIONS, TOPIX_ETF, Script, fake_client
 
 PLAN = {SESSIONS[1]: {"13010": Disposition.HOLD}, SESSIONS[-1]: {"13020": Disposition.HOLD}}
@@ -130,32 +130,53 @@ def test_stopping_and_deleting_and_a_missing_account_is_a_404(api) -> None:
 
 
 def test_the_strategies_and_their_defaults_for_the_new_account_page(api) -> None:
-    """Each with its parameters' defaults, the universe rule it buys under,
-    and the portfolio rules the page fills in for it."""
+    """Each with its parameters' defaults, the universe rule it buys under
+    and the codes that rule names, how its warm-up follows its window, and
+    the portfolio rules the page fills in for it."""
     listed = {s["name"]: s for s in api.get("/api/strategies").json()}
 
     assert set(listed) == {"trend_pullback_v1", "technical_rating_v1", "topix_buy_and_hold_v1", "topix_ma_v1",
                            "topix_momentum_v1"}
     assert listed["technical_rating_v1"]["defaults"]["entry_above"] == 0.5
     for stock_strategy in ("trend_pullback_v1", "technical_rating_v1"):
-        assert (listed[stock_strategy]["universe_rule"], listed[stock_strategy]["suggested_rules"]) == (
-            "prime_common_stock", {"max_positions": 10, "max_weight": 0.1, "cash_floor": 0.05})
+        assert {key: listed[stock_strategy][key] for key in ("universe_rule", "pool_codes", "warmup_follows",
+                                                             "suggested_rules")} == {
+            "universe_rule": "prime_common_stock", "pool_codes": [], "warmup_follows": None,
+            "suggested_rules": {"max_positions": 10, "max_weight": 0.1, "cash_floor": 0.05}}
     one_etf = {"max_positions": 1, "max_weight": 1.0, "cash_floor": 0.05}  # about 95% in 1306
     assert listed["topix_buy_and_hold_v1"] == {
         "name": "topix_buy_and_hold_v1",
         "defaults": {"warmup_sessions": 1},
         "universe_rule": "topix_etf",
+        "pool_codes": ["13060"],
+        "warmup_follows": None,
         "suggested_rules": one_etf,
     }
     assert listed["topix_ma_v1"] == {
         "name": "topix_ma_v1",
         "defaults": {"ma_sessions": 200, "band": 0.01, "warmup_sessions": 200},
         "universe_rule": "topix_etf",
+        "pool_codes": ["13060"],
+        "warmup_follows": {"parameter": "ma_sessions", "extra": 0},  # the average's closes
         "suggested_rules": one_etf,
     }
     assert listed["topix_momentum_v1"] == {
         "name": "topix_momentum_v1",
         "defaults": {"lookback_sessions": 252, "warmup_sessions": 253},
         "universe_rule": "topix_etf",
+        "pool_codes": ["13060"],
+        "warmup_follows": {"parameter": "lookback_sessions", "extra": 1},  # and the day's own close
         "suggested_rules": one_etf,
     }
+
+
+def test_a_warm_up_that_follows_a_window_is_refused_below_it(api) -> None:
+    """What the strategy list says the warm-up follows is what building the
+    strategy checks: the window plus the extra is enough, one less is not."""
+    listed = {s["name"]: s for s in api.get("/api/strategies").json()}
+    for name, window in (("topix_ma_v1", 120), ("topix_momentum_v1", 126)):
+        follows = listed[name]["warmup_follows"]
+        needed = window + follows["extra"]
+        build_strategy(name, {follows["parameter"]: window, "warmup_sessions": needed})
+        with pytest.raises(ValueError, match="预热期"):
+            build_strategy(name, {follows["parameter"]: window, "warmup_sessions": needed - 1})

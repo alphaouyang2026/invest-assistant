@@ -2,9 +2,13 @@
 adapters behind one seam."""
 
 from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import Any
 
-from app.strategies.base import Disposition, Holding, Judgement, Plot, Signal, Strategy, codes_to_read
+from app.market_data import UniverseRule
+from app.strategies.base import (
+    Disposition, Holding, Judgement, Plot, Signal, Strategy, WarmupFollows, codes_to_read,
+)
 from app.strategies import technical_rating, topix_buy_and_hold, topix_ma, topix_momentum, trend_pullback
 from app.strategies.assembly import Candidate, SecurityHistory, entry_candidates, history
 
@@ -24,6 +28,21 @@ STRATEGY_DEFAULTS: Mapping[str, Mapping[str, Any]] = {
 }
 
 
+@dataclass(frozen=True)
+class StrategyInfo:
+    """What a strategy declares of itself, without building it."""
+
+    name: str
+    defaults: Mapping[str, Any]
+    universe_rule: UniverseRule
+    warmup_follows: WarmupFollows | None
+
+
+def strategy_infos() -> list[StrategyInfo]:
+    return [StrategyInfo(name, STRATEGY_DEFAULTS[name], kind.universe_rule, kind.warmup_follows)
+            for name, kind in _STRATEGIES.items()]
+
+
 def build_strategy(name: str, params: Mapping[str, Any]) -> Strategy:
     """`params` override the defaults; anything left out keeps its default.
     A name the strategy does not have is refused rather than ignored."""
@@ -37,5 +56,6 @@ def build_strategy(name: str, params: Mapping[str, Any]) -> Strategy:
 
 __all__ = [
     "STRATEGY_DEFAULTS", "Candidate", "Disposition", "Holding", "Judgement", "Plot", "SecurityHistory", "Signal",
-    "Strategy", "build_strategy", "codes_to_read", "entry_candidates", "history",
+    "Strategy", "StrategyInfo", "WarmupFollows", "build_strategy", "codes_to_read", "entry_candidates", "history",
+    "strategy_infos",
 ]

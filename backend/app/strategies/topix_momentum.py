@@ -37,7 +37,7 @@ from typing import Any
 import pandas as pd
 
 from app.market_data import TOPIX, UniverseRule
-from app.strategies.base import Disposition, Judgement, Plot, ReferenceSeriesStrategy, whole_sessions
+from app.strategies.base import Disposition, Judgement, Plot, ReferenceSeriesStrategy, WarmupFollows, whole_sessions
 
 DEFAULTS: Mapping[str, Any] = {"lookback_sessions": 252, "warmup_sessions": 253}  # about 12 months, and the day's own
 UP, FLAT, DOWN = "topix_momentum_up", "topix_momentum_flat", "topix_momentum_down"
@@ -49,14 +49,16 @@ class TopixMomentum(ReferenceSeriesStrategy):
     plots = (Plot("past_return", "separate"),)
     universe_rule = UniverseRule.TOPIX_ETF
     reference_series = (TOPIX,)
+    warmup_follows = WarmupFollows("lookback_sessions", 1)  # the close that far back, and the day's own
 
     def __init__(self, params: Mapping[str, Any]) -> None:
         super().__init__({**DEFAULTS, **params})
         self._lookback = whole_sessions(self.name, "回看长度", self.params["lookback_sessions"])
         self.warmup_sessions = self.params["warmup_sessions"]
-        if self.warmup_sessions < self._lookback + 1:
+        needed = self._lookback + self.warmup_follows.extra
+        if self.warmup_sessions < needed:
             raise ValueError(f"{self.name} 的预热期 {self.warmup_sessions} 少于回看长度加当天"
-                             f"（{self._lookback + 1} 个开市日）：过去收益还算不出来")
+                             f"（{needed} 个开市日）：过去收益还算不出来")
 
     def lines(self, closes: pd.DataFrame) -> dict[str, pd.Series]:
         topix = closes[TOPIX]

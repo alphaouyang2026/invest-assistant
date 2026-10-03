@@ -3,22 +3,25 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { NewAccount } from "@/app/accounts/new/new-account";
+import type { Schemas } from "@/lib/api/client";
 
 const pushed: string[] = [];
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: (href: string) => pushed.push(href) }) }));
 
 const STOCK_RULES = { max_positions: 10, max_weight: 0.1, cash_floor: 0.05 };
-const STRATEGIES = [
-  { name: "trend_pullback_v1", defaults: { warmup_sessions: 180, rsi_oversold: 30 },
-    universe_rule: "prime_common_stock", suggested_rules: STOCK_RULES },
+const ONE_ETF = { max_positions: 1, max_weight: 1, cash_floor: 0.05 };
+type Pool = Pick<Schemas["StrategyOut"], "universe_rule" | "pool_codes" | "suggested_rules">;
+const STOCKS: Pool = { universe_rule: "prime_common_stock", pool_codes: [], suggested_rules: STOCK_RULES };
+const TOPIX_ETF: Pool = { universe_rule: "topix_etf", pool_codes: ["13060"], suggested_rules: ONE_ETF };
+const STRATEGIES: Schemas["StrategyOut"][] = [
+  { name: "trend_pullback_v1", defaults: { warmup_sessions: 180, rsi_oversold: 30 }, warmup_follows: null, ...STOCKS },
   { name: "technical_rating_v1", defaults: { warmup_sessions: 260, entry_above: 0.5, exit_below: -0.1 },
-    universe_rule: "prime_common_stock", suggested_rules: STOCK_RULES },
-  { name: "topix_buy_and_hold_v1", defaults: { warmup_sessions: 1 },
-    universe_rule: "topix_etf", suggested_rules: { max_positions: 1, max_weight: 1, cash_floor: 0.05 } },
+    warmup_follows: null, ...STOCKS },
+  { name: "topix_buy_and_hold_v1", defaults: { warmup_sessions: 1 }, warmup_follows: null, ...TOPIX_ETF },
   { name: "topix_ma_v1", defaults: { ma_sessions: 200, band: 0.01, warmup_sessions: 200 },
-    universe_rule: "topix_etf", suggested_rules: { max_positions: 1, max_weight: 1, cash_floor: 0.05 } },
+    warmup_follows: { parameter: "ma_sessions", extra: 0 }, ...TOPIX_ETF },
   { name: "topix_momentum_v1", defaults: { lookback_sessions: 252, warmup_sessions: 253 },
-    universe_rule: "topix_etf", suggested_rules: { max_positions: 1, max_weight: 1, cash_floor: 0.05 } },
+    warmup_follows: { parameter: "lookback_sessions", extra: 1 }, ...TOPIX_ETF },
 ];
 
 function fakeBackend(created: { status: number; body: unknown }) {

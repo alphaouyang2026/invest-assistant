@@ -29,7 +29,7 @@ import pandas as pd
 
 from app import indicators
 from app.market_data import TOPIX, UniverseRule
-from app.strategies.base import Disposition, Judgement, Plot, ReferenceSeriesStrategy, whole_sessions
+from app.strategies.base import Disposition, Judgement, Plot, ReferenceSeriesStrategy, WarmupFollows, whole_sessions
 
 DEFAULTS: Mapping[str, Any] = {"ma_sessions": 200, "band": 0.01, "warmup_sessions": 200}  # band: 0.01 is 1%
 ABOVE, NEAR, BELOW = "topix_above_ma", "topix_near_ma", "topix_below_ma"
@@ -40,6 +40,7 @@ class TopixMovingAverage(ReferenceSeriesStrategy):
     plots = (Plot("topix_close", "separate"), Plot("topix_ma", "separate"))
     universe_rule = UniverseRule.TOPIX_ETF
     reference_series = (TOPIX,)
+    warmup_follows = WarmupFollows("ma_sessions", 0)  # the average's closes, the day's own among them
 
     def __init__(self, params: Mapping[str, Any]) -> None:
         super().__init__({**DEFAULTS, **params})
@@ -48,7 +49,7 @@ class TopixMovingAverage(ReferenceSeriesStrategy):
         self.warmup_sessions = self.params["warmup_sessions"]
         if not (isinstance(band, int | float) and math.isfinite(band) and band >= 0):
             raise ValueError(f"{self.name} 的缓冲带要是不小于 0 的比例（0.01 表示 1%），收到 {band}")
-        if self.warmup_sessions < window:
+        if self.warmup_sessions < window + self.warmup_follows.extra:
             raise ValueError(f"{self.name} 的预热期 {self.warmup_sessions} 比均线窗口 {window} 短：均线还算不出来")
         self._window = window
 

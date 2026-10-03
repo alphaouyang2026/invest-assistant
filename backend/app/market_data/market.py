@@ -493,6 +493,12 @@ def _write_session(
     return changes.warnings
 
 
+def named_codes(rule: UniverseRule) -> tuple[str, ...]:
+    """The codes a universe rule names outright — the TOPIX ETF rule's 1306
+    — or none when it draws on a market segment instead."""
+    return TOPIX_ETF_CODES if rule is UniverseRule.TOPIX_ETF else ()
+
+
 def _drawn_on(rule: UniverseRule) -> ColumnElement[bool]:
     """The segment periods a universe rule takes its codes from — the one
     place the two rules differ."""

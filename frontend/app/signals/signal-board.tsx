@@ -5,9 +5,7 @@ import { useEffect, useId, useState } from "react";
 
 import { api, type Schemas } from "@/lib/api/client";
 import { displayCode } from "@/lib/format";
-import {
-  DEFAULT_STRATEGY, STRATEGIES, type StrategyName, TOPIX_ETF, market, reason, reasonTone,
-} from "@/lib/labels";
+import { DEFAULT_STRATEGY, STRATEGIES, type StrategyName, market, reason, reasonTone } from "@/lib/labels";
 
 import { Pager, range } from "../pager";
 
@@ -37,7 +35,7 @@ export function SignalBoard() {
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [found, setFound] = useState<Instrument[] | null>(null);
-  const [universeRules, setUniverseRules] = useState<Record<string, string>>({});
+  const [pools, setPools] = useState<Record<string, string[]>>({});
 
   const search = async () => {
     if (!query.trim()) return;
@@ -68,16 +66,18 @@ export function SignalBoard() {
     };
   }, [strategy, date]);
 
-  // Each strategy's universe rule: a TOPIX ETF strategy with no candidate
-  // is saying something about 1306 in particular.
+  // The codes each strategy's universe rule names: a strategy that buys
+  // only 1306, with no candidate, is saying something about 1306 in
+  // particular.
   useEffect(() => {
     void (async () => {
       const { data } = await api.GET("/api/strategies");
-      if (Array.isArray(data)) setUniverseRules(Object.fromEntries(data.map((s) => [s.name, s.universe_rule])));
+      if (Array.isArray(data)) setPools(Object.fromEntries(data.map((s) => [s.name, s.pool_codes])));
     })();
   }, []);
 
   const candidates = signals?.candidates ?? [];
+  const [only] = pools[strategy] ?? [];
   const pages = Math.max(1, Math.ceil(candidates.length / PAGE_SIZE));
   const shown = candidates.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
@@ -141,10 +141,10 @@ export function SignalBoard() {
             <h2 id="candidates">{candidates.length} 只入场候选</h2>
             <span className="aside">{signals.date} 收盘 · 按排序值从高到低</span>
           </div>
-          {candidates.length === 0 && universeRules[strategy] === "topix_etf" ? (
+          {candidates.length === 0 && only ? (
             <div className="empty">
-              <span>{date ? "这一天" : "今天"}不持有 {TOPIX_ETF.label}</span>
-              <Link href={`/signals/${TOPIX_ETF.code}?strategy=${strategy}`}>看 {TOPIX_ETF.label} 的详情</Link>
+              <span>{date ? "这一天" : "今天"}不持有 {displayCode(only)}</span>
+              <Link href={`/signals/${only}?strategy=${strategy}`}>看 {displayCode(only)} 的详情</Link>
             </div>
           ) : candidates.length === 0 ? (
             <div className="empty">这一天没有入场候选</div>

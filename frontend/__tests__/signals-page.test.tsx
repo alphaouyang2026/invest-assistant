@@ -30,9 +30,9 @@ const MOMENTUM_CANDIDATE = {
   code: "13060", name: "ＮＥＸＴ　ＦＵＮＤＳ　ＴＯＰＩＸ連動型上場投信", market: "0109", priority: 0.1834,
   reason_codes: ["topix_momentum_up"],
 };
-const UNIVERSE_RULES: Record<string, string> = {
-  trend_pullback_v1: "prime_common_stock", technical_rating_v1: "prime_common_stock",
-  topix_buy_and_hold_v1: "topix_etf", topix_ma_v1: "topix_etf", topix_momentum_v1: "topix_etf",
+const POOL_CODES: Record<string, string[]> = {
+  trend_pullback_v1: [], technical_rating_v1: [],
+  topix_buy_and_hold_v1: ["13060"], topix_ma_v1: ["13060"], topix_momentum_v1: ["13060"],
 };
 
 /**
@@ -58,8 +58,9 @@ function fakeBackend() {
       });
     }
     if (url.pathname === "/api/strategies") {
-      return json(Object.entries(UNIVERSE_RULES).map(([name, universe_rule]) => ({
-        name, defaults: {}, universe_rule, suggested_rules: { max_positions: 1, max_weight: 1, cash_floor: 0.05 },
+      return json(Object.entries(POOL_CODES).map(([name, pool_codes]) => ({
+        name, defaults: {}, universe_rule: pool_codes.length ? "topix_etf" : "prime_common_stock", pool_codes,
+        warmup_follows: null, suggested_rules: { max_positions: 1, max_weight: 1, cash_floor: 0.05 },
       })));
     }
     if (url.pathname === "/api/instruments") {

@@ -35,6 +35,7 @@ from fastapi.testclient import TestClient
 
 from app.config import Settings
 from app.main import create_app
+from app.market_data import UniverseRule, named_codes
 from app.migrate import upgrade_to_head
 
 # The first start all three TOPIX ETF strategies can warm up for: the warm-up
@@ -42,7 +43,7 @@ from app.migrate import upgrade_to_head
 # momentum's 253 are there from 2022-10-17. (Counting from TOPIX's first bar,
 # 2021-09-24, the spec put it at 2022-10-06.)
 START = "2022-10-17"
-TOPIX_ETF = "13060"
+[TOPIX_ETF] = named_codes(UniverseRule.TOPIX_ETF)  # 13060, 1306
 SPLIT = ("2026-03-27", "2026-03-30")  # the session before 1306's 10-for-1 split, and its ex-date
 DISTRIBUTION_DAYS = ["2023-07-07", "2024-07-09", "2025-07-09", "2026-07-09"]  # 1306 goes ex-distribution
 # Every session of it was an up-trend session: the spec expects the moving

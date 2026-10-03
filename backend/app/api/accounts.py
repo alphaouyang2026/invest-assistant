@@ -9,14 +9,13 @@ from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Query, Request
 
-from app.accounts import AccountSpec, Costs, PortfolioRules, suggested_rules
+from app.accounts import AccountSpec, Costs, PortfolioRules, strategy_choices
 from app.api.schemas import (
     AccountCreated, AccountDetailOut, AccountIn, AccountSummaryOut, FiguresOut, HoldingOut, NavPointOut, OrderOut,
-    OrdersPageOut, Refusal, StrategyOut, SuggestedRulesOut,
+    OrdersPageOut, Refusal, StrategyOut, SuggestedRulesOut, WarmupFollowsOut,
 )
 from app.jobs import JobsBusy
 from app.runtime import advance_job
-from app.strategies import STRATEGY_DEFAULTS, build_strategy
 
 router = APIRouter(prefix="/api", tags=["accounts"])
 
@@ -26,19 +25,21 @@ NOT_FOUND = {404: {"model": Refusal, "description": "没有这个账户"}}
 @router.get("/strategies")
 def strategies() -> list[StrategyOut]:
     """Each strategy's parameters with their defaults, the universe rule it
-    buys under, and the portfolio rules suggested for it — for the
-    new-account page."""
-    listed = []
-    for name, defaults in STRATEGY_DEFAULTS.items():
-        rule = build_strategy(name, {}).universe_rule
-        suggested = suggested_rules(rule)
-        listed.append(StrategyOut(
-            name=name, defaults=dict(defaults), universe_rule=rule.value,
-            suggested_rules=SuggestedRulesOut(max_positions=suggested.max_positions,
-                                              max_weight=float(suggested.max_weight),
-                                              cash_floor=float(suggested.cash_floor)),
-        ))
-    return listed
+    buys under and the codes that rule names, how its warm-up follows its
+    window, and the portfolio rules suggested for it — for the new-account
+    and signal pages."""
+    return [
+        StrategyOut(
+            name=choice.strategy.name, defaults=dict(choice.strategy.defaults),
+            universe_rule=choice.strategy.universe_rule, pool_codes=list(choice.pool_codes),
+            warmup_follows=(WarmupFollowsOut(parameter=follows.parameter, extra=follows.extra)
+                            if (follows := choice.strategy.warmup_follows) else None),
+            suggested_rules=SuggestedRulesOut(max_positions=choice.suggested_rules.max_positions,
+                                              max_weight=float(choice.suggested_rules.max_weight),
+                                              cash_floor=float(choice.suggested_rules.cash_floor)),
+        )
+        for choice in strategy_choices()
+    ]
 
 
 @router.get("/accounts")

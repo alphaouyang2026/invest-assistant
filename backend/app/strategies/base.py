@@ -65,6 +65,17 @@ class Position:
     highest_close: float   # the highest research close over those bars
 
 
+@dataclass(frozen=True)
+class WarmupFollows:
+    """How a strategy's warm-up follows one of its window parameters: it
+    must be at least the parameter's value plus `extra` — the closes its
+    rule reads, the day's own included. The new-account page sets the
+    warm-up to that whenever the parameter changes."""
+
+    parameter: str
+    extra: int
+
+
 class Strategy(Protocol):
     name: str
     warmup_sessions: int
@@ -131,6 +142,7 @@ class _FrameStrategy:
     plots: tuple[Plot, ...]
     universe_rule: UniverseRule
     reference_series: tuple[str, ...]
+    warmup_follows: WarmupFollows | None = None  # a warm-up no single window decides
 
     def __init__(self, params: Mapping[str, Any]) -> None:
         self.params = params

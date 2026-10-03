@@ -136,8 +136,9 @@ export interface paths {
         /**
          * Strategies
          * @description Each strategy's parameters with their defaults, the universe rule it
-         *     buys under, and the portfolio rules suggested for it — for the
-         *     new-account page.
+         *     buys under and the codes that rule names, how its warm-up follows its
+         *     window, and the portfolio rules suggested for it — for the new-account
+         *     and signal pages.
          */
         get: operations["strategies_api_strategies_get"];
         put?: never;
@@ -1614,8 +1615,10 @@ export interface components {
             defaults: {
                 [key: string]: unknown;
             };
-            /** Universe Rule */
-            universe_rule: string;
+            universe_rule: components["schemas"]["UniverseRule"];
+            /** Pool Codes */
+            pool_codes: string[];
+            warmup_follows: components["schemas"]["WarmupFollowsOut"] | null;
             suggested_rules: components["schemas"]["SuggestedRulesOut"];
         };
         /**
@@ -1635,6 +1638,14 @@ export interface components {
             /** Job Id */
             job_id: string;
         };
+        /**
+         * UniverseRule
+         * @description Where a universe's codes come from (spec §6.1). Each strategy
+         *     declares its own; the turnover floor and the tradable bar that day are
+         *     the same under either.
+         * @enum {string}
+         */
+        UniverseRule: "prime_common_stock" | "topix_etf";
         /** ValidationError */
         ValidationError: {
             /** Location */
@@ -1647,6 +1658,18 @@ export interface components {
             input?: unknown;
             /** Context */
             ctx?: Record<string, never>;
+        };
+        /**
+         * WarmupFollowsOut
+         * @description How a strategy's warm-up follows one of its window parameters: the
+         *     new-account page sets the warm-up to that parameter's value plus
+         *     `extra` whenever it changes, which is what the strategy checks.
+         */
+        WarmupFollowsOut: {
+            /** Parameter */
+            parameter: string;
+            /** Extra */
+            extra: number;
         };
         /** WorstExcessSegment */
         WorstExcessSegment: {

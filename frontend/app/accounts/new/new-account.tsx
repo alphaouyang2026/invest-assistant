@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useId, useState } from "react";
 
 import { api, type Schemas } from "@/lib/api/client";
-import { DEFAULT_STRATEGY, PARAMS, STRATEGIES, WARMUP_FOLLOWS } from "@/lib/labels";
+import { DEFAULT_STRATEGY, PARAMS, STRATEGIES } from "@/lib/labels";
 
 type StrategyInfo = Schemas["StrategyOut"];
 
@@ -70,14 +70,15 @@ export function NewAccount() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [strategy, strategies]);
 
-  /** A window the warm-up follows takes the warm-up with it, so the hint
-   * below the start date and the backend's check agree. */
+  /** A window the warm-up follows (as the strategy list says) takes the
+   * warm-up with it, so the hint below the start date and the backend's
+   * check agree. */
   const setParam = (key: string, value: string) => {
-    const follows = WARMUP_FOLLOWS[key];
+    const follows = chosen?.warmup_follows;
     const window = Number(value);
     const next: Record<string, string> = { ...params, [key]: value };
-    if (follows && value.trim() !== "" && Number.isInteger(window) && window >= 1) {
-      next.warmup_sessions = String(follows(window));
+    if (follows?.parameter === key && value.trim() !== "" && Number.isInteger(window) && window >= 1) {
+      next.warmup_sessions = String(window + follows.extra);
     }
     setParams(next);
   };

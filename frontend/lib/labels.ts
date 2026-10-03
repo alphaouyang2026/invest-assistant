@@ -63,17 +63,6 @@ export const PARAMS: Record<string, { label: string; hint: string }> = {
   },
 };
 
-/** Window parameters the warm-up follows: changing one sets the warm-up to
- * the closes its rule reads, the day's own included — what the backend
- * checks the warm-up against. */
-export const WARMUP_FOLLOWS: Partial<Record<string, (window: number) => number>> = {
-  ma_sessions: (sessions) => sessions, // TOPIX 均线
-  lookback_sessions: (sessions) => sessions + 1, // TOPIX 动量: the close that far back, and the day's own
-};
-
-/** The one ETF the TOPIX ETF universe rule draws on. */
-export const TOPIX_ETF = { code: "13060", label: "1306" };
-
 /** J-Quants' market codes; ETFs such as 1306 are listed under その他. */
 const MARKETS: Record<string, string> = { "0109": "その他", "0111": "Prime", "0112": "Standard", "0113": "Growth" };
 
