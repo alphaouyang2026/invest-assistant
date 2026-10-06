@@ -1,5 +1,5 @@
-"""Strategies (spec §6, A.3): the stock strategies and the TOPIX ETF ones,
-adapters behind one seam."""
+"""Strategies (spec §6, A.3): the stock strategies, the TOPIX ETF ones and
+ticket 05's candidates, adapters behind one seam."""
 
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -9,7 +9,10 @@ from app.market_data import UniverseRule
 from app.strategies.base import (
     Disposition, Holding, Judgement, Plot, Signal, Strategy, WarmupFollows, codes_to_read,
 )
-from app.strategies import technical_rating, topix_buy_and_hold, topix_ma, topix_momentum, trend_pullback
+from app.strategies import (
+    cross_sectional_momentum, long_trend, short_reversal, technical_rating, topix_buy_and_hold, topix_ma,
+    topix_momentum, trend_pullback,
+)
 from app.strategies.assembly import Candidate, SecurityHistory, entry_candidates, history
 
 _STRATEGIES = {
@@ -18,6 +21,9 @@ _STRATEGIES = {
     topix_buy_and_hold.TopixBuyAndHold.name: topix_buy_and_hold.TopixBuyAndHold,
     topix_ma.TopixMovingAverage.name: topix_ma.TopixMovingAverage,
     topix_momentum.TopixMomentum.name: topix_momentum.TopixMomentum,
+    long_trend.LongTrend.name: long_trend.LongTrend,
+    short_reversal.ShortReversal.name: short_reversal.ShortReversal,
+    cross_sectional_momentum.CrossSectionalMomentum.name: cross_sectional_momentum.CrossSectionalMomentum,
 }
 STRATEGY_DEFAULTS: Mapping[str, Mapping[str, Any]] = {
     trend_pullback.TrendPullback.name: trend_pullback.DEFAULTS,
@@ -25,6 +31,9 @@ STRATEGY_DEFAULTS: Mapping[str, Mapping[str, Any]] = {
     topix_buy_and_hold.TopixBuyAndHold.name: topix_buy_and_hold.DEFAULTS,
     topix_ma.TopixMovingAverage.name: topix_ma.DEFAULTS,
     topix_momentum.TopixMomentum.name: topix_momentum.DEFAULTS,
+    long_trend.LongTrend.name: long_trend.DEFAULTS,
+    short_reversal.ShortReversal.name: short_reversal.DEFAULTS,
+    cross_sectional_momentum.CrossSectionalMomentum.name: cross_sectional_momentum.DEFAULTS,
 }
 
 

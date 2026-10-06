@@ -87,6 +87,13 @@ class Strategy(Protocol):
     # callers add them to what they read; `evaluate` takes them as input
     # only and never gives one of them a signal.
     reference_series: tuple[str, ...]
+    # Whether its holdings compete with its candidates for the places (spec
+    # §7.2): on a day it gives a held code "可持有" with a priority, the
+    # portfolio rules keep the best `max_positions` of them and the
+    # candidates together and sell a holding ranked out. Only the portfolio
+    # rules know how many places there are and which codes are in the day's
+    # universe, so the strategy ranks and they choose.
+    ranks_holdings: bool
 
     def evaluate(self, frame: MarketFrame, day: date, holdings: Sequence[Holding]) -> list[Signal]: ...
 
@@ -143,6 +150,7 @@ class _FrameStrategy:
     universe_rule: UniverseRule
     reference_series: tuple[str, ...]
     warmup_follows: WarmupFollows | None = None  # a warm-up no single window decides
+    ranks_holdings: bool = False
 
     def __init__(self, params: Mapping[str, Any]) -> None:
         self.params = params
@@ -187,6 +195,22 @@ def _tradable(frame: MarketFrame, index: pd.Index, codes: Sequence[str]) -> np.n
     session (a row)."""
     quality = frame.wide(QUALITY).reindex(index=index, columns=codes)
     return (quality.notna() & (quality != UNTRADABLE)).to_numpy()
+
+
+def check_days(index: pd.Index) -> pd.Series:
+    """1 on each session of `index` whose previous one falls in an earlier
+    month — the first session of each month, a monthly strategy's check day
+    (判断日) — and 0 on the others. The frame's dates are the sessions, so a
+    month that opens on holidays has its check day on its first session."""
+    months = pd.Series([day.year * 12 + day.month for day in index], index=index)
+    return (months != months.shift()).astype(float)
+
+
+def on_every_code(line: pd.Series, like: pd.DataFrame) -> pd.DataFrame:
+    """A line with one value per session — the check day, say — as a wide
+    table shaped like `like`: the same value for every code."""
+    return pd.DataFrame(np.repeat(line.reindex(like.index).to_numpy(float)[:, None], len(like.columns), axis=1),
+                        index=like.index, columns=like.columns)
 
 
 def whole_sessions(strategy: str, what: str, value: Any) -> int:

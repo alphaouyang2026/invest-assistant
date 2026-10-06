@@ -29,6 +29,7 @@ class Script:
     name = "script"
     warmup_sessions = 1
     plots: tuple[Plot, ...] = ()
+    ranks_holdings = False
 
     def __init__(self, plan: dict[date, dict[str, Disposition]],
                  universe_rule: UniverseRule = UniverseRule.PRIME_COMMON_STOCK,
