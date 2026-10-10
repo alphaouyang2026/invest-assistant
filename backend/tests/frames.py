@@ -33,6 +33,16 @@ def sessions(count: int, start: date = date(2025, 1, 6)) -> list[date]:
     return days
 
 
+def weekdays_through(last: date, count: int) -> list[date]:
+    """`count` weekdays up to and including `last`."""
+    days, day = [], last
+    while len(days) < count:
+        if day.weekday() < 5:
+            days.insert(0, day)
+        day -= timedelta(days=1)
+    return days
+
+
 def frame_of(closes: Mapping[str, Sequence[float | None | object]], days: Sequence[date]) -> MarketFrame:
     """Flat bars around each close: open at the close, high 1% above, low
     1% below, a million shares."""

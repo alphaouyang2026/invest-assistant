@@ -45,19 +45,35 @@ def plan_orders(
     cash: Decimal,
     nav: Decimal,
     rules: PortfolioRules,
+    contenders: Sequence[Signal] = (),
 ) -> list[Record]:
     """`exits` are held codes told to sell (not those whose sell is already
     being placed again); `candidates` are codes in `day`'s universe, not
-    held, that can be held. `closes` are `day`'s execution closes."""
-    def order(kind: str, signal: Signal, quantity: int, **outcome) -> Record:
+    held, that can be held. `contenders` are held codes, not in `exits`, that
+    a strategy which ranks its holdings ranked that day: they and the
+    candidates compete for the places the other holdings leave, and one
+    ranked out is sold (`ranked_out`). `closes` are `day`'s execution closes."""
+    def order(kind: str, signal: Signal, quantity: int, reason: dict | None = None, **outcome) -> Record:
         return Record(kind=kind, code=signal.code, signal_date=day, execution_date=execution_day,
                       planned_quantity=quantity, priority=signal.priority,
-                      reason={"disposition": signal.disposition.value, "reason_codes": list(signal.reason_codes)},
+                      reason=reason or {"disposition": signal.disposition.value,
+                                        "reason_codes": list(signal.reason_codes)},
                       **outcome)
 
+    def best_first(signals: Sequence[Signal]) -> list[Signal]:
+        return sorted(signals, key=lambda signal: (-(signal.priority or 0.0), signal.code))
+
     sells = [order(SELL, signal, positions[signal.code].quantity) for signal in exits]
+    if contenders:
+        unranked = len(positions) - len(sells) - len(contenders)  # holdings that keep their place
+        places = max(rules.max_positions - unranked, 0)
+        kept = {signal.code for signal in best_first([*contenders, *candidates])[:places]}
+        sells += [order(SELL, signal, positions[signal.code].quantity,
+                        {"disposition": "exit", "reason_codes": ["ranked_out"]})
+                  for signal in sorted(contenders, key=lambda signal: signal.code) if signal.code not in kept]
+        candidates = [signal for signal in candidates if signal.code in kept]
     free = rules.max_positions - (len(positions) - len(sells))
-    ranked = sorted(candidates, key=lambda signal: (-(signal.priority or 0.0), signal.code))[:max(free, 0)]
+    ranked = best_first(candidates)[:max(free, 0)]
     target = nav * min(rules.max_weight, (1 - rules.cash_floor) / rules.max_positions)
 
     selling = sum((Decimal(sell.planned_quantity) * closes[sell.code] for sell in sells), Decimal(0))

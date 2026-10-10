@@ -7,13 +7,13 @@ with TOPIX, the reference series, beside the ETF — no database."""
 from __future__ import annotations
 
 import math
-from datetime import date, timedelta
+from datetime import date
 
 import pytest
 
 from app.market_data import TOPIX, MarketFrame, UniverseRule
 from app.strategies import STRATEGY_DEFAULTS, Disposition, Holding, Plot, build_strategy
-from tests.frames import NO_BAR, frame_of, sessions
+from tests.frames import NO_BAR, frame_of, sessions, weekdays_through
 from tests.topix_etf import ETF, etf_signal, outcome
 
 HOLD, EXIT, STAY_OUT = Disposition.HOLD, Disposition.EXIT, Disposition.STAY_OUT
@@ -26,16 +26,6 @@ MID_MONTH = date(2025, 10, 15)  # a Wednesday
 
 def momentum(**params):
     return build_strategy("topix_momentum_v1", params)
-
-
-def weekdays_through(last: date, count: int) -> list[date]:
-    """`count` weekdays up to and including `last`."""
-    days, day = [], last
-    while len(days) < count:
-        if day.weekday() < 5:
-            days.insert(0, day)
-        day -= timedelta(days=1)
-    return days
 
 
 def last_signal(topix: list[float], on: date, *, held: bool = False, **params):

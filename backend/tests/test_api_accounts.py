@@ -136,13 +136,23 @@ def test_the_strategies_and_their_defaults_for_the_new_account_page(api) -> None
     listed = {s["name"]: s for s in api.get("/api/strategies").json()}
 
     assert set(listed) == {"trend_pullback_v1", "technical_rating_v1", "topix_buy_and_hold_v1", "topix_ma_v1",
-                           "topix_momentum_v1"}
+                           "topix_momentum_v1", "long_trend_v1", "short_reversal_v1", "cross_sectional_momentum_v1"}
     assert listed["technical_rating_v1"]["defaults"]["entry_above"] == 0.5
     for stock_strategy in ("trend_pullback_v1", "technical_rating_v1"):
         assert {key: listed[stock_strategy][key] for key in ("universe_rule", "pool_codes", "warmup_follows",
                                                              "suggested_rules")} == {
             "universe_rule": "prime_common_stock", "pool_codes": [], "warmup_follows": None,
             "suggested_rules": {"max_positions": 10, "max_weight": 0.1, "cash_floor": 0.05}}
+    ten_stocks = {"universe_rule": "prime_common_stock", "pool_codes": [],
+                  "suggested_rules": {"max_positions": 10, "max_weight": 0.1, "cash_floor": 0.05}}
+    for name, defaults, follows in (
+        ("long_trend_v1", {"sma_sessions": 200, "warmup_sessions": 200}, {"parameter": "sma_sessions", "extra": 0}),
+        ("short_reversal_v1", {"return_sessions": 5, "max_holding_sessions": 5, "warmup_sessions": 6},
+         {"parameter": "return_sessions", "extra": 1}),
+        ("cross_sectional_momentum_v1", {"momentum_sessions": 126, "skip_sessions": 21, "warmup_sessions": 127},
+         {"parameter": "momentum_sessions", "extra": 1}),
+    ):
+        assert listed[name] == {"name": name, "defaults": defaults, "warmup_follows": follows, **ten_stocks}
     one_etf = {"max_positions": 1, "max_weight": 1.0, "cash_floor": 0.05}  # about 95% in 1306
     assert listed["topix_buy_and_hold_v1"] == {
         "name": "topix_buy_and_hold_v1",
@@ -174,7 +184,8 @@ def test_a_warm_up_that_follows_a_window_is_refused_below_it(api) -> None:
     """What the strategy list says the warm-up follows is what building the
     strategy checks: the window plus the extra is enough, one less is not."""
     listed = {s["name"]: s for s in api.get("/api/strategies").json()}
-    for name, window in (("topix_ma_v1", 120), ("topix_momentum_v1", 126)):
+    for name, window in (("topix_ma_v1", 120), ("topix_momentum_v1", 126), ("long_trend_v1", 120),
+                         ("short_reversal_v1", 20), ("cross_sectional_momentum_v1", 252)):
         follows = listed[name]["warmup_follows"]
         needed = window + follows["extra"]
         build_strategy(name, {follows["parameter"]: window, "warmup_sessions": needed})

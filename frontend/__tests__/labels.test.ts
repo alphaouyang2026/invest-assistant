@@ -22,4 +22,17 @@ describe("理由的文字和颜色", () => {
         ["不是每月判断日", ""],
       ]);
   });
+
+  it("05 候选策略：可买入的理由偏买，要卖出的理由偏卖，短期没有下跌不着色", () => {
+    expect(["above_sma", "not_above_sma", "short_term_drop", "no_short_term_drop", "momentum_rank", "ranked_out"]
+      .map((code) => [reason(code), reasonTone(code)]))
+      .toEqual([
+        ["收盘价在均线之上", "up"],
+        ["收盘价不在均线之上", "down"],
+        ["过去几天下跌", "up"],
+        ["过去几天没有下跌", ""],
+        ["按过去收益排名", "up"],
+        ["跌出持有名单", "down"],
+      ]);
+  });
 });

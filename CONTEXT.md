@@ -41,7 +41,7 @@ _Avoid_: 名册快照、instrument master snapshot、当前分类
 _Avoid_: ResearchUniverse、研究股票域、成分股
 
 **股票池规则（UniverseRule）**:
-由策略声明、决定股票池的候选证券从哪里来的规则。现有两种：Prime 普通股（当天的市场分类区间是 Prime 市场的普通股，两个个股策略用它）和 TOPIX ETF（只有 1306，当天在上市名册中，TOPIX ETF 策略用它）。两种规则的流动性和质量条件相同。
+由策略声明、决定股票池的候选证券从哪里来的规则。现有两种：Prime 普通股（当天的市场分类区间是 Prime 市场的普通股，个股策略都用它）和 TOPIX ETF（只有 1306，当天在上市名册中，TOPIX ETF 策略用它）。两种规则的流动性和质量条件相同。
 _Avoid_: 选股规则、UniversePolicy
 
 **策略（Strategy）**:

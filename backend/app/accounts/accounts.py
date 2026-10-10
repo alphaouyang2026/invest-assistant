@@ -322,11 +322,14 @@ def replay_day(ledger: Ledger, prices: Prices, strategy: Strategy, universes: Ma
              and s.code in morning.positions and s.code not in selling_again]
     candidates = [s for s in signals if s.disposition is Disposition.HOLD
                   and s.code not in morning.positions and s.code in set(universes.get(day, []))]
+    contenders = [s for s in signals if strategy.ranks_holdings and s.disposition is Disposition.HOLD
+                  and s.priority is not None and s.code in morning.positions and s.code not in selling_again]
     closes = prices.closes(day, [*morning.positions, *(s.code for s in candidates)])
     nav = morning.cash + sum((Decimal(p.quantity) * closes[p.code] for p in morning.positions.values()),
                              Decimal(0))
     orders = plan_orders(day=day, execution_day=next_day, positions=morning.positions, exits=exits,
-                         candidates=candidates, closes=closes, cash=morning.cash, nav=nav, rules=rules)
+                         candidates=candidates, closes=closes, cash=morning.cash, nav=nav, rules=rules,
+                         contenders=contenders)
 
     return [*events, *fills, *again, *orders], warnings
 

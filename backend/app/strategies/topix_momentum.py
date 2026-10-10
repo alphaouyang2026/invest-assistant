@@ -37,7 +37,9 @@ from typing import Any
 import pandas as pd
 
 from app.market_data import TOPIX, UniverseRule
-from app.strategies.base import Disposition, Judgement, Plot, ReferenceSeriesStrategy, WarmupFollows, whole_sessions
+from app.strategies.base import (
+    Disposition, Judgement, Plot, ReferenceSeriesStrategy, WarmupFollows, check_days, whole_sessions,
+)
 
 DEFAULTS: Mapping[str, Any] = {"lookback_sessions": 252, "warmup_sessions": 253}  # about 12 months, and the day's own
 UP, FLAT, DOWN = "topix_momentum_up", "topix_momentum_flat", "topix_momentum_down"
@@ -63,12 +65,11 @@ class TopixMomentum(ReferenceSeriesStrategy):
     def lines(self, closes: pd.DataFrame) -> dict[str, pd.Series]:
         topix = closes[TOPIX]
         lookback_close = topix.dropna().shift(self._lookback).reindex(topix.index)
-        months = pd.Series([day.year * 12 + day.month for day in closes.index], index=closes.index)
         return {
             "topix_close": topix,
             "lookback_close": lookback_close,
             "past_return": topix / lookback_close - 1,
-            "check_day": (months != months.shift()).astype(float),  # 1 on the first session of a month
+            "check_day": check_days(closes.index),
         }
 
     def judge_on_reference(self, readings: dict[str, float], held: bool) -> Judgement:

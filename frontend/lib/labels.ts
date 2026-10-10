@@ -29,6 +29,24 @@ export const STRATEGIES = [
     about:
       "只交易 1306，每月第一个开市日判断，月中建的账户等到下个月才可能买入。判断日收盘看 TOPIX 的过去收益（当天收盘比回看长度个开市日前的收盘涨了多少，默认 252 个开市日，约 12 个月）：为正就买入，为负就全部卖出、持有现金，恰好为 0 不改变状态；月中其他日子不买也不卖。成交、滑点、拆股和其他策略同一套规则；ETF 分配金不入账",
   },
+  {
+    name: "long_trend_v1",
+    label: "长趋势",
+    about:
+      "05 候选策略，尚未通过研究验证。每月第一个开市日收盘看每只 Prime 股票自己的收盘价和简单均线（默认 200 个开市日）：在均线之上就可买入，离均线越远越优先；持仓收盘不在均线之上就卖出。月中其他日子不买也不卖，月中建的账户等到下个月才可能买入",
+  },
+  {
+    name: "short_reversal_v1",
+    label: "短期反转",
+    about:
+      "05 候选策略，尚未通过研究验证。每个开市日收盘看每只 Prime 股票过去几天的收益（默认 5 个开市日）：下跌的可买入，跌得越多越优先；买入后持满固定天数（默认 5 个开市日）就卖出，不管涨跌。换手高，对成本敏感",
+  },
+  {
+    name: "cross_sectional_momentum_v1",
+    label: "横截面动量",
+    about:
+      "05 候选策略，尚未通过研究验证。每月第一个开市日收盘给所有 Prime 股票按过去收益排名（默认看过去 126 个开市日、跳过最近 21 个，即「6-1」），持有排名最前的几只（最多持有数）；持仓跌出名单就卖出，换成排名更前的，留下的不加不减。月中其他日子不买也不卖",
+  },
 ] as const;
 
 export type StrategyName = (typeof STRATEGIES)[number]["name"];
@@ -61,6 +79,19 @@ export const PARAMS: Record<string, { label: string; hint: string }> = {
     label: "回看长度",
     hint: "开市日：TOPIX 当天收盘和这么多个开市日前的收盘相比，就是过去收益；252 约 12 个月。预热期跟着它变，比它多 1（含当天）",
   },
+  // 长趋势
+  sma_sessions: { label: "均线窗口", hint: "股票收盘的个数（开市日），含当天；预热期跟着它变" },
+  // 短期反转（最长持有用上面的 max_holding_sessions）
+  return_sessions: {
+    label: "回看长度",
+    hint: "开市日：股票当天收盘和这么多个开市日前的收盘相比，下跌的才可买入。预热期跟着它变，比它多 1（含当天）",
+  },
+  // 横截面动量
+  momentum_sessions: {
+    label: "回看长度",
+    hint: "开市日：排名看的是这么多个开市日前到「跳过」那天的收益；126 约 6 个月，252 约 12 个月。预热期跟着它变，比它多 1（含当天）",
+  },
+  skip_sessions: { label: "跳过最近", hint: "开市日：收益算到这么多个开市日前为止，最近一段不算；21 约 1 个月，0 表示不跳过" },
 };
 
 /** J-Quants' market codes; ETFs such as 1306 are listed under その他. */
@@ -95,6 +126,15 @@ const REASONS: Record<string, string> = {
   topix_momentum_flat: "TOPIX 过去收益为 0",
   topix_momentum_down: "TOPIX 过去收益为负",
   not_check_day: "不是每月判断日",
+  // 长趋势
+  above_sma: "收盘价在均线之上",
+  not_above_sma: "收盘价不在均线之上",
+  // 短期反转
+  short_term_drop: "过去几天下跌",
+  no_short_term_drop: "过去几天没有下跌",
+  // 横截面动量
+  momentum_rank: "按过去收益排名",
+  ranked_out: "跌出持有名单",
 };
 
 export const reason = (code: string) => REASONS[code] ?? code;
@@ -106,6 +146,9 @@ const REASON_TONES: Record<string, string> = {
   always_hold: "up",
   topix_above_ma: "up", topix_near_ma: "", topix_below_ma: "down",
   topix_momentum_up: "up", topix_momentum_flat: "", topix_momentum_down: "down", not_check_day: "",
+  above_sma: "up", not_above_sma: "down",
+  short_term_drop: "up", no_short_term_drop: "",
+  momentum_rank: "up", ranked_out: "down",
 };
 
 export const reasonTone = (code: string) => REASON_TONES[code] ?? "up";
