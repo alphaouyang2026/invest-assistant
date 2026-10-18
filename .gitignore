@@ -13,3 +13,6 @@ __pycache__/
 node_modules/
 .next/
 *.tsbuildinfo
+
+# third-party open-source repos cloned for reference reading
+oss-refs/
