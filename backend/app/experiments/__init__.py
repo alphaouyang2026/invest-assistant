@@ -1,5 +1,8 @@
 """Model experiments (ticket 06a): date folds, point-in-time features and
-labels, the trainer seam, and out-of-fold scores."""
+labels, the trainer seam, and out-of-fold scores — exported here — and the
+experiment itself: its frozen contract (`contract`), the job that scores
+and replays under it (`service.ModelExperiments`), what it reports
+(`report`, `decisions`) and where it is kept (`tables`)."""
 
 from app.experiments.features import (
     AS_OF, FEATURE_NAMES, FEATURES_V1, HORIZON, feature_table, label_sessions, labels, within_universe,
