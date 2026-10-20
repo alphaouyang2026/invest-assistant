@@ -22,6 +22,10 @@ class PortfolioRules:
     max_positions: int = 10
     max_weight: Decimal = Decimal("0.10")
     cash_floor: Decimal = Decimal("0.05")
+    # A buy is at most this share of the code's ADV20 — its average turnover
+    # over the 20 sessions to the signal day, as the universe counts it
+    # (spec §6.1). None, as on every paper account so far: no cap.
+    max_adv20_fraction: Decimal | None = None
 
 
 def suggested_rules(universe_rule: UniverseRule) -> PortfolioRules:
@@ -46,19 +50,29 @@ def plan_orders(
     nav: Decimal,
     rules: PortfolioRules,
     contenders: Sequence[Signal] = (),
+    adv20: Mapping[str, Decimal] = {},
 ) -> list[Record]:
     """`exits` are held codes told to sell (not those whose sell is already
     being placed again); `candidates` are codes in `day`'s universe, not
     held, that can be held. `contenders` are held codes, not in `exits`, that
     a strategy which ranks its holdings ranked that day: they and the
     candidates compete for the places the other holdings leave, and one
-    ranked out is sold (`ranked_out`). `closes` are `day`'s execution closes."""
+    ranked out is sold (`ranked_out`). `closes` are `day`'s execution closes.
+
+    Under `rules.max_adv20_fraction` a buy is cut to the whole lots that
+    share of the candidate's `adv20` (yen) pays for at its close — a code
+    with no ADV20 given has none. One cut says `capped: adv20` in its
+    reason; one cut to nothing is skipped (`adv20_cap`)."""
+    def said(signal: Signal) -> dict:
+        return {"disposition": signal.disposition.value, "reason_codes": list(signal.reason_codes)}
+
     def order(kind: str, signal: Signal, quantity: int, reason: dict | None = None, **outcome) -> Record:
         return Record(kind=kind, code=signal.code, signal_date=day, execution_date=execution_day,
-                      planned_quantity=quantity, priority=signal.priority,
-                      reason=reason or {"disposition": signal.disposition.value,
-                                        "reason_codes": list(signal.reason_codes)},
+                      planned_quantity=quantity, priority=signal.priority, reason=reason or said(signal),
                       **outcome)
+
+    def lots(amount: Decimal, price: Decimal) -> int:
+        return int((amount / price / LOT).to_integral_value(rounding=ROUND_FLOOR)) * LOT
 
     def best_first(signals: Sequence[Signal]) -> list[Signal]:
         return sorted(signals, key=lambda signal: (-(signal.priority or 0.0), signal.code))
@@ -82,12 +96,17 @@ def plan_orders(
     buys = []
     for signal in ranked:
         price = closes[signal.code]
-        quantity = int((target / price / LOT).to_integral_value(rounding=ROUND_FLOOR)) * LOT
+        quantity, capped = lots(target, price), None
+        if quantity and rules.max_adv20_fraction is not None:
+            most = lots(rules.max_adv20_fraction * adv20.get(signal.code, Decimal(0)), price)
+            if most < quantity:
+                quantity, capped = most, {**said(signal), "capped": "adv20"}
         if quantity == 0:
-            buys.append(order(BUY, signal, 0, status=SKIPPED, outcome_reason="lot_unaffordable"))
+            buys.append(order(BUY, signal, 0, capped, status=SKIPPED,
+                              outcome_reason="adv20_cap" if capped else "lot_unaffordable"))
         elif quantity * price > budget:
-            buys.append(order(BUY, signal, quantity, status=SKIPPED, outcome_reason="insufficient_cash"))
+            buys.append(order(BUY, signal, quantity, capped, status=SKIPPED, outcome_reason="insufficient_cash"))
         else:
-            buys.append(order(BUY, signal, quantity))
+            buys.append(order(BUY, signal, quantity, capped))
             budget -= quantity * price
     return sells + buys
