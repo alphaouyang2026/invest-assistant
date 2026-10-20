@@ -41,11 +41,9 @@ def flat_market(**limits) -> MarketFrame:
     return MarketFrame(data)
 
 
-def strategy(scores: dict, unavailable=(), max_holding_sessions: int = 0) -> ScoreTopN:
-    """Check days every three sessions from the second: D[1], D[4], D[7], D[10], D[13]."""
-    return ScoreTopN(ScoreTable(scores, frozenset(unavailable)),
-                     {"anchor": D[1].isoformat(), "rebalance_sessions": 3,
-                      "max_holding_sessions": max_holding_sessions})
+def strategy(scores: dict, max_holding_sessions: int = 0) -> ScoreTopN:
+    """Decision days every three sessions from the second: D[1], D[4], D[7], D[10], D[13]."""
+    return ScoreTopN(ScoreTable(frozenset(DAYS[1::3]), scores), {"max_holding_sessions": max_holding_sessions})
 
 
 def replay(frame: MarketFrame, top_n: ScoreTopN, universes: dict | None = None,
@@ -86,12 +84,12 @@ def test_from_nothing_it_opens_holds_ranks_out_times_out_waits_out_the_model_and
     scores = {
         D[1]: {"A": 3.0, "B": 2.0, "C": 1.0},
         D[4]: {"C": 5.0, "A": 4.0, "B": 1.0, "D": 0.0},
-        D[7]: {"A": 9.0, "B": 8.0, "C": 7.0, "D": 6.0},   # the model failed that day: never read
+        # D[7]: the model failed that day
         D[10]: {"A": 6.0, "D": 2.0, "B": 1.0, "C": 0.0},
         D[13]: {"D": 1.0, "B": 2.0, "C": 0.0},             # A left the universe
     }
     universes = {day: list(CODES) for day in DAYS} | {D[13]: ["B", "C", "D"]}
-    days = replay(flat_market(), strategy(scores, unavailable={D[7]}, max_holding_sessions=5), universes)
+    days = replay(flat_market(), strategy(scores, max_holding_sessions=5), universes)
 
     expected = {
         0: ([], {}),                                                           # before the anchor

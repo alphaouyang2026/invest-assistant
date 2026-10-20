@@ -1,10 +1,11 @@
-"""Score top-N v1 (ticket 06a): on its check days — every few sessions from
-an anchor — every stock with a score from the model can be held, ranked by
-it, held or not; a stock without one stays out or is sold; on a day the
-model has nothing for nothing is opened and holdings stay; a holding held
-long enough is sold whatever the day. Which are bought and which are ranked
-out is the portfolio rules' doing (test_score_top_n_replay). Judged through
-`evaluate` on synthetic bars and made-up scores — no database."""
+"""Score top-N v1 (ticket 06a): on its check days — the decision days its
+table of scores names — every stock with a score from the model can be held,
+ranked by it, held or not; a stock without one stays out or is sold; on a
+decision day the model has nothing for nothing is opened and holdings stay;
+a holding held long enough is sold whatever the day. Which are bought and
+which are ranked out is the portfolio rules' doing
+(test_score_top_n_replay). Judged through `evaluate` on synthetic bars and
+made-up scores — no database."""
 
 from __future__ import annotations
 
@@ -26,8 +27,8 @@ RANKED, NOT_CHECK_DAY, MODEL_UNAVAILABLE, SCORE_MISSING, TIME_EXIT = (
 DAY = date(2025, 10, 15)  # a Wednesday
 
 
-def top_n(scores: dict | None = None, unavailable=(), **params) -> ScoreTopN:
-    return ScoreTopN(ScoreTable(scores or {}, frozenset(unavailable)), {"anchor": DAY.isoformat(), **params})
+def top_n(scores: dict | None = None, decision_days=(DAY,), **params) -> ScoreTopN:
+    return ScoreTopN(ScoreTable(frozenset(decision_days), scores or {}), params)
 
 
 def judged(signals) -> list[tuple]:
@@ -38,13 +39,18 @@ def judged(signals) -> list[tuple]:
             for s in signals]
 
 
+def from_day(frame: MarketFrame, first: date) -> MarketFrame:
+    """The frame from `first` on — as a paper account reads it when it
+    advances a day at a time: a warm-up before the day, no further."""
+    return MarketFrame(frame.data[frame.data.index.get_level_values("date") >= first])
+
+
 def test_it_ranks_prime_stocks_holdings_among_them_draws_nothing_and_is_not_offered_for_new_accounts() -> None:
     strategy = top_n()
 
     assert (strategy.name, strategy.universe_rule, strategy.reference_series) == (
         "score_top_n_v1", UniverseRule.PRIME_COMMON_STOCK, ())
-    assert strategy.params == {"anchor": "2025-10-15", "rebalance_sessions": 5, "max_holding_sessions": 0,
-                               "warmup_sessions": 1}
+    assert strategy.params == {"max_holding_sessions": 0, "warmup_sessions": 1}
     assert strategy.warmup_sessions == 1
     assert strategy.warmup_follows is None
     assert strategy.plots == ()
@@ -53,25 +59,42 @@ def test_it_ranks_prime_stocks_holdings_among_them_draws_nothing_and_is_not_offe
     assert "score_top_n_v1" not in STRATEGY_DEFAULTS
     assert "score_top_n_v1" not in [info.name for info in strategy_infos()]
     with pytest.raises(ValueError, match="没有这个策略"):
-        build_strategy("score_top_n_v1", {"anchor": "2025-10-15"})
+        build_strategy("score_top_n_v1", {})
 
 
-def test_the_check_days_are_every_rebalance_sessions_counted_on_the_frame_s_sessions_from_the_anchor() -> None:
+def test_the_check_days_are_the_table_s_decision_days_wherever_the_frame_starts() -> None:
     days = sessions(12, start=date(2025, 10, 6))  # Monday 6 to Tuesday 21 October
     frame = frame_of({"A": [100.0] * 12}, days)
+    # One before the frame and one after it, too: neither is a session of it.
+    decision_days = {days[0] - timedelta(days=3), days[2], days[7], days[11], days[11] + timedelta(days=1)}
+    strategy = top_n(decision_days=decision_days)
 
-    def check_days(anchor: date, **params) -> list[date]:
-        strategy = ScoreTopN(ScoreTable({}), {"anchor": anchor.isoformat(), **params})
-        return [day for day in days if strategy.evaluate(frame, day, [])[0].indicators["check_day"] == 1.0]
+    def check_days(frame: MarketFrame, on) -> list[date]:
+        return [day for day in on if strategy.evaluate(frame, day, [])[0].indicators["check_day"] == 1.0]
 
-    assert check_days(days[2], rebalance_sessions=3) == [days[2], days[5], days[8], days[11]]
-    assert check_days(days[2]) == [days[2], days[7]]  # every 5 by default
-    assert check_days(days[0], rebalance_sessions=1) == days
-    # A Saturday anchor: the first session after it is the first check day.
-    assert check_days(date(2025, 10, 11), rebalance_sessions=4) == [days[5], days[9]]
+    assert check_days(frame, days) == [days[2], days[7], days[11]]
+    assert check_days(from_day(frame, days[5]), days[5:]) == [days[7], days[11]]
 
 
-def test_on_a_check_day_every_stock_with_a_score_is_ranked_by_it_held_or_not() -> None:
+def test_a_frame_that_starts_after_the_first_decision_day_is_judged_as_one_that_starts_before_it() -> None:
+    """A paper account advancing a day at a time reads a warm-up before the
+    day: the first decision day may be long gone."""
+    days = sessions(12, start=date(2025, 10, 6))
+    frame = frame_of({"A": [100 + n for n in range(12)], "B": [50 - n for n in range(12)], "C": [80.0] * 12}, days)
+    decision_days = days[2::3]  # 2, 5, 8, 11
+    scores = {days[2]: {"A": 1.0, "B": 2.0}, days[5]: {"A": 3.0, "C": 1.0}, days[11]: {"B": 0.5}}  # 8 unavailable
+    strategy = top_n(scores, decision_days, max_holding_sessions=6)
+    late = from_day(frame, days[4])
+    held = [Holding("A", 100, days[4]), Holding("C", 100, days[4])]
+
+    for day in days[4:]:
+        for holdings in ([], held):
+            assert judged(strategy.evaluate(late, day, holdings)) == judged(strategy.evaluate(frame, day, holdings))
+    assert {(s.code, s.reason_codes) for day in days[4:] for s in strategy.evaluate(late, day, held)} >= {
+        ("A", RANKED), ("C", RANKED), ("B", SCORE_MISSING), ("A", MODEL_UNAVAILABLE), ("A", TIME_EXIT)}
+
+
+def test_on_a_decision_day_every_stock_with_a_score_is_ranked_by_it_held_or_not() -> None:
     days = weekdays_through(DAY, 3)
     frame = frame_of({"A": [100.0, 101.0, 102.0], "B": [50.0, 49.0, 48.0]}, days)
     strategy = top_n({DAY: {"A": 0.012, "B": -0.3}})
@@ -83,42 +106,33 @@ def test_on_a_check_day_every_stock_with_a_score_is_ranked_by_it_held_or_not() -
         ]
 
 
-def test_on_any_other_session_nothing_changes_whatever_the_table_holds() -> None:
+def test_on_any_other_session_nothing_changes() -> None:
     days = weekdays_through(DAY, 3)
     frame = frame_of({"A": [100.0, 101.0, 102.0]}, days)
-    anchor = days[0].isoformat()
-    scores = ScoreTable({days[0]: {"A": 0.5}, DAY: {"A": 0.7}})
-    strategy = ScoreTopN(scores, {"anchor": anchor, "rebalance_sessions": 5})
+    strategy = top_n({days[0]: {"A": 0.5}}, decision_days=(days[0],))
 
     assert judged(strategy.evaluate(frame, DAY, [])) == [
-        ("A", STAY_OUT, NOT_CHECK_DAY, None, {"score": 0.7, "check_day": 0.0})]
-    assert judged(strategy.evaluate(frame, DAY, [Holding("A", 100, days[0])])) == [
-        ("A", HOLD, NOT_CHECK_DAY, None, {"score": 0.7, "check_day": 0.0})]
-    # Before the anchor too.
-    early = ScoreTopN(scores, {"anchor": DAY.isoformat()})
-    assert judged(early.evaluate(frame, days[1], [])) == [
         ("A", STAY_OUT, NOT_CHECK_DAY, None, {"score": None, "check_day": 0.0})]
+    assert judged(strategy.evaluate(frame, DAY, [Holding("A", 100, days[0])])) == [
+        ("A", HOLD, NOT_CHECK_DAY, None, {"score": None, "check_day": 0.0})]
 
 
-def test_on_a_check_day_the_model_has_nothing_for_nothing_is_opened_and_holdings_keep_their_place() -> None:
-    """Unavailable, missing from the table, or there with no score that is
-    not NaN: the same. No score of an earlier day is used instead."""
+def test_on_a_decision_day_the_model_has_nothing_for_nothing_is_opened_and_holdings_keep_their_place() -> None:
+    """Missing from the table, there with no scores, or with NaN alone: the
+    same. No score of an earlier day is used instead."""
     days = weekdays_through(DAY, 6)
     frame = frame_of({"A": [100.0] * 6, "B": [50.0] * 6}, days)
     earlier = {days[0]: {"A": 0.5, "B": 0.4}}
     held = [Holding("A", 100, days[1])]
 
-    for strategy in (top_n({**earlier, DAY: {"A": 0.9, "B": 0.8}}, unavailable={DAY}),
-                     top_n(earlier),
-                     top_n({**earlier, DAY: {}}),
-                     top_n({**earlier, DAY: {"A": float("nan")}})):
-        assert judged(strategy.evaluate(frame, DAY, held)) == [
+    for scores in (earlier, {**earlier, DAY: {}}, {**earlier, DAY: {"A": float("nan"), "B": float("nan")}}):
+        assert judged(top_n(scores, (days[0], DAY)).evaluate(frame, DAY, held)) == [
             ("A", HOLD, MODEL_UNAVAILABLE, None, {"score": None, "check_day": 1.0}),
             ("B", STAY_OUT, MODEL_UNAVAILABLE, None, {"score": None, "check_day": 1.0}),
         ]
 
 
-def test_on_a_check_day_with_scores_a_stock_without_one_stays_out_or_is_sold() -> None:
+def test_on_a_decision_day_with_scores_a_stock_without_one_stays_out_or_is_sold() -> None:
     """It left the universe, or a feature was missing: no score, or NaN."""
     days = weekdays_through(DAY, 3)
     frame = frame_of({"A": [100.0] * 3, "B": [50.0] * 3, "C": [10.0] * 3}, days)
@@ -139,21 +153,20 @@ def test_a_holding_held_the_holding_sessions_is_sold_whatever_the_day_or_its_sco
     days = weekdays_through(DAY, 6)
     frame = frame_of({"A": [100.0] * 6}, days)
     held = [Holding("A", 100, days[1])]
-    scored = {DAY: {"A": 9.0}}
 
-    def disposition(scores=scored, unavailable=(), **params) -> tuple:
-        [signal] = top_n(scores, unavailable, **params).evaluate(frame, DAY, held)
+    def disposition(scores=None, decision_days=(DAY,), **params) -> tuple:
+        [signal] = top_n({DAY: {"A": 9.0}} if scores is None else scores, decision_days, **params).evaluate(
+            frame, DAY, held)
         return signal.disposition, signal.reason_codes, signal.priority
 
     assert disposition(max_holding_sessions=5) == (EXIT, TIME_EXIT, None)        # the best score
     assert disposition(max_holding_sessions=4) == (EXIT, TIME_EXIT, None)
     assert disposition(max_holding_sessions=6) == (HOLD, RANKED, 9.0)
     assert disposition(max_holding_sessions=0) == (HOLD, RANKED, 9.0)            # never
-    assert disposition(max_holding_sessions=5, unavailable={DAY}) == (EXIT, TIME_EXIT, None)
-    assert disposition({}, max_holding_sessions=5) == (EXIT, TIME_EXIT, None)    # model unavailable
-    not_a_check_day = {"anchor": days[0].isoformat(), "rebalance_sessions": 4}
-    assert disposition(max_holding_sessions=5, **not_a_check_day) == (EXIT, TIME_EXIT, None)
-    assert disposition(max_holding_sessions=6, **not_a_check_day) == (HOLD, NOT_CHECK_DAY, None)
+    assert disposition({}, max_holding_sessions=5) == (EXIT, TIME_EXIT, None)    # the model unavailable
+    not_a_decision_day = {"scores": {}, "decision_days": (days[0],)}
+    assert disposition(max_holding_sessions=5, **not_a_decision_day) == (EXIT, TIME_EXIT, None)
+    assert disposition(max_holding_sessions=6, **not_a_decision_day) == (HOLD, NOT_CHECK_DAY, None)
 
 
 def test_the_holding_sessions_count_its_bars_a_halt_s_included() -> None:
@@ -188,13 +201,9 @@ def test_no_signal_on_a_halt_on_a_session_without_a_bar_or_before_the_warm_up() 
     assert [s.code for s in top_n(scores, warmup_sessions=2).evaluate(frame, DAY, [])] == ["B"]
 
 
-def test_a_frame_that_starts_after_the_anchor_is_refused() -> None:
-    days = weekdays_through(DAY, 3)
-    frame = frame_of({"A": [100.0] * 3}, days)
-
-    assert top_n(anchor=days[0].isoformat()).evaluate(frame, DAY, [])
-    with pytest.raises(ValueError, match="晚于锚点"):
-        top_n(anchor=(days[0] - timedelta(days=1)).isoformat()).evaluate(frame, DAY, [])
+def test_scores_on_a_day_that_is_not_a_decision_day_are_refused() -> None:
+    with pytest.raises(ValueError, match="1 天不是决策日：2025-10-14"):
+        ScoreTable(frozenset({DAY}), {DAY: {"A": 1.0}, date(2025, 10, 14): {"A": 1.0}})
 
 
 def test_nothing_after_the_day_is_seen_in_the_bars_or_the_scores() -> None:
@@ -202,23 +211,21 @@ def test_nothing_after_the_day_is_seen_in_the_bars_or_the_scores() -> None:
     whole = frame_of({"A": [100 + 10 * math.sin(n / 3) for n in range(60)],
                       "B": [100 + 10 * math.cos(n / 2) for n in range(60)],
                       "C": [50 + 5 * math.sin(n / 5) for n in range(60)]}, days)
-    anchor, every = days[6], 3
-    check = days[6::every]
-    scores = {day: {"A": math.sin(n), "B": math.cos(n), "C": math.sin(2 * n)} for n, day in enumerate(check)}
-    del scores[check[2]]["A"]                     # A has no score: sold if held
-    del scores[check[4]]["C"]                     # C has no score: stays out
-    unavailable = frozenset({check[6]})          # the model failed: nothing that day
-    params = {"anchor": anchor.isoformat(), "rebalance_sessions": every, "max_holding_sessions": 4}
+    decision_days = days[6::3]
+    scores = {day: {"A": math.sin(n), "B": math.cos(n), "C": math.sin(2 * n)} for n, day in enumerate(decision_days)}
+    del scores[decision_days[2]]["A"]   # A has no score: sold if held
+    del scores[decision_days[4]]["C"]   # C has no score: stays out
+    del scores[decision_days[6]]        # the model failed: nothing that day
+    params = {"max_holding_sessions": 4}
     seen = set()
 
     for n, day in enumerate(days[4:], 4):
         cut = MarketFrame(whole.data[whole.data.index.get_level_values("date") <= day])
-        so_far = ScoreTable({d: s for d, s in scores.items() if d <= day}, frozenset(d for d in unavailable if d <= day))
+        so_far = ScoreTable(frozenset(d for d in decision_days if d <= day), {d: s for d, s in scores.items() if d <= day})
         # A bought the session before (held two), B four before (held five: sold).
         for holdings in ([], [Holding("A", 100, days[n - 1]), Holding("B", 100, days[n - 4])]):
-            judged_whole = ScoreTopN(ScoreTable(scores, unavailable), params).evaluate(whole, day, holdings)
-            assert judged(judged_whole) == judged(ScoreTopN(ScoreTable(scores, unavailable), params).evaluate(
-                cut, day, holdings))
+            judged_whole = top_n(scores, decision_days, **params).evaluate(whole, day, holdings)
+            assert judged(judged_whole) == judged(top_n(scores, decision_days, **params).evaluate(cut, day, holdings))
             assert judged(judged_whole) == judged(ScoreTopN(so_far, params).evaluate(cut, day, holdings))
             seen.update((signal.disposition, signal.reason_codes) for signal in judged_whole)
 
@@ -226,22 +233,16 @@ def test_nothing_after_the_day_is_seen_in_the_bars_or_the_scores() -> None:
                     (HOLD, MODEL_UNAVAILABLE), (STAY_OUT, SCORE_MISSING), (EXIT, SCORE_MISSING), (EXIT, TIME_EXIT)}
 
 
-def test_an_unknown_parameter_a_missing_or_bad_anchor_or_a_window_that_cannot_be_is_refused() -> None:
-    table = ScoreTable({})
-    with pytest.raises(ValueError, match="sma_sessions"):
-        ScoreTopN(table, {"anchor": "2025-10-15", "sma_sessions": 5})
-    with pytest.raises(ValueError, match="锚点"):
-        ScoreTopN(table, {})
-    with pytest.raises(ValueError, match="锚点"):
-        ScoreTopN(table, {"anchor": "15/10/2025"})
-    for every in (0, 2.5):
-        with pytest.raises(ValueError, match="调仓间隔"):
-            top_n(rebalance_sessions=every)
+def test_an_unknown_parameter_or_a_window_that_cannot_be_is_refused() -> None:
+    """The decision days are the table's: no anchor or interval to give."""
+    with pytest.raises(ValueError, match="anchor"):
+        top_n(anchor="2025-10-15")
+    with pytest.raises(ValueError, match="rebalance_sessions"):
+        top_n(rebalance_sessions=5)
     for holding in (-1, 2.5):
         with pytest.raises(ValueError, match="最长持有"):
             top_n(max_holding_sessions=holding)
-    with pytest.raises(ValueError, match="预热期"):
-        top_n(warmup_sessions=0)
-    strategy = ScoreTopN(table, {"anchor": date(2025, 10, 15), "rebalance_sessions": 10, "max_holding_sessions": 20,
-                                 "warmup_sessions": 61})
-    assert strategy.warmup_sessions == 61
+    for warmup in (0, 2.5):
+        with pytest.raises(ValueError, match="预热期"):
+            top_n(warmup_sessions=warmup)
+    assert top_n(max_holding_sessions=20, warmup_sessions=61).warmup_sessions == 61
