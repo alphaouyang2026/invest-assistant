@@ -25,11 +25,12 @@ from app.accounts.records import BUY, FILLED, SELL, Record
 from app.accounts.session import Bar, Costs, Session, corporate_actions, open_session, replace_sells
 from app.market_data import (
     ADJUSTMENT_FACTOR, EX_RIGHTS_TYPE, EXEC_CLOSE, EXEC_HIGH, EXEC_LOW, EXEC_OPEN, LOWER_LIMIT_HIT, QUALITY, TOPIX,
-    UPPER_LIMIT_HIT, MarketData, MarketFrame,
+    TURNOVER, UPPER_LIMIT_HIT, MarketData, MarketFrame,
 )
 from app.strategies import Disposition, Holding, Strategy, build_strategy, codes_to_read
 
 UNTRADABLE = "untradable"
+ADV_SESSIONS = 20  # the universe's turnover window (spec §6.1)
 
 
 @dataclass(frozen=True)
@@ -118,11 +119,14 @@ class Accounts:
                 f"起始日 {spec.start_date.isoformat()} 之前只有 {behind} 个开市日的数据，"
                 f"{spec.strategy} 的预热期要 {strategy.warmup_sessions} 个"
             )
+        rules = {"initial_cash": str(spec.initial_cash), "max_positions": spec.rules.max_positions,
+                 "max_weight": str(spec.rules.max_weight), "cash_floor": str(spec.rules.cash_floor)}
+        if spec.rules.max_adv20_fraction is not None:  # stored only when set: accounts without it stay as they were
+            rules["max_adv20_fraction"] = str(spec.rules.max_adv20_fraction)
         with self._engine.begin() as connection:
             return connection.execute(insert(tables.paper_accounts).values(
                 name=spec.name, strategy=spec.strategy, strategy_params=dict(spec.strategy_params),
-                portfolio_rules={"initial_cash": str(spec.initial_cash), "max_positions": spec.rules.max_positions,
-                                 "max_weight": str(spec.rules.max_weight), "cash_floor": str(spec.rules.cash_floor)},
+                portfolio_rules=rules,
                 costs={"commission_rate": str(spec.costs.commission_rate),
                        "commission_min": str(spec.costs.commission_min), "slippage": str(spec.costs.slippage)},
                 start_date=spec.start_date, status="active",
@@ -327,9 +331,10 @@ def replay_day(ledger: Ledger, prices: Prices, strategy: Strategy, universes: Ma
     closes = prices.closes(day, [*morning.positions, *(s.code for s in candidates)])
     nav = morning.cash + sum((Decimal(p.quantity) * closes[p.code] for p in morning.positions.values()),
                              Decimal(0))
+    adv20 = {} if rules.max_adv20_fraction is None else prices.adv20(day, [s.code for s in candidates])
     orders = plan_orders(day=day, execution_day=next_day, positions=morning.positions, exits=exits,
                          candidates=candidates, closes=closes, cash=morning.cash, nav=nav, rules=rules,
-                         contenders=contenders)
+                         contenders=contenders, adv20=adv20)
 
     return [*events, *fills, *again, *orders], warnings
 
@@ -343,6 +348,7 @@ class Prices:
         self.frame = frame
         self._rows = frame.data
         self._last_close = frame.wide(EXEC_CLOSE).ffill()
+        self._adv20: pd.DataFrame | None = None  # worked out the first time it is asked for
 
     def session(self, day: date) -> Session:
         previous = self._last_close.loc[:day].iloc[:-1] if day in self._last_close.index else self._last_close.loc[:day]
@@ -359,6 +365,23 @@ class Prices:
             return {}
         row = self._last_close.loc[:day].iloc[-1]
         return {code: row[code] for code in codes}
+
+    def adv20(self, day: date, codes) -> dict[str, Decimal]:
+        """Each code's ADV20 on `day`, in yen: its turnover summed over the
+        20 sessions to `day` and divided by 20, a session with no bar or an
+        untradable one counting as nothing — the universe's liquidity
+        condition (spec §6.1). The sessions are the frame's dates, so the
+        figure is whole only from the frame's 20th session; a code with no
+        bar in the frame is left out."""
+        codes = list(codes)
+        if not codes:
+            return {}
+        if self._adv20 is None:
+            turnover = self.frame.wide(TURNOVER).astype(float)
+            counted = turnover.mask(self.frame.wide(QUALITY) == UNTRADABLE, 0.0).fillna(0.0)
+            self._adv20 = counted.rolling(ADV_SESSIONS, min_periods=1).sum() / ADV_SESSIONS
+        row = self._adv20.loc[day]
+        return {code: Decimal(str(row[code])) for code in codes if code in row.index}
 
 
 class _Bars(Mapping):
@@ -385,6 +408,8 @@ class _Bars(Mapping):
 def trading_terms(account: Mapping[str, Any]) -> tuple[PortfolioRules, Costs, Decimal]:
     """The portfolio rules, costs and initial cash stored with an account or a research configuration."""
     portfolio, costs = account["portfolio_rules"], account["costs"]
+    cap = portfolio.get("max_adv20_fraction")  # absent from every paper account so far
     rules = PortfolioRules(max_positions=portfolio["max_positions"], max_weight=Decimal(portfolio["max_weight"]),
-                           cash_floor=Decimal(portfolio["cash_floor"]))
+                           cash_floor=Decimal(portfolio["cash_floor"]),
+                           max_adv20_fraction=None if cap is None else Decimal(cap))
     return rules, Costs(**{key: Decimal(value) for key, value in costs.items()}), Decimal(portfolio["initial_cash"])

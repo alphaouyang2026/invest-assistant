@@ -167,3 +167,74 @@ def test_a_holding_ranked_out_is_sold_even_when_its_replacement_cannot_be_bought
         ("sell", "A", 100, "pending", None),
         ("buy", "C", 0, "skipped", "lot_unaffordable"),
     ]
+
+
+CAPPED = PortfolioRules(max_positions=10, max_adv20_fraction=Decimal("0.05"))
+
+
+def test_an_adv20_cap_cuts_a_buy_to_the_lots_its_share_of_adv20_pays_for() -> None:
+    """Each buy aims at 950,000 → 900 shares at ¥1,000. J's ADV20
+    ¥12,345,678 × 5% = 617,283.9 → 600 shares, cut and marked; K's ¥100M ×
+    5% = 5,000,000 does not bind. The cut leaves K the budget it needs:
+    2,000,000 − 500,000 floor − 600,000 = 900,000."""
+    records = plan_orders(
+        day=T, execution_day=NEXT, positions={}, exits=[],
+        candidates=[candidate("J", 0.9), candidate("K", 0.5)],
+        closes={"J": Decimal("1000"), "K": Decimal("1000")},
+        cash=Decimal("2000000"), nav=NAV, rules=CAPPED,
+        adv20={"J": Decimal("12345678"), "K": Decimal("100000000")},
+    )
+
+    assert summary(records) == [
+        ("buy", "J", 600, "pending", None),
+        ("buy", "K", 900, "pending", None),
+    ]
+    assert records[0].reason == {"disposition": "hold", "reason_codes": ["strong_buy"], "capped": "adv20"}
+    assert records[1].reason == {"disposition": "hold", "reason_codes": ["strong_buy"]}
+
+
+def test_a_buy_the_cap_cuts_to_nothing_is_skipped_and_a_code_without_adv20_has_none() -> None:
+    """L: ¥1,900,000 × 5% = 95,000 buys no lot at ¥1,000 → adv20_cap. M has
+    no ADV20 given, so no room at all. A lot too dear is unaffordable before
+    the cap is looked at (N). O, not cut, is bought."""
+    records = plan_orders(
+        day=T, execution_day=NEXT, positions={}, exits=[],
+        candidates=[candidate("L", 0.9), candidate("M", 0.8), candidate("N", 0.7), candidate("O", 0.6)],
+        closes={"L": Decimal("1000"), "M": Decimal("1000"), "N": Decimal("2000000"), "O": Decimal("1000")},
+        cash=Decimal("1500000"), nav=NAV, rules=CAPPED,
+        adv20={"L": Decimal("1900000"), "N": Decimal("0"), "O": Decimal("1000000000")},
+    )
+
+    assert summary(records) == [
+        ("buy", "L", 0, "skipped", "adv20_cap"),
+        ("buy", "M", 0, "skipped", "adv20_cap"),
+        ("buy", "N", 0, "skipped", "lot_unaffordable"),
+        ("buy", "O", 900, "pending", None),
+    ]
+    assert records[0].reason["capped"] == "adv20" and "capped" not in records[2].reason
+
+
+def test_without_a_cap_adv20_changes_nothing() -> None:
+    """The rules every paper account has: however thin, ADV20 is not looked at."""
+    records = plan_orders(
+        day=T, execution_day=NEXT, positions={}, exits=[],
+        candidates=[candidate("J", 0.9)], closes={"J": Decimal("1000")},
+        cash=Decimal("2000000"), nav=NAV, rules=PortfolioRules(max_positions=10),
+        adv20={"J": Decimal("1")},
+    )
+
+    assert summary(records) == [("buy", "J", 900, "pending", None)]
+    assert "capped" not in records[0].reason
+
+
+def test_a_capped_buy_still_has_to_fit_the_budget() -> None:
+    """P is cut to 500 (¥10M × 5% at ¥1,000), over a budget of 900,000 −
+    500,000 = 400,000: skipped for cash, and still says it was cut."""
+    records = plan_orders(
+        day=T, execution_day=NEXT, positions={}, exits=[],
+        candidates=[candidate("P", 0.9)], closes={"P": Decimal("1000")},
+        cash=Decimal("900000"), nav=NAV, rules=CAPPED, adv20={"P": Decimal("10000000")},
+    )
+
+    assert summary(records) == [("buy", "P", 500, "skipped", "insufficient_cash")]
+    assert records[0].reason["capped"] == "adv20"
