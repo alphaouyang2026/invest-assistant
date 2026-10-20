@@ -1,13 +1,14 @@
 """Research runs (研究运行): durable jobs, isolated ledger, frozen reports.
 
 Only this module writes research runs — a batch's segments included. Trading
-itself is replay_day, the exact same function used by Accounts.advance.
+itself is replay_range, a day at a time through replay_day, the exact same
+function used by Accounts.advance.
 """
 from __future__ import annotations
 
 import math
 import uuid
-from dataclasses import asdict, replace
+from dataclasses import asdict
 from datetime import date
 from decimal import Decimal
 
@@ -16,9 +17,9 @@ from sqlalchemy import Connection, insert, select, update, func
 
 from app.accounts import tables
 from app.accounts import research_tables as db
-from app.accounts.accounts import Prices, replay_day, trading_terms
-from app.accounts.ledger import Ledger
+from app.accounts.accounts import Prices, trading_terms
 from app.accounts.records import FILLED
+from app.accounts.replay import replay_range
 from app.accounts.research_jobs import (
     COMPLETED, FAILED, QUEUED, RUNNING, UNFINISHED, code_version, find_request, now, plain_json, submit_once,
 )
@@ -179,29 +180,17 @@ class ResearchRuns:
             prices = Prices(self._market.read(codes_to_read(strategy, codes), warmup, end))
             topix = self._market.read([TOPIX], start, end).wide(EXEC_CLOSE)[TOPIX]
             rules, costs, initial = trading_terms(config)
-            ledger, points, warnings = Ledger(initial), [], []
-            serial, peak = 0, initial
-            for done, day in enumerate(days, 1):
-                changed, found = replay_day(ledger, prices, strategy, universes, day, calendar.next(day), rules, costs)
-                warnings.extend(found)
-                # Same last-write-wins rule as Accounts._store, but IDs are local to this run.
-                final = {r.id: r for r in changed if r.id is not None}
-                stored = []
-                for r in changed:
-                    if r.id is None:
-                        serial += 1
-                        stored.append(replace(r, id=serial))
-                    elif final[r.id] is r:
-                        stored.append(r)
-                ledger = ledger.apply(stored)
-                closes = prices.closes(day, ledger.positions)
-                nav = ledger.cash + sum((p.quantity * closes[p.code] for p in ledger.positions.values()), Decimal(0))
-                peak = max(peak, nav)
-                points.append({"date": day.isoformat(), "nav": float(nav), "nav_curve": float(nav / initial),
-                               "topix_curve": float(topix[day] / topix[start]), "drawdown": float(1 - nav / peak)})
+
+            def on_session(done, day):
                 step = {"sessions_done": done, "sessions_total": len(days), "current_session": day.isoformat()}
                 self._set(run_id, progress=step)
                 progress(step)
+
+            replay = replay_range(prices, strategy, universes, days, calendar, rules, costs, initial, topix,
+                                  on_session=on_session)
+            ledger, warnings = replay.ledger, replay.warnings
+            points = [point.as_json() for point in replay.points]
+            nav, closes = replay.points[-1].nav, prices.closes(days[-1], ledger.positions)
             holdings = [{"code": p.code, "quantity": p.quantity, "opened_on": p.opened_on.isoformat(),
                          "cost": float(p.cost), "close": float(closes[p.code]),
                          "value": float(p.quantity * closes[p.code])} for p in ledger.positions.values()]
