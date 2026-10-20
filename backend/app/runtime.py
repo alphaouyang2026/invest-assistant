@@ -19,6 +19,7 @@ from app.accounts.research_batches import ResearchBatches
 from app.accounts.research_discovery import RegimeDiscoveries
 from app.config import Settings
 from app.db import create_engine_for
+from app.experiments.service import ModelExperiments
 from app.jobs import Job, JobOutcome, Jobs, Progress
 from app.market_data import MarketData, SyncProgress
 from app.market_data.jquants import HttpJQuantsClient, JQuantsClient
@@ -64,15 +65,18 @@ def build_accounts(
 
 @dataclass(frozen=True)
 class Research:
-    """The three research services, sharing one database and the jobs."""
+    """The research services, sharing one database and the jobs: the three
+    of 04b and the model experiments of 06a."""
     runs: ResearchRuns
     batches: ResearchBatches
     discoveries: RegimeDiscoveries
+    experiments: ModelExperiments
 
     def recover(self) -> None:
         """At start-up: each service fails the work a stopped service left unfinished."""
         self.runs.recover()
         self.discoveries.recover()
+        self.experiments.recover()
 
 
 def build_research(
@@ -86,7 +90,8 @@ def build_research(
     engine = create_engine_for(settings)
     runs = ResearchRuns(engine, market, jobs, strategies=strategies or build_strategy)
     batches = ResearchBatches(engine, runs, jobs)
-    return Research(runs, batches, RegimeDiscoveries(engine, market, jobs, batches))
+    return Research(runs, batches, RegimeDiscoveries(engine, market, jobs, batches),
+                    ModelExperiments(engine, market, jobs))
 
 
 def advance_job(accounts: Accounts, account_id: int | None = None) -> Job:
