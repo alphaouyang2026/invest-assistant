@@ -11,7 +11,7 @@ from typing import Any
 from fastapi import FastAPI
 
 from app.api import accounts as accounts_api, data, jobs as jobs_api, signals, research as research_api
-from app.api import research_regimes as research_regimes_api
+from app.api import experiments as experiments_api, research_regimes as research_regimes_api
 from app.config import Settings
 from app.jobs import DailySync, Jobs
 from app.log import configure_logging
@@ -62,12 +62,14 @@ def create_app(
     app.state.research_runs = research.runs
     app.state.research_batches = research.batches
     app.state.regime_discoveries = research.discoveries
+    app.state.model_experiments = research.experiments
     app.include_router(data.router)
     app.include_router(jobs_api.router)
     app.include_router(signals.router)
     app.include_router(accounts_api.router)
     app.include_router(research_api.router)
     app.include_router(research_regimes_api.router)
+    app.include_router(experiments_api.router)
     return app
 
 
