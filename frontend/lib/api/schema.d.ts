@@ -436,6 +436,143 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/experiments/defaults": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Defaults */
+        get: operations["defaults_api_experiments_defaults_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/experiments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** History */
+        get: operations["history_api_experiments_get"];
+        put?: never;
+        /** Submit */
+        post: operations["submit_api_experiments_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/experiments/{experiment_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Detail */
+        get: operations["detail_api_experiments__experiment_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/experiments/{experiment_id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Retry */
+        post: operations["retry_api_experiments__experiment_id__retry_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/experiments/{experiment_id}/replays/{position}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Replay */
+        get: operations["replay_api_experiments__experiment_id__replays__position__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/experiments/{experiment_id}/replays/{position}/orders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Orders */
+        get: operations["orders_api_experiments__experiment_id__replays__position__orders_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/experiments/{experiment_id}/replays/{position}/days": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Days */
+        get: operations["days_api_experiments__experiment_id__replays__position__days_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/experiments/{experiment_id}/scores/{model}/{day}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Scores */
+        get: operations["scores_api_experiments__experiment_id__scores__model___day__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -571,6 +708,43 @@ export interface components {
             /** Excess Annualised Return */
             excess_annualised_return: number | null;
         };
+        /** Adv20Out */
+        Adv20Out: {
+            /** Orders */
+            orders: number;
+            /** Median */
+            median: number | null;
+            /** P95 */
+            p95: number | null;
+            /** Max */
+            max: number | null;
+            /** Over Cap */
+            over_cap: number;
+            /** Without Adv20 */
+            without_adv20: number;
+            /** Cap */
+            cap: number | null;
+        };
+        /** ArtifactOut */
+        ArtifactOut: {
+            /** Trainer */
+            trainer: string;
+            /** Params */
+            params: {
+                [key: string]: unknown;
+            };
+            /** State */
+            state: {
+                [key: string]: unknown;
+            };
+            /**
+             * Train Cutoff
+             * Format: date
+             */
+            train_cutoff: string;
+            /** Samples */
+            samples: number;
+        };
         /**
          * BarOut
          * @description Research prices: comparable across splits. None on a halted day.
@@ -591,6 +765,15 @@ export interface components {
             close: number | null;
             /** Volume */
             volume: number | null;
+        };
+        /** BaselineTerms */
+        BaselineTerms: {
+            /** Trainer */
+            trainer: string;
+            /** Params */
+            params: {
+                [key: string]: unknown;
+            };
         };
         /**
          * BatchConfig
@@ -774,6 +957,11 @@ export interface components {
             /** Failed */
             failed: number;
         };
+        /** Benchmarks */
+        Benchmarks: {
+            topix_price: components["schemas"]["TopixBenchmark"];
+            eligible_equal_weight: components["schemas"]["EqualWeightBenchmark"];
+        };
         /** CandidateOut */
         CandidateOut: {
             /** Code */
@@ -844,6 +1032,174 @@ export interface components {
             bar_rows: number;
             /** Recent Jobs */
             recent_jobs: components["schemas"]["JobResultOut"][];
+        };
+        /** DayConstraints */
+        DayConstraints: {
+            /** Skipped */
+            skipped: {
+                [key: string]: number;
+            };
+            /** Adv20 Capped */
+            adv20_capped: number;
+            /** Ranked Out */
+            ranked_out: number;
+            /** Unplaced Candidates */
+            unplaced_candidates: number;
+        };
+        /** DayExecution */
+        DayExecution: {
+            /** Sequence */
+            sequence: number;
+            /** Kind */
+            kind: string;
+            /** Code */
+            code: string;
+            /**
+             * Signal Date
+             * Format: date
+             */
+            signal_date: string;
+            /** Status */
+            status: string;
+            /** Outcome Reason */
+            outcome_reason: string | null;
+            /** Filled Quantity */
+            filled_quantity: number;
+            /** Fill Price */
+            fill_price: number | null;
+            /** Fees */
+            fees: number;
+            /** Cash Delta */
+            cash_delta: number;
+        };
+        /** DayOrder */
+        DayOrder: {
+            /** Sequence */
+            sequence: number;
+            /** Kind */
+            kind: string;
+            /** Code */
+            code: string;
+            /**
+             * Execution Date
+             * Format: date
+             */
+            execution_date: string;
+            /** Planned Quantity */
+            planned_quantity: number;
+            /** Priority */
+            priority: number | null;
+            /** Reason Codes */
+            reason_codes: string[];
+            /** Capped */
+            capped: string | null;
+            /** Replaces */
+            replaces: number | null;
+            /** Status */
+            status: string;
+            /** Outcome Reason */
+            outcome_reason: string | null;
+        };
+        /**
+         * DayRecord
+         * @description One replayed session: the holdings' dispositions that morning's close,
+         *     the orders planned (as they ended), what filled or expired at its open,
+         *     the holdings the plan aims at, those held at the close, cash and NAV.
+         */
+        DayRecord: {
+            /**
+             * Date
+             * Format: date
+             */
+            date: string;
+            /** Decision Day */
+            decision_day: boolean;
+            /** Model Available */
+            model_available: boolean | null;
+            /** Fold */
+            fold: number | null;
+            /** Universe */
+            universe: number;
+            /** Scored */
+            scored: number;
+            /** Holdings Decisions */
+            holdings_decisions: components["schemas"]["HoldingDecision"][];
+            /** Candidates */
+            candidates: number;
+            /** Orders */
+            orders: components["schemas"]["DayOrder"][];
+            /** Executions */
+            executions: components["schemas"]["DayExecution"][];
+            /** Target */
+            target: components["schemas"]["TargetLine"][];
+            /** Holdings */
+            holdings: components["schemas"]["ReplayHolding"][];
+            /** Cash */
+            cash: number;
+            /** Nav */
+            nav: number;
+            constraints: components["schemas"]["DayConstraints"];
+            /** Top Scores */
+            top_scores: components["schemas"]["RankedScore"][];
+        };
+        /** DayScores */
+        DayScores: {
+            /** Model */
+            model: string;
+            /**
+             * As Of
+             * Format: date
+             */
+            as_of: string;
+            /** Fold */
+            fold: number;
+            /** Artifact Hash */
+            artifact_hash: string;
+            /** Scores */
+            scores: components["schemas"]["RankedScore"][];
+        };
+        /** DiagnosticDay */
+        DiagnosticDay: {
+            /**
+             * Date
+             * Format: date
+             */
+            date: string;
+            /** Fold */
+            fold: number | null;
+            /** Available */
+            available: boolean;
+            /** Universe */
+            universe: number;
+            /** Scored */
+            scored: number;
+            /** Coverage */
+            coverage: number | null;
+            /** Labelled */
+            labelled: number;
+            /** Rank Ic */
+            rank_ic: number | null;
+        };
+        /** Diagnostics */
+        Diagnostics: {
+            /** Decision Days */
+            decision_days: number;
+            /** Unavailable Days */
+            unavailable_days: number;
+            /** Ic Days */
+            ic_days: number;
+            /** Ic Mean */
+            ic_mean: number | null;
+            /** Ic Std */
+            ic_std: number | null;
+            /** Coverage Mean */
+            coverage_mean: number | null;
+            /** Coverage Min */
+            coverage_min: number | null;
+            /** Days */
+            days: components["schemas"]["DiagnosticDay"][];
+            /** Folds */
+            folds: components["schemas"]["FoldDiagnostics"][];
         };
         /** DiscoveryDetail */
         DiscoveryDetail: {
@@ -993,6 +1349,400 @@ export interface components {
             worst_excess: components["schemas"]["WorstExcessSegment"] | null;
             coverage: components["schemas"]["Coverage"];
         };
+        /** EqualWeightBenchmark */
+        EqualWeightBenchmark: {
+            /** Basis */
+            basis: string;
+            /** Periods */
+            periods: components["schemas"]["PoolPeriod"][];
+            /** Total Return */
+            total_return: number | null;
+        };
+        /** Evidence */
+        Evidence: {
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "exploratory" | "insufficient_evidence";
+            /** Reasons */
+            reasons: components["schemas"]["EvidenceReason"][];
+            /** Viewed Folds */
+            viewed_folds: number[];
+        };
+        /** EvidenceReason */
+        EvidenceReason: {
+            /** Code */
+            code: string;
+            /** Message */
+            message: string;
+        };
+        /** ExperimentAccepted */
+        ExperimentAccepted: {
+            /** Id */
+            id: string;
+        };
+        /** ExperimentContract */
+        ExperimentContract: {
+            /** Version */
+            version: string;
+            /** Name */
+            name: string;
+            task: components["schemas"]["TaskOut"];
+            /** Data */
+            data: {
+                [key: string]: string;
+            };
+            features: components["schemas"]["FeaturesOut"];
+            universe_rule: components["schemas"]["UniverseRule"];
+            /**
+             * Test From
+             * Format: date
+             */
+            test_from: string;
+            /**
+             * Test To
+             * Format: date
+             */
+            test_to: string;
+            folds: components["schemas"]["FoldTerms"];
+            policy: components["schemas"]["PolicyTerms"];
+            portfolio_rules: components["schemas"]["ExperimentRules"];
+            costs: components["schemas"]["ExperimentCosts"];
+            /** Stress Slippages */
+            stress_slippages: string[];
+            model: components["schemas"]["ModelTerms"];
+            /** Baselines */
+            baselines: components["schemas"]["BaselineTerms"][];
+            /** Benchmarks */
+            benchmarks: string[];
+            minimums: components["schemas"]["Minimums"];
+            /** Viewed Through */
+            viewed_through: string | null;
+            /** Actions */
+            actions: string[];
+            /** Source Account Id */
+            source_account_id: number | null;
+        };
+        /** ExperimentCosts */
+        ExperimentCosts: {
+            /** Commission Rate */
+            commission_rate: string;
+            /** Commission Min */
+            commission_min: string;
+            /** Slippage */
+            slippage: string;
+        };
+        /** ExperimentDays */
+        ExperimentDays: {
+            /** Total */
+            total: number;
+            /** Page */
+            page: number;
+            /** Page Size */
+            page_size: number;
+            /** Days */
+            days: components["schemas"]["DayRecord"][];
+        };
+        /**
+         * ExperimentDefaults
+         * @description For the registration form: every default, the trainers and their
+         *     parameters, the actions a contract may declare, and how far history
+         *     has been seen — what a contract registered now would freeze.
+         */
+        ExperimentDefaults: {
+            /** Defaults */
+            defaults: {
+                [key: string]: unknown;
+            };
+            /** Trainers */
+            trainers: {
+                [key: string]: {
+                    [key: string]: unknown;
+                };
+            };
+            /** Supported Actions */
+            supported_actions: string[];
+            /** Unsupported Actions */
+            unsupported_actions: string[];
+            task: components["schemas"]["TaskOut"];
+            features: components["schemas"]["FeaturesOut"];
+            /** Viewed Through */
+            viewed_through: string | null;
+        };
+        /** ExperimentDetail */
+        ExperimentDetail: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "queued" | "running" | "completed" | "failed";
+            /** Created At */
+            created_at: string;
+            /** Finished At */
+            finished_at: string | null;
+            /** Retry Of */
+            retry_of: string | null;
+            /** Retried By */
+            retried_by: string[];
+            /** Progress */
+            progress: {
+                [key: string]: unknown;
+            };
+            /** Input Fingerprint */
+            input_fingerprint: {
+                [key: string]: unknown;
+            } | null;
+            /** Code Version */
+            code_version: string;
+            /** Error */
+            error: string | null;
+            contract: components["schemas"]["ExperimentContract"];
+            /** Contract Hash */
+            contract_hash: string;
+            /** Evidence Status */
+            evidence_status: ("exploratory" | "insufficient_evidence") | null;
+            report: components["schemas"]["ExperimentReport"] | null;
+            /** Fold Results */
+            fold_results: components["schemas"]["FoldResultOut"][];
+        };
+        /** ExperimentHistory */
+        ExperimentHistory: {
+            /** Total */
+            total: number;
+            /** Page */
+            page: number;
+            /** Page Size */
+            page_size: number;
+            /** Experiments */
+            experiments: components["schemas"]["ExperimentSummary"][];
+        };
+        /** ExperimentIn */
+        ExperimentIn: {
+            /**
+             * Name
+             * @default
+             */
+            name: string;
+            /**
+             * Test From
+             * Format: date
+             */
+            test_from: string;
+            /**
+             * Test To
+             * Format: date
+             */
+            test_to: string;
+            /**
+             * Train Sessions
+             * @default 250
+             */
+            train_sessions: number;
+            /**
+             * Test Sessions
+             * @default 60
+             */
+            test_sessions: number;
+            /**
+             * Expanding
+             * @default false
+             */
+            expanding: boolean;
+            /**
+             * Rebalance Sessions
+             * @default 5
+             */
+            rebalance_sessions: number;
+            /**
+             * Max Holding Sessions
+             * @default 0
+             */
+            max_holding_sessions: number;
+            /**
+             * Trainer
+             * @default ridge_v1
+             */
+            trainer: string;
+            /**
+             * Trainer Params
+             * @default {}
+             */
+            trainer_params: {
+                [key: string]: unknown;
+            };
+            /**
+             * Baselines
+             * @default [
+             *       "rule_short_reversal_v1"
+             *     ]
+             */
+            baselines: string[];
+            /** Source Account Id */
+            source_account_id?: number | null;
+            /** Initial Cash */
+            initial_cash?: number | null;
+            /** Max Positions */
+            max_positions?: number | null;
+            /** Max Weight */
+            max_weight?: number | null;
+            /** Cash Floor */
+            cash_floor?: number | null;
+            /**
+             * Max Adv20 Fraction
+             * @default 0.05
+             */
+            max_adv20_fraction: number | null;
+            /** Commission Rate */
+            commission_rate?: number | null;
+            /** Commission Min */
+            commission_min?: number | null;
+            /** Slippage */
+            slippage?: number | null;
+            /**
+             * Stress Slippages
+             * @default [
+             *       0.001,
+             *       0.0025,
+             *       0.005
+             *     ]
+             */
+            stress_slippages: number[];
+            /**
+             * Min Coverage
+             * @default 0.8
+             */
+            min_coverage: number;
+            /**
+             * Min Trades
+             * @default 30
+             */
+            min_trades: number;
+            /**
+             * Actions
+             * @default [
+             *       "disposition",
+             *       "priority"
+             *     ]
+             */
+            actions: string[];
+            /**
+             * Request Key
+             * Format: uuid
+             */
+            request_key: string;
+        };
+        /** ExperimentOrders */
+        ExperimentOrders: {
+            /** Total */
+            total: number;
+            /** Page */
+            page: number;
+            /** Page Size */
+            page_size: number;
+            /** Orders */
+            orders: components["schemas"]["OrderOut"][];
+        };
+        /** ExperimentReport */
+        ExperimentReport: {
+            /** Contract Hash */
+            contract_hash: string;
+            /** Sessions */
+            sessions: number;
+            /** Decision Days */
+            decision_days: number;
+            /**
+             * Read From
+             * Format: date
+             */
+            read_from: string;
+            /** Folds */
+            folds: components["schemas"]["FoldOut"][];
+            /** Models */
+            models: components["schemas"]["ModelReport"][];
+            benchmarks: components["schemas"]["Benchmarks"];
+            /** Replays */
+            replays: components["schemas"]["ReplaySummary"][];
+            evidence: components["schemas"]["Evidence"];
+            /** Warnings */
+            warnings: string[];
+            /** Timings */
+            timings: {
+                [key: string]: unknown;
+            };
+        };
+        /** ExperimentRetryIn */
+        ExperimentRetryIn: {
+            /**
+             * Request Key
+             * Format: uuid
+             */
+            request_key: string;
+        };
+        /** ExperimentRules */
+        ExperimentRules: {
+            /** Initial Cash */
+            initial_cash: string;
+            /** Max Positions */
+            max_positions: number;
+            /** Max Weight */
+            max_weight: string;
+            /** Cash Floor */
+            cash_floor: string;
+            /** Max Adv20 Fraction */
+            max_adv20_fraction?: string | null;
+        };
+        /** ExperimentSummary */
+        ExperimentSummary: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "queued" | "running" | "completed" | "failed";
+            /** Created At */
+            created_at: string;
+            /** Finished At */
+            finished_at: string | null;
+            /** Retry Of */
+            retry_of: string | null;
+            /** Error */
+            error: string | null;
+            /** Contract Hash */
+            contract_hash: string;
+            /** Evidence Status */
+            evidence_status: ("exploratory" | "insufficient_evidence") | null;
+            /**
+             * Test From
+             * Format: date
+             */
+            test_from: string;
+            /**
+             * Test To
+             * Format: date
+             */
+            test_to: string;
+            /** Trainer */
+            trainer: string;
+            /** Baselines */
+            baselines: string[];
+            /** Source Account Id */
+            source_account_id: number | null;
+        };
+        /** FeaturesOut */
+        FeaturesOut: {
+            /** Version */
+            version: string;
+            /** Names */
+            names: string[];
+        };
         /**
          * FiguresOut
          * @description Spec §7.4. Dividends and tax are not included.
@@ -1017,10 +1767,152 @@ export interface components {
             /** Excess Annualised Return */
             excess_annualised_return: number | null;
         };
+        /** FillRateOut */
+        FillRateOut: {
+            /** Filled */
+            filled: number;
+            /** Expired */
+            expired: number;
+            /** Rate */
+            rate: number | null;
+            /** Expired Reasons */
+            expired_reasons: {
+                [key: string]: number;
+            };
+            /** Skipped Reasons */
+            skipped_reasons: {
+                [key: string]: number;
+            };
+        };
+        /** FoldDiagnostics */
+        FoldDiagnostics: {
+            /** Decision Days */
+            decision_days: number;
+            /** Unavailable Days */
+            unavailable_days: number;
+            /** Ic Days */
+            ic_days: number;
+            /** Ic Mean */
+            ic_mean: number | null;
+            /** Ic Std */
+            ic_std: number | null;
+            /** Coverage Mean */
+            coverage_mean: number | null;
+            /** Coverage Min */
+            coverage_min: number | null;
+            /** Fold */
+            fold: number;
+        };
+        /** FoldOut */
+        FoldOut: {
+            /** Number */
+            number: number;
+            /**
+             * Train From
+             * Format: date
+             */
+            train_from: string;
+            /**
+             * Train To
+             * Format: date
+             */
+            train_to: string;
+            /**
+             * Test From
+             * Format: date
+             */
+            test_from: string;
+            /**
+             * Test To
+             * Format: date
+             */
+            test_to: string;
+            /** Viewed */
+            viewed: boolean;
+        };
+        /** FoldPeriod */
+        FoldPeriod: {
+            /**
+             * Start
+             * Format: date
+             */
+            start: string;
+            /**
+             * End
+             * Format: date
+             */
+            end: string;
+            /** Sessions */
+            sessions: number;
+            /** Net Return */
+            net_return: number;
+            /** Topix Return */
+            topix_return: number;
+            /** Excess Return */
+            excess_return: number;
+            /** Fold */
+            fold: number;
+        };
+        /** FoldResultOut */
+        FoldResultOut: {
+            /** Model */
+            model: string;
+            /** Fold */
+            fold: number;
+            /**
+             * Train From
+             * Format: date
+             */
+            train_from: string;
+            /**
+             * Train To
+             * Format: date
+             */
+            train_to: string;
+            /**
+             * Test From
+             * Format: date
+             */
+            test_from: string;
+            /**
+             * Test To
+             * Format: date
+             */
+            test_to: string;
+            /** Samples */
+            samples: number;
+            /** Seconds */
+            seconds: number;
+            artifact: components["schemas"]["ArtifactOut"] | null;
+            /** Artifact Hash */
+            artifact_hash: string | null;
+            /** Error */
+            error: string | null;
+        };
+        /** FoldTerms */
+        FoldTerms: {
+            /** Train Sessions */
+            train_sessions: number;
+            /** Test Sessions */
+            test_sessions: number;
+            /** Expanding */
+            expanding: boolean;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /** HoldingDecision */
+        HoldingDecision: {
+            /** Code */
+            code: string;
+            /** Disposition */
+            disposition: string | null;
+            /** Reason Codes */
+            reason_codes: string[];
+            /** Score */
+            score: number | null;
         };
         /** HoldingOut */
         HoldingOut: {
@@ -1147,6 +2039,43 @@ export interface components {
             /** Value */
             value: number | null;
         };
+        /** Minimums */
+        Minimums: {
+            /** Coverage */
+            coverage: number;
+            /** Trades */
+            trades: number;
+        };
+        /** ModelReport */
+        ModelReport: {
+            /** Key */
+            key: string;
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "model" | "baseline";
+            /** Trainer */
+            trainer: string;
+            /** Params */
+            params: {
+                [key: string]: unknown;
+            };
+            /** Failed Folds */
+            failed_folds: number[];
+            diagnostics: components["schemas"]["Diagnostics"];
+        };
+        /** ModelTerms */
+        ModelTerms: {
+            /** Trainer */
+            trainer: string;
+            /** Params */
+            params: {
+                [key: string]: unknown;
+            };
+            /** Search Budget */
+            search_budget: number;
+        };
         /** NavPointOut */
         NavPointOut: {
             /**
@@ -1232,6 +2161,47 @@ export interface components {
             indicator: string;
             /** Pane */
             pane: string;
+        };
+        /** PolicyTerms */
+        PolicyTerms: {
+            /** Strategy */
+            strategy: string;
+            /**
+             * Anchor
+             * Format: date
+             */
+            anchor: string;
+            /** Rebalance Sessions */
+            rebalance_sessions: number;
+            /** Max Holding Sessions */
+            max_holding_sessions: number;
+            /** Warmup Sessions */
+            warmup_sessions: number;
+            /** Missing Scores */
+            missing_scores: string;
+            /** Score Missing */
+            score_missing: string;
+        };
+        /** PoolPeriod */
+        PoolPeriod: {
+            /**
+             * Date
+             * Format: date
+             */
+            date: string;
+            /** Codes */
+            codes: number;
+            /** Mean Return */
+            mean_return: number;
+        };
+        /** RankedScore */
+        RankedScore: {
+            /** Code */
+            code: string;
+            /** Score */
+            score: number;
+            /** Rank */
+            rank: number;
         };
         /**
          * Refusal
@@ -1322,6 +2292,134 @@ export interface components {
             /** Full Min Closes */
             full_min_closes: number;
             formulas: components["schemas"]["RegimeFormulas"];
+        };
+        /** ReplayDetail */
+        ReplayDetail: {
+            /** Position */
+            position: number;
+            /** Model */
+            model: string;
+            /**
+             * Scenario
+             * @enum {string}
+             */
+            scenario: "base" | "stress";
+            costs: components["schemas"]["ExperimentCosts"];
+            result: components["schemas"]["ReplayResult"];
+        };
+        /** ReplayHolding */
+        ReplayHolding: {
+            /** Code */
+            code: string;
+            /** Quantity */
+            quantity: number;
+            /**
+             * Opened On
+             * Format: date
+             */
+            opened_on: string;
+            /** Cost */
+            cost: number;
+            /** Close */
+            close: number;
+            /** Value */
+            value: number;
+        };
+        /**
+         * ReplayMetrics
+         * @description Costs included; dividends and tax not.
+         */
+        ReplayMetrics: {
+            /** Sessions */
+            sessions: number;
+            /** Total Return */
+            total_return: number;
+            /** Topix Return */
+            topix_return: number;
+            /** Excess Return */
+            excess_return: number;
+            /** Annualised Return */
+            annualised_return: number | null;
+            /** Excess Annualised Return */
+            excess_annualised_return: number | null;
+            /** Max Drawdown */
+            max_drawdown: number;
+            /** Sharpe */
+            sharpe: number | null;
+            /** Win Rate */
+            win_rate: number | null;
+            /** Closed Positions */
+            closed_positions: number;
+            /** Average Holding Sessions */
+            average_holding_sessions: number | null;
+            /** Annual Turnover */
+            annual_turnover: number | null;
+            /** Trades */
+            trades: number;
+            /** Fees */
+            fees: number;
+            /** Cash */
+            cash: number;
+            /** Average Cash Share */
+            average_cash_share: number | null;
+            /** Realised Pnl */
+            realised_pnl: number;
+            /** Unrealised Pnl */
+            unrealised_pnl: number;
+            fill_rate: components["schemas"]["FillRateOut"];
+            adv20: components["schemas"]["Adv20Out"];
+        };
+        /** ReplayNavPoint */
+        ReplayNavPoint: {
+            /**
+             * Date
+             * Format: date
+             */
+            date: string;
+            /** Nav */
+            nav: number;
+            /** Nav Curve */
+            nav_curve: number;
+            /** Topix Curve */
+            topix_curve: number;
+            /** Drawdown */
+            drawdown: number;
+            /** Cash */
+            cash: number;
+        };
+        /** ReplayResult */
+        ReplayResult: {
+            /** Nav */
+            nav: components["schemas"]["ReplayNavPoint"][];
+            /** Holdings */
+            holdings: components["schemas"]["ReplayHolding"][];
+            /** Pending */
+            pending: components["schemas"]["OrderOut"][];
+            /** Warnings */
+            warnings: string[];
+            metrics: components["schemas"]["ReplayMetrics"];
+            /** Folds */
+            folds: (components["schemas"]["FoldPeriod"] | null)[];
+            /** Years */
+            years: components["schemas"]["YearPeriod"][];
+        };
+        /** ReplaySummary */
+        ReplaySummary: {
+            /** Position */
+            position: number;
+            /** Model */
+            model: string;
+            /**
+             * Scenario
+             * @enum {string}
+             */
+            scenario: "base" | "stress";
+            costs: components["schemas"]["ExperimentCosts"];
+            metrics: components["schemas"]["ReplayMetrics"];
+            /** Folds */
+            folds: (components["schemas"]["FoldPeriod"] | null)[];
+            /** Years */
+            years: components["schemas"]["YearPeriod"][];
         };
         /** ResearchAccepted */
         ResearchAccepted: {
@@ -1638,6 +2736,33 @@ export interface components {
             /** Job Id */
             job_id: string;
         };
+        /** TargetLine */
+        TargetLine: {
+            /** Code */
+            code: string;
+            /** Quantity */
+            quantity: number;
+        };
+        /** TaskOut */
+        TaskOut: {
+            /** Name */
+            name: string;
+            /** Decision */
+            decision: string;
+            /** Label */
+            label: string;
+            /** Horizon */
+            horizon: number;
+            /** Label Sessions */
+            label_sessions: number;
+        };
+        /** TopixBenchmark */
+        TopixBenchmark: {
+            /** Basis */
+            basis: string;
+            /** Total Return */
+            total_return: number;
+        };
         /**
          * UniverseRule
          * @description Where a universe's codes come from (spec §6.1). Each strategy
@@ -1704,6 +2829,29 @@ export interface components {
             end_date: string;
             /** Total Return */
             total_return: number;
+        };
+        /** YearPeriod */
+        YearPeriod: {
+            /**
+             * Start
+             * Format: date
+             */
+            start: string;
+            /**
+             * End
+             * Format: date
+             */
+            end: string;
+            /** Sessions */
+            sessions: number;
+            /** Net Return */
+            net_return: number;
+            /** Topix Return */
+            topix_return: number;
+            /** Excess Return */
+            excess_return: number;
+            /** Year */
+            year: number;
         };
     };
     responses: never;
@@ -2755,6 +3903,419 @@ export interface operations {
             };
             /** @description Precondition Failed */
             412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+        };
+    };
+    defaults_api_experiments_defaults_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExperimentDefaults"];
+                };
+            };
+        };
+    };
+    history_api_experiments_get: {
+        parameters: {
+            query?: {
+                page?: number;
+                page_size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExperimentHistory"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    submit_api_experiments_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExperimentIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExperimentAccepted"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+        };
+    };
+    detail_api_experiments__experiment_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                experiment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExperimentDetail"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+        };
+    };
+    retry_api_experiments__experiment_id__retry_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                experiment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExperimentRetryIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExperimentAccepted"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+        };
+    };
+    replay_api_experiments__experiment_id__replays__position__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                experiment_id: string;
+                position: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReplayDetail"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+        };
+    };
+    orders_api_experiments__experiment_id__replays__position__orders_get: {
+        parameters: {
+            query?: {
+                page?: number;
+                page_size?: number;
+            };
+            header?: never;
+            path: {
+                experiment_id: string;
+                position: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExperimentOrders"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+        };
+    };
+    days_api_experiments__experiment_id__replays__position__days_get: {
+        parameters: {
+            query?: {
+                page?: number;
+                page_size?: number;
+                decision_only?: boolean;
+            };
+            header?: never;
+            path: {
+                experiment_id: string;
+                position: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExperimentDays"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+        };
+    };
+    scores_api_experiments__experiment_id__scores__model___day__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                experiment_id: string;
+                model: string;
+                day: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DayScores"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+            /** @description Conflict */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
