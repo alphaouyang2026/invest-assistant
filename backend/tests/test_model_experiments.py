@@ -13,7 +13,7 @@ from uuid import uuid4
 
 import pandas as pd
 import pytest
-from sqlalchemy import func, select, text, update
+from sqlalchemy import func, insert, select, text, update
 
 from app.accounts import Accounts, AccountSpec, Costs, PortfolioRules
 from app.accounts import tables as account_tables
@@ -58,6 +58,23 @@ class Stub:
 
 def with_stub(stub: Stub):
     return lambda name, params: stub if name == stub.name else build_trainer(name, params)
+
+
+class Recording:
+    """A real trainer that also notes each session's features it scores."""
+
+    def __init__(self, trainer) -> None:
+        self.trainer = trainer
+        self.name, self.params = trainer.name, trainer.params
+        self.scored: dict[date, pd.DataFrame] = {}
+
+    def fit(self, training, cutoff):
+        return self.trainer.fit(training, cutoff)
+
+    def predict(self, artifact, features):
+        (day,) = set(features.index.get_level_values("as_of"))
+        self.scored[day] = features
+        return self.trainer.predict(artifact, features)
 
 
 @pytest.fixture
@@ -245,6 +262,54 @@ def test_later_market_changes_change_neither_earlier_scores_nor_earlier_decision
                  [(o["kind"], o["code"], o["planned_quantity"], o["reason_codes"]) for o in d["orders"]])
                 for d in days if date.fromisoformat(d["date"]) <= after_day]
     assert decided(all_days(env.experiments, before["id"])) == decided(all_days(env.experiments, after["id"]))
+
+
+def test_a_later_roster_change_leaves_earlier_universes_features_scores_and_decisions_alone(env):
+    """CODES[0] leaves Prime after S112, inside fold 2's test stretch: from
+    S113 its market segment period is Standard's. Registered again, the
+    experiment's universe, features, scores and day-by-day decisions up to
+    S112 are what they were; from S113 the code is no longer in the
+    universe."""
+    def recorded_run():
+        made = {}
+
+        def trainers(name, params):
+            made[name] = Recording(build_trainer(name, params))
+            return made[name]
+
+        found = run(env, ModelExperiments(env.engine, env.market, env.jobs, trainers=trainers))
+        return found, made["ridge_v1"].scored  # the last one made is the one that scored
+
+    before, seen_before = recorded_run()
+    cut, leaver = S[112], CODES[0]
+    periods = market_tables.segment_periods
+    with env.engine.begin() as con:
+        con.execute(update(periods).where(periods.c.code == leaver, periods.c.valid_to.is_(None))
+                    .values(valid_to=cut))
+        con.execute(insert(periods).values(code=leaver, valid_from=S[113], valid_to=None, market_code="0112",
+                                           product_category="011", sector33="3700"))
+    after, seen_after = recorded_run()
+    assert after["input_fingerprint"]["sha256"] != before["input_fingerprint"]["sha256"]
+
+    earlier = [day for day in S[100:130] if day <= cut]
+    for day in earlier:  # the features each session was scored on, row for row
+        pd.testing.assert_frame_equal(seen_before[day], seen_after[day])
+        assert leaver in seen_after[day].index.get_level_values("code")
+    assert all(leaver not in seen_after[day].index.get_level_values("code") for day in S[113:130])
+
+    old, new = stored_scores(env.engine, before["id"]), stored_scores(env.engine, after["id"])
+    assert {d: s for d, s in old.items() if d <= cut} == {d: s for d, s in new.items() if d <= cut}
+    assert all(leaver not in new[d] for d in new if d > cut)
+
+    def decided(days):
+        return [(d["date"], d["universe"], d["scored"], d["holdings_decisions"], d["target"], d["candidates"],
+                 [(o["kind"], o["code"], o["planned_quantity"], o["reason_codes"]) for o in d["orders"]])
+                for d in days if date.fromisoformat(d["date"]) <= cut]
+    for position in (1, 5):  # the model's base replay and the baseline's
+        assert decided(all_days(env.experiments, before["id"], position)) == decided(
+            all_days(env.experiments, after["id"], position))
+    later = [d for d in all_days(env.experiments, after["id"]) if date.fromisoformat(d["date"]) > cut]
+    assert {d["universe"] for d in later} == {len(CODES) - 1}
 
 
 def test_the_frozen_scores_through_a_paper_account_trade_as_the_experiment_replayed(env):
