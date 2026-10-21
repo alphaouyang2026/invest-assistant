@@ -1,7 +1,8 @@
 """Model experiments (06a): the frozen contract, each fold's model artifact,
 the out-of-fold scores kept on the decision days, and every replay's
 results, ledger and day-by-day decisions — isolated from paper accounts and
-manual research."""
+manual research. Each attempt also keeps what it read and when, and what
+kind of failure stopped it: facts of the attempt, beside its contract."""
 from alembic import op
 import sqlalchemy as sa
 
@@ -29,6 +30,8 @@ def upgrade() -> None:
         sa.Column("error", sa.Text),
         sa.Column("evidence_status", sa.Text),
         sa.Column("report", sa.Text),
+        sa.Column("data_read", sa.Text),
+        sa.Column("error_code", sa.Text),
     )
     op.create_table(
         "model_experiment_folds",

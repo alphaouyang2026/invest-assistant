@@ -1,5 +1,5 @@
-"""A model experiment's records (migrations 0008 and 0009), isolated from
-paper accounts and manual research: nothing here is a foreign key to either.
+"""A model experiment's records (migration 0008), isolated from paper
+accounts and manual research: nothing here is a foreign key to either.
 
 - experiments: the frozen contract and its hash, the job's status, the
   research input fingerprint, what it read and when, the code version, the
@@ -32,7 +32,7 @@ experiments = Table(
     Column("error", Text),
     Column("evidence_status", Text),  # the report's, for the history
     Column("report", JsonText),
-    Column("data_read", JsonText),    # what the attempt read and when (migration 0009)
+    Column("data_read", JsonText),    # what the attempt read and when
     Column("error_code", Text),       # what kind of failure: missing_data, input_changed, interrupted, error
 )
 folds = Table(
