@@ -8,9 +8,7 @@ from __future__ import annotations
 
 import math
 import uuid
-from dataclasses import asdict
 from datetime import date
-from decimal import Decimal
 
 import pandas as pd
 from sqlalchemy import Connection, insert, select, update, func
@@ -18,9 +16,10 @@ from sqlalchemy import Connection, insert, select, update, func
 from app.accounts import tables
 from app.accounts import research_tables as db
 from app.accounts.accounts import Prices, trading_terms
-from app.accounts.records import FILLED
+from app.accounts.records import record_json
 from app.accounts.replay import replay_range
-from app.accounts.research_jobs import (
+from app.accounts.replay_metrics import end_state
+from app.research_jobs import (
     COMPLETED, FAILED, QUEUED, RUNNING, UNFINISHED, code_version, find_request, now, plain_json, submit_once,
 )
 from app.jobs import Job, JobOutcome, Progress
@@ -188,26 +187,12 @@ class ResearchRuns:
 
             replay = replay_range(prices, strategy, universes, days, calendar, rules, costs, initial, topix,
                                   on_session=on_session)
-            ledger, warnings = replay.ledger, replay.warnings
-            points = [point.as_json() for point in replay.points]
-            nav, closes = replay.points[-1].nav, prices.closes(days[-1], ledger.positions)
-            holdings = [{"code": p.code, "quantity": p.quantity, "opened_on": p.opened_on.isoformat(),
-                         "cost": float(p.cost), "close": float(closes[p.code]),
-                         "value": float(p.quantity * closes[p.code])} for p in ledger.positions.values()]
-            unrealised = sum((p.quantity * closes[p.code] - p.cost for p in ledger.positions.values()), Decimal(0))
-            total = points[-1]["nav_curve"] - 1
-            baseline = points[-1]["topix_curve"] - 1
-            result = {"nav": points, "holdings": holdings,
-                      "pending": [_record(r) for r in ledger.pending], "warnings": sorted(set(warnings)),
-                      "total_return": total, "topix_return": baseline, "excess_return": total - baseline,
-                      "max_drawdown": max(p["drawdown"] for p in points),
-                      "trades": sum(r.status == FILLED and r.kind in ("buy", "sell") for r in ledger.records),
-                      "fees": float(sum((r.fees for r in ledger.records), Decimal(0))),
-                      "cash": float(ledger.cash), "unrealised_pnl": float(unrealised),
-                      "realised_pnl": float(nav - initial - unrealised)}
+            ledger = replay.ledger
+            result = {"nav": [point.as_json() for point in replay.points],
+                      **end_state(replay, prices.closes(days[-1], ledger.positions))}
             with self._engine.begin() as con:
                 if ledger.records:
-                    con.execute(insert(db.orders), [{"run_id": run_id, "sequence": r.id, "record": _record(r)}
+                    con.execute(insert(db.orders), [{"run_id": run_id, "sequence": r.id, "record": record_json(r)}
                                                     for r in ledger.records])
                 con.execute(update(db.runs).where(db.runs.c.id == run_id).values(
                     status=COMPLETED, result=result, finished_at=now()))
@@ -250,8 +235,3 @@ def _named(row) -> dict:
     run["input_fingerprint"] = run.pop("input_identity")
     return run
 
-
-def _record(record):
-    return {**plain_json(asdict(record)), "name": None, "fees": float(record.fees),
-            "fill_price": None if record.fill_price is None else float(record.fill_price),
-            "cash_delta": float(record.cash_delta)}

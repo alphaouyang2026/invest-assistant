@@ -32,12 +32,12 @@ from sqlalchemy import func, insert, select, update
 
 from app.accounts.accounts import Prices, trading_terms
 from app.accounts import experiment_inputs
-from app.accounts.records import BUY, FILLED, SELL
+from app.accounts.records import BUY, FILLED, SELL, record_json
 from app.accounts.replay import replay_range
-from app.accounts.research_jobs import (
+from app.research_jobs import (
     COMPLETED, FAILED, QUEUED, RUNNING, UNFINISHED, code_version, find_request, now, plain_json, submit_once,
 )
-from app.experiments import contract as terms
+from app.experiments import contract as contracts
 from app.experiments import tables as db
 from app.experiments.decisions import Recorded, day_records
 from app.experiments.features import feature_table, labels, within_universe
@@ -100,7 +100,7 @@ class ModelExperiments:
             with self._engine.begin() as con:
                 con.execute(insert(db.experiments).values(
                     id=experiment_id, request_key=key, request=request, contract=contract,
-                    contract_hash=terms.contract_hash(contract), retry_of=retry_of, status=QUEUED,
+                    contract_hash=contracts.contract_hash(contract), retry_of=retry_of, status=QUEUED,
                     created_at=now(), progress={}, code_version=code_version()))
 
         job = Job("model_experiment", lambda progress: self.execute(
@@ -113,7 +113,7 @@ class ModelExperiments:
         if it names one, and how far history has been seen."""
         source_id = request.get("source_account_id")
         source = None if source_id is None else experiment_inputs.source_terms(self._engine, source_id)
-        return terms.freeze(request, sessions=self._market.calendar().sessions(), source=source,
+        return contracts.freeze(request, sessions=self._market.calendar().sessions(), source=source,
                             viewed_through=self.viewed_through(), trainers=self._trainers)
 
     def viewed_through(self) -> date | None:
@@ -123,12 +123,12 @@ class ModelExperiments:
         seen = [experiment_inputs.viewed_through(self._engine), self._latest_experiment_end()]
         return max((day for day in seen if day is not None), default=None)
 
-    def validate(self, contract: Mapping[str, Any]) -> terms.ExperimentPlan:
+    def validate(self, contract: Mapping[str, Any]) -> contracts.ExperimentPlan:
         """Whether `contract` can run on the data held now — the folds' history,
         its trainers, TOPIX over the test span, the session after it;
         ValueError naming why not. Cheap: the calendar and one TOPIX read."""
         calendar = self._market.calendar()
-        plan = terms.plan(contract, calendar.sessions())
+        plan = contracts.plan(contract, calendar.sessions())
         for model in (contract["model"], *contract["baselines"]):
             self._trainers(model["trainer"], model["params"])
         values = self._market.read([TOPIX], plan.test_days[0], plan.test_days[-1]).wide(EXEC_CLOSE)
@@ -219,17 +219,15 @@ class ModelExperiments:
                     found = prices.adv20(r.signal_date, [r.code]).get(r.code)
                     if found is not None:
                         adv20[(r.signal_date, r.code)] = found
-                figures = replay_figures(replay, initial, plan.folds, cap=rules.max_adv20_fraction, adv20=adv20,
+                figures = replay_figures(replay, plan.folds, cap=rules.max_adv20_fraction, adv20=adv20,
                                          closes=prices.closes(last, replay.ledger.positions))
-                figures["pending"] = [_record(r) for r in replay.ledger.pending]
                 replays.append({"position": position, "model": key, "scenario": scenario,
                                 "costs": {name: str(value) for name, value in asdict(costs).items()},
                                 "result": figures, "records": replay.ledger.records,
                                 # A stress replay differs from its base only in costs: its ledger and
                                 # NAV are kept, its day-by-day decisions are not.
                                 "days": [] if scenario == "stress" else day_records(
-                                    replay, strategy, prices, universes, plan.test_days, plan.decision_days,
-                                    kept[key])})
+                                    replay, strategy, prices, universes, plan.decision_days, kept[key])})
                 timings["replays"].append(perf_counter() - mark)
 
             step({"stage": "reporting"})
@@ -263,7 +261,7 @@ class ModelExperiments:
             ic_days=main["diagnostics"]["ic_days"], trades=base_metrics["trades"],
             min_trades=contract["minimums"]["trades"])
         return plain_json({
-            "contract_hash": terms.contract_hash(contract),
+            "contract_hash": contracts.contract_hash(contract),
             "sessions": len(plan.test_days), "decision_days": len(plan.decision_days),
             "read_from": plan.read_from.isoformat(),
             "folds": [{"number": fold.number, **_fold(fold), "viewed": fold.number in found["viewed_folds"]}
@@ -298,7 +296,7 @@ class ModelExperiments:
                     costs=r["costs"], result=plain_json(r["result"])))
                 if r["records"]:
                     con.execute(insert(db.orders), [{"experiment_id": experiment_id, "position": r["position"],
-                                                     "sequence": record.id, "record": _record(record)}
+                                                     "sequence": record.id, "record": record_json(record)}
                                                     for record in r["records"]])
                 if r["days"]:
                     con.execute(insert(db.days), [{"experiment_id": experiment_id, "position": r["position"],
@@ -459,8 +457,3 @@ def _fold(fold) -> dict:
 def _model_label(model: Mapping[str, Any]) -> str:
     return f"{'主模型' if model['role'] == 'model' else '规则基线'} {model['trainer']}"
 
-
-def _record(record) -> dict:
-    return {**plain_json(asdict(record)), "name": None, "fees": float(record.fees),
-            "fill_price": None if record.fill_price is None else float(record.fill_price),
-            "cash_delta": float(record.cash_delta)}

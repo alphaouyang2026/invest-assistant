@@ -9,9 +9,10 @@ dicts out.
   coverage — codes scored over the day's universe.
 - The benchmarks besides TOPIX: the eligible universe held equally weighted,
   each decision period's label averaged over it — no costs.
-- Each replay's figures: spec §7.4's, the research report's, and the
-  replay metrics (fill rate, cash held, turnover, orders against ADV20,
-  returns by fold and by year).
+- Each replay's figures, all the accounts module's: what it ended with (as
+  a research run's result), spec §7.4's statistics, and the replay metrics
+  (fill rate, cash held, turnover, orders against ADV20, returns by fold
+  and by year).
 - The evidence status: 06a only ever says `exploratory` or
   `insufficient_evidence`, with every reason.
 """
@@ -26,12 +27,11 @@ from typing import Any
 
 import pandas as pd
 
-from app.accounts.records import BUY, FILLED, SELL
 from app.accounts.replay import Replay
 from app.accounts.replay_metrics import (
-    adv20_usage, annual_turnover, average_cash_share, fill_rate, period_returns, yearly_returns,
+    PeriodReturn, adv20_usage, annual_turnover, average_cash_share, end_state, fill_rate, period_returns,
+    replay_statistics, yearly_returns,
 )
-from app.accounts.statistics import statistics
 from app.experiments.features import AS_OF
 from app.experiments.folds import Fold
 from app.market_data.frame import CODE
@@ -115,49 +115,41 @@ def eligible_equal_weight(labels: Mapping[date, pd.Series], universes: Mapping[d
     return {"basis": POOL_BASIS, "periods": periods, "total_return": growth - 1 if periods else None}
 
 
-def replay_figures(replay: Replay, initial: Decimal, folds: Sequence[Fold], *, cap: Decimal | None,
+def replay_figures(replay: Replay, folds: Sequence[Fold], *, cap: Decimal | None,
                    adv20: Mapping[tuple[date, str], Decimal], closes: Mapping[str, Decimal]) -> dict:
-    """A replay's report: its NAV (with the cash) at each close, its end
-    holdings and pending orders, and every figure. `adv20` holds each filled
-    order's ADV20 on its signal day, `closes` the last day's closes of the
-    holdings."""
-    ledger, points = replay.ledger, replay.points
-    records = ledger.records
-    nav = pd.Series([float(p.nav) for p in points], index=[p.day for p in points])
-    topix = pd.Series([p.topix_curve for p in points], index=nav.index)
-    amounts = {kind: sum((r.fill_price * r.filled_quantity for r in records if r.kind == kind and r.status == FILLED),
-                         Decimal(0)) for kind in (BUY, SELL)}
-    figures = statistics(nav, topix, ledger.closed, bought=amounts[BUY], sold=amounts[SELL])
-    last = points[-1]
-    unrealised = sum((p.quantity * closes[p.code] - p.cost for p in ledger.positions.values()), Decimal(0))
-    total, baseline = last.nav_curve - 1, last.topix_curve - 1
+    """A replay's report: its NAV (with the cash) at each close, what it
+    ended with (the accounts module's `end_state`, holdings by code), and
+    every figure. `adv20` holds each filled order's ADV20 on its signal day,
+    `closes` the last day's closes of the holdings."""
+    points, records = replay.points, replay.ledger.records
+    ended = end_state(replay, closes)
+    figures = replay_statistics(replay)
     usage = adv20_usage(records, adv20, cap=cap)
     by_fold = period_returns(points, [(fold.test_from, fold.test_to) for fold in folds])
     metrics = {
         "sessions": len(points),
-        "total_return": total, "topix_return": baseline, "excess_return": total - baseline,
+        **{key: ended[key] for key in ("total_return", "topix_return", "excess_return")},
         "annualised_return": figures.annualised_return, "excess_annualised_return": figures.excess_annualised_return,
-        "max_drawdown": max(p.drawdown for p in points), "sharpe": figures.sharpe,
+        "max_drawdown": ended["max_drawdown"], "sharpe": figures.sharpe,
         "win_rate": figures.win_rate, "closed_positions": figures.closed_positions,
         "average_holding_sessions": figures.average_holding_sessions,
         "annual_turnover": annual_turnover(points, records),
-        "trades": sum(r.status == FILLED and r.kind in (BUY, SELL) for r in records),
-        "fees": float(sum((r.fees for r in records), Decimal(0))),
-        "cash": float(ledger.cash), "average_cash_share": average_cash_share(points),
-        "realised_pnl": float(last.nav - initial - unrealised), "unrealised_pnl": float(unrealised),
+        **{key: ended[key] for key in ("trades", "fees", "cash")},
+        "average_cash_share": average_cash_share(points),
+        **{key: ended[key] for key in ("realised_pnl", "unrealised_pnl")},
         "fill_rate": asdict(fill_rate(records)),
         "adv20": {**asdict(usage), "cap": None if cap is None else float(cap)},
     }
     return {
         "nav": [{**p.as_json(), "cash": float(p.cash)} for p in points],
-        "holdings": [{"code": p.code, "quantity": p.quantity, "opened_on": p.opened_on.isoformat(),
-                      "cost": float(p.cost), "close": float(closes[p.code]),
-                      "value": float(p.quantity * closes[p.code])}
-                     for p in sorted(ledger.positions.values(), key=lambda p: p.code)],
-        "warnings": sorted(set(replay.warnings)),
+        "holdings": sorted(ended["holdings"], key=lambda holding: holding["code"]),
+        "pending": ended["pending"],
+        "warnings": ended["warnings"],
         "metrics": metrics,
-        "folds": [None if r is None else {"fold": fold.number, **_period(r)} for fold, r in zip(folds, by_fold)],
-        "years": [{"year": year, **_period(r)} for year, r in yearly_returns(points).items() if r is not None],
+        "folds": [None if found is None else {"fold": fold.number, **_period_json(found)}
+                  for fold, found in zip(folds, by_fold)],
+        "years": [{"year": year, **_period_json(found)} for year, found in yearly_returns(points).items()
+                  if found is not None],
     }
 
 
@@ -210,10 +202,11 @@ def _fold_of(day: date, folds: Sequence[Fold]) -> int | None:
     return next((fold.number for fold in folds if fold.test_from <= day <= fold.test_to), None)
 
 
-def _period(found) -> dict:
-    return {"start": found.start.isoformat(), "end": found.end.isoformat(), "sessions": found.sessions,
-            "net_return": found.net_return, "topix_return": found.topix_return,
-            "excess_return": found.net_return - found.topix_return}
+def _period_json(period: PeriodReturn) -> dict:
+    """A fold's or a year's return, JSON-ready, with its excess over TOPIX."""
+    return {"start": period.start.isoformat(), "end": period.end.isoformat(), "sessions": period.sessions,
+            "net_return": period.net_return, "topix_return": period.topix_return,
+            "excess_return": period.net_return - period.topix_return}
 
 
 def _reason(code: str, message: str) -> dict:

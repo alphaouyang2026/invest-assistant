@@ -1,7 +1,7 @@
 """`replay_range` (spec §7.5) — a whole range on an isolated ledger, one
-`replay_day` a session — and the ADV20 a buy may be capped at: the
-universe's own turnover average (spec §6.1), read from the replay's
-prices."""
+`replay_day` a session — read back a session at a time, and the ADV20 a
+buy may be capped at: the universe's own turnover average (spec §6.1),
+read from the replay's prices."""
 
 from __future__ import annotations
 
@@ -13,8 +13,9 @@ from sqlalchemy import select
 from app.accounts import Accounts, AccountSpec, Costs, PortfolioRules
 from app.accounts import tables
 from app.accounts.accounts import Prices, trading_terms
-from app.accounts.ledger import Ledger
-from app.accounts.replay import replay_range
+from app.accounts.ledger import Ledger, Position
+from app.accounts.records import Record
+from app.accounts.replay import NavPoint, Replay, replay_range
 from app.market_data import EXEC_CLOSE, TOPIX, MarketData
 from app.strategies import Disposition
 from tests.account_market import SESSIONS, Script, synced
@@ -82,6 +83,42 @@ def test_a_cap_is_stored_only_when_set_and_cuts_the_buy_through_the_whole_replay
     assert accounts.report(plain).orders[0].planned_quantity == 900
     assert [(r.code, r.planned_quantity, r.reason) for r in replay.ledger.records] == [
         (r.code, r.planned_quantity, r.reason) for r in accounts.report(capped).orders]
+
+
+def test_each_replayed_day_tells_what_was_planned_what_opened_and_what_the_plan_aims_at() -> None:
+    """S0's close plans three buys: A is placed and fills at S1's open, B the
+    portfolio rules give up on (it was never placed), C is placed but a
+    reverse split at S1's open rounds it to no whole lot. A's split on S2
+    doubles the holding; S2 plans A's sale (it fills on S3) and a buy of E
+    (it expires on S3); S3 plans a buy of F, left pending."""
+    s = SESSIONS
+    initial = Decimal("1000000")
+    records = [
+        Record(id=1, kind="buy", code="A", signal_date=s[0], execution_date=s[1], planned_quantity=100,
+               status="filled", filled_quantity=100, fill_price=Decimal("1000"), cash_delta=Decimal("-100000")),
+        Record(id=2, kind="buy", code="B", signal_date=s[0], execution_date=s[1], status="skipped",
+               outcome_reason="lot_unaffordable"),
+        Record(id=3, kind="buy", code="C", signal_date=s[0], execution_date=s[1], status="skipped",
+               outcome_reason="split_rounding"),
+        Record(id=4, kind="split_adjustment", code="A", signal_date=s[2], execution_date=s[2], status="filled",
+               filled_quantity=100),
+        Record(id=5, kind="sell", code="A", signal_date=s[2], execution_date=s[3], planned_quantity=200,
+               status="filled", filled_quantity=200, fill_price=Decimal("600"), cash_delta=Decimal("120000")),
+        Record(id=6, kind="buy", code="E", signal_date=s[2], execution_date=s[3], planned_quantity=300,
+               status="expired", outcome_reason="limit_up_open"),
+        Record(id=7, kind="buy", code="F", signal_date=s[3], execution_date=s[4], planned_quantity=400),
+    ]
+    cash = [Decimal("1000000"), Decimal("900000"), Decimal("900000"), Decimal("1020000")]
+    points = [NavPoint(day, Decimal("1000000"), money, 1.0, 1.0, 0.0) for day, money in zip(s[:4], cash)]
+
+    days = Replay(Ledger(initial, records), points, []).days()
+
+    assert [d.day for d in days] == s[:4] and [d.cash for d in days] == cash
+    assert [[r.id for r in d.planned] for d in days] == [[1, 2, 3], [], [5, 6], [7]]
+    assert [[r.id for r in d.opened] for d in days] == [[], [1, 3], [4], [5, 6]]
+    assert [[r.id for r in d.given_up()] for d in days] == [[2], [], [], []]
+    assert [d.target() for d in days] == [{"A": 100}, {"A": 100}, {"E": 300}, {"F": 400}]
+    assert days[2].positions == {"A": Position("A", 200, s[1], Decimal("100000"))}
 
 
 UNIVERSE_SESSIONS = [date(2026, 8, 3) + timedelta(days=n) for n in range(25)]

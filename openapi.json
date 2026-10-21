@@ -3584,7 +3584,7 @@
           },
           "holdings": {
             "items": {
-              "$ref": "#/components/schemas/ReplayHolding"
+              "$ref": "#/components/schemas/ResearchHolding"
             },
             "type": "array",
             "title": "Holdings"
@@ -6768,45 +6768,6 @@
         ],
         "title": "ReplayDetail"
       },
-      "ReplayHolding": {
-        "properties": {
-          "code": {
-            "type": "string",
-            "title": "Code"
-          },
-          "quantity": {
-            "type": "integer",
-            "title": "Quantity"
-          },
-          "opened_on": {
-            "type": "string",
-            "format": "date",
-            "title": "Opened On"
-          },
-          "cost": {
-            "type": "number",
-            "title": "Cost"
-          },
-          "close": {
-            "type": "number",
-            "title": "Close"
-          },
-          "value": {
-            "type": "number",
-            "title": "Value"
-          }
-        },
-        "type": "object",
-        "required": [
-          "code",
-          "quantity",
-          "opened_on",
-          "cost",
-          "close",
-          "value"
-        ],
-        "title": "ReplayHolding"
-      },
       "ReplayMetrics": {
         "properties": {
           "sessions": {
@@ -7013,7 +6974,7 @@
           },
           "holdings": {
             "items": {
-              "$ref": "#/components/schemas/ReplayHolding"
+              "$ref": "#/components/schemas/ResearchHolding"
             },
             "type": "array",
             "title": "Holdings"
@@ -7379,7 +7340,8 @@
           "close",
           "value"
         ],
-        "title": "ResearchHolding"
+        "title": "ResearchHolding",
+        "description": "A holding at a replay's close, valued at that day's execution close:\na research run's at its end, a model experiment replay's at its end or\non any of its days. Named for research runs, which had it first."
       },
       "ResearchIn": {
         "properties": {

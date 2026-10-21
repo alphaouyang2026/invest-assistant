@@ -224,6 +224,19 @@ class NavPointOut(BaseModel):
     drawdown: float     # below the highest NAV so far, 0 or more
 
 
+class ResearchHolding(BaseModel):
+    """A holding at a replay's close, valued at that day's execution close:
+    a research run's at its end, a model experiment replay's at its end or
+    on any of its days. Named for research runs, which had it first."""
+
+    code: str
+    quantity: int
+    opened_on: date
+    cost: float   # fees included
+    close: float
+    value: float
+
+
 class SuggestedRulesOut(BaseModel):
     """The portfolio rules the new-account page fills in for a strategy."""
 
