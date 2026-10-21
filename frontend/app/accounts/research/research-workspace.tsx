@@ -7,18 +7,21 @@ import { signedPercent, yen, signedYen } from "@/lib/format";
 import { ORDER_KINDS, ORDER_STATUSES, outcome, reason } from "@/lib/labels";
 import { NavChart } from "../nav-chart";
 import { Pager } from "../../pager";
+import { ExperimentWorkspace } from "./experiment-workspace";
 import { RegimeWorkspace } from "./regime-workspace";
 import { Configuration, message, poll, STATES, unfinished, useSubmit } from "./research-shared";
 
 type Run = Schemas["ResearchDetail"];
-export type Mode = "manual" | "regime";
+export type Mode = "manual" | "regime" | "experiment";
 
-export function ResearchWorkspace({ sourceId = "", initialRun = "", initialMode = "manual", initialDiscovery = "", initialBatch = "" }: {
-  sourceId?: string; initialRun?: string; initialMode?: Mode; initialDiscovery?: string; initialBatch?: string;
+export function ResearchWorkspace({ sourceId = "", initialRun = "", initialMode = "manual", initialDiscovery = "", initialBatch = "",
+  initialExperiment = "" }: {
+  sourceId?: string; initialRun?: string; initialMode?: Mode; initialDiscovery?: string; initialBatch?: string; initialExperiment?: string;
 }) {
   const [mode, setMode] = useState<Mode>(initialMode);
-  // Mounted on first use and then kept, so switching back and forth loses neither side's inputs.
+  // Mounted on first use and then kept, so switching back and forth loses no mode's inputs.
   const [regimeOpened, setRegimeOpened] = useState(initialMode === "regime");
+  const [experimentOpened, setExperimentOpened] = useState(initialMode === "experiment");
   const [sources, setSources] = useState<Schemas["ResearchSource"][]>([]);
   const [loaded, setLoaded] = useState(false);
   const [source, setSource] = useState(sourceId);
@@ -90,8 +93,9 @@ export function ResearchWorkspace({ sourceId = "", initialRun = "", initialMode 
   function switchMode(next: Mode) {
     setMode(next);
     if (next === "regime") setRegimeOpened(true);
+    if (next === "experiment") setExperimentOpened(true);
     const url = new URL(window.location.href);
-    if (next === "regime") url.searchParams.set("mode", "regime"); else url.searchParams.delete("mode");
+    if (next === "manual") url.searchParams.delete("mode"); else url.searchParams.set("mode", next);
     window.history.replaceState(null, "", url);
   }
 
@@ -121,13 +125,17 @@ export function ResearchWorkspace({ sourceId = "", initialRun = "", initialMode 
     <div className="crumb"><Link href="/accounts">账户</Link> / 指定区间回测</div>
     <h1>指定区间策略回测</h1>
     <p className="meta">独立空仓启动，不复制当前持仓、不修改来源账户。收盘信号最早次日开盘成交。</p>
-    <div className="seg" role="group" aria-label="区间选择方式">
+    <div className="seg" role="group" aria-label="研究方式">
       <button type="button" aria-pressed={mode === "manual"} onClick={() => switchMode("manual")}>手动指定区间</button>
       <button type="button" aria-pressed={mode === "regime"} onClick={() => switchMode("regime")}>按市场形势选择区间</button>
+      <button type="button" aria-pressed={mode === "experiment"} onClick={() => switchMode("experiment")}>模型实验</button>
     </div>
-    {loaded && sources.length === 0 && <p>没有技术评级来源账户，请先<Link href="/accounts/new">新建账户</Link>。已有研究仍可查看。</p>}
+    {loaded && sources.length === 0 && mode !== "experiment" && <p>没有技术评级来源账户，请先<Link href="/accounts/new">新建账户</Link>。已有研究仍可查看。</p>}
     {regimeOpened && <div className="stack" hidden={mode !== "regime"}>
       <RegimeWorkspace sources={sources} sourceId={source} initialDiscovery={initialDiscovery} initialBatch={initialBatch} />
+    </div>}
+    {experimentOpened && <div className="stack" hidden={mode !== "experiment"}>
+      <ExperimentWorkspace initialExperiment={initialExperiment} />
     </div>}
     <div className="stack" hidden={mode !== "manual"}>
     {error && <div role="alert">{error} <button className="btn" onClick={() => { setError(null); setVersion(v => v + 1); }}>重新读取结果</button></div>}

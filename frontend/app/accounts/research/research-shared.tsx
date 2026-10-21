@@ -58,6 +58,13 @@ const FIELDS: Record<string, string> = {
   source_account_id: "来源账户", start_date: "起始日", end_date: "结束日", entry_above: "入场阈值", exit_below: "退出阈值",
   search_from: "搜索起始日", search_to: "搜索结束日", trend: "TOPIX 趋势", volatility: "波动水平",
   discovery_id: "区间发现", interval_ids: "所选区间", request_key: "请求标识",
+  // model experiments
+  name: "实验名称", test_from: "测试起点", test_to: "测试终点", train_sessions: "训练窗", test_sessions: "测试段长度",
+  expanding: "扩展训练窗", rebalance_sessions: "调仓间隔", max_holding_sessions: "最长持有", trainer: "主模型",
+  trainer_params: "模型参数", baselines: "规则基线", initial_cash: "初始资金", max_positions: "最多持有只数",
+  max_weight: "单只上限", cash_floor: "现金下限", max_adv20_fraction: "成交额上限", commission_rate: "手续费率",
+  commission_min: "最低手续费", slippage: "每边滑点", stress_slippages: "压力场景滑点", min_coverage: "最低覆盖率",
+  min_trades: "最少成交数", actions: "动作能力",
 };
 
 type FieldError = { type?: string; loc?: unknown[]; msg?: string; ctx?: Record<string, unknown> };

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useId, useState } from "react";
 
 import { api, type Schemas } from "@/lib/api/client";
+import { fraction, percentText } from "@/lib/format";
 import { DEFAULT_STRATEGY, PARAMS, STRATEGIES } from "@/lib/labels";
 
 type StrategyInfo = Schemas["StrategyOut"];
@@ -23,12 +24,6 @@ const RULES = [
 ] as const;
 
 type RuleKey = (typeof RULES)[number]["key"];
-
-/** "0.1" (%) → 0.001, without 0.1 / 100's floating-point tail. */
-const fraction = (text: string) => Number((Number(text) / 100).toPrecision(12));
-
-/** 0.05 → "5" (%), the other way. */
-const percentText = (value: number) => String(Number((value * 100).toPrecision(12)));
 
 export function NewAccount() {
   const router = useRouter();
