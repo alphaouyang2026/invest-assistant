@@ -1,7 +1,13 @@
-"""A replay's report figures beyond spec §7.4's (06a): how many orders
-filled and why the rest did not, cash held, returns by year and by range,
-turnover, and order size against ADV20. Pure — NAV points and records in,
-no database. Dividends and tax are in none of them.
+"""A replay's report figures. Pure — a replay, its NAV points and records
+in, no database. Dividends and tax are in none of them.
+
+- What it ended with (spec §7.5): its holdings and pending orders, its
+  return against TOPIX's, drawdown, trades, fees, cash and profit — a
+  research run's result and each model experiment replay's alike.
+- Spec §7.4's statistics over it.
+- Beyond them (06a): how many orders filled and why the rest did not, cash
+  held, returns by year and by range, turnover, and order size against
+  ADV20.
 """
 
 from __future__ import annotations
@@ -14,9 +20,10 @@ from decimal import Decimal
 
 import pandas as pd
 
-from app.accounts.records import BUY, EXPIRED, FILLED, SELL, SKIPPED, Record
-from app.accounts.replay import NavPoint
-from app.accounts.statistics import SESSIONS_A_YEAR
+from app.accounts.ledger import Position
+from app.accounts.records import BUY, EXPIRED, FILLED, SELL, SKIPPED, Record, record_json
+from app.accounts.replay import NavPoint, Replay
+from app.accounts.statistics import SESSIONS_A_YEAR, Figures, statistics
 
 
 @dataclass(frozen=True)
@@ -50,6 +57,50 @@ class Adv20Usage:
     max: float | None
     over_cap: int          # above the cap; 0 without one
     without_adv20: int     # filled, but no ADV20 known (or none at all)
+
+
+def holding_lines(positions: Iterable[Position], closes: Mapping[str, Decimal]) -> list[dict]:
+    """Each position valued at `closes`, JSON-ready, in the order given:
+    its shares, the session it opened, its cost (fees included), the close
+    and its value."""
+    return [{"code": p.code, "quantity": p.quantity, "opened_on": p.opened_on.isoformat(), "cost": float(p.cost),
+             "close": float(closes[p.code]), "value": float(p.quantity * closes[p.code])} for p in positions]
+
+
+def end_state(replay: Replay, closes: Mapping[str, Decimal]) -> dict:
+    """What `replay` ended with, JSON-ready (spec §7.5): its holdings valued
+    at `closes` (the last day's) in the ledger's order, its pending orders
+    and warnings, its return and TOPIX's from the first close to the last,
+    its deepest drawdown, how many orders filled, the fees, the cash, and
+    its profit — unrealised on what it holds, realised on the rest."""
+    ledger, points = replay.ledger, replay.points
+    last = points[-1]
+    unrealised = sum((p.quantity * closes[p.code] - p.cost for p in ledger.positions.values()), Decimal(0))
+    total, baseline = last.nav_curve - 1, last.topix_curve - 1
+    return {"holdings": holding_lines(ledger.positions.values(), closes),
+            "pending": [record_json(r) for r in ledger.pending], "warnings": sorted(set(replay.warnings)),
+            "total_return": total, "topix_return": baseline, "excess_return": total - baseline,
+            "max_drawdown": max(p.drawdown for p in points),
+            "trades": sum(r.status == FILLED and r.kind in (BUY, SELL) for r in ledger.records),
+            "fees": float(sum((r.fees for r in ledger.records), Decimal(0))),
+            "cash": float(ledger.cash), "unrealised_pnl": float(unrealised),
+            "realised_pnl": float(last.nav - ledger.initial_cash - unrealised)}
+
+
+def replay_statistics(replay: Replay) -> Figures:
+    """Spec §7.4's figures over `replay`: its closes' NAV against TOPIX's,
+    the positions it closed and what it traded."""
+    nav = pd.Series([float(p.nav) for p in replay.points], index=[p.day for p in replay.points])
+    topix = pd.Series([p.topix_curve for p in replay.points], index=nav.index)
+    amounts = traded(replay.ledger.records)
+    return statistics(nav, topix, replay.ledger.closed, bought=amounts[BUY], sold=amounts[SELL])
+
+
+def traded(records: Iterable[Record]) -> dict[str, Decimal]:
+    """What the filled buys and the filled sells came to, slippage included."""
+    records = list(records)
+    return {kind: sum((r.fill_price * r.filled_quantity for r in records if r.kind == kind and r.status == FILLED),
+                      Decimal(0)) for kind in (BUY, SELL)}
 
 
 def fill_rate(records: Iterable[Record], *, kind: str | None = None) -> FillRate:
@@ -99,10 +150,9 @@ def annual_turnover(points: Sequence[NavPoint], records: Iterable[Record]) -> fl
     periods = len(points) - 1
     if periods <= 0:
         return None
-    traded = sum((r.fill_price * r.filled_quantity for r in records
-                  if r.kind in (BUY, SELL) and r.status == FILLED), Decimal(0))
+    amounts = traded(records)
     average = sum((p.nav for p in points), Decimal(0)) / len(points)
-    return float(traded / 2) / float(average) * SESSIONS_A_YEAR / periods
+    return float((amounts[BUY] + amounts[SELL]) / 2) / float(average) * SESSIONS_A_YEAR / periods
 
 
 def adv20_usage(records: Iterable[Record], adv20: Mapping[tuple[date, str], Decimal], *,

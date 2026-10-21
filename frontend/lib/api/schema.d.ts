@@ -1022,6 +1022,39 @@ export interface components {
             /** Untradable On Latest */
             untradable_on_latest: number;
         };
+        /**
+         * DataRead
+         * @description What one attempt read and when: not when each row first became known
+         *     — the database keeps no such time (ADR-0001) — only this read.
+         */
+        DataRead: {
+            /** Observed At */
+            observed_at: string;
+            /** Note */
+            note: string;
+            /** Sources */
+            sources: components["schemas"]["DataSourceRead"][];
+        };
+        /** DataSourceRead */
+        DataSourceRead: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "daily_bars" | "segment_periods" | "topix" | "trading_calendar";
+            /** Name */
+            name: string;
+            /** Start */
+            start: string | null;
+            /** End */
+            end: string | null;
+            /** Rows */
+            rows: number;
+            /** Detail */
+            detail: string;
+            /** Available From */
+            available_from: string;
+        };
         /** DataStatus */
         DataStatus: {
             /** Latest Date */
@@ -1133,7 +1166,7 @@ export interface components {
             /** Target */
             target: components["schemas"]["TargetLine"][];
             /** Holdings */
-            holdings: components["schemas"]["ReplayHolding"][];
+            holdings: components["schemas"]["ResearchHolding"][];
             /** Cash */
             cash: number;
             /** Nav */
@@ -1409,8 +1442,7 @@ export interface components {
             policy: components["schemas"]["PolicyTerms"];
             portfolio_rules: components["schemas"]["ExperimentRules"];
             costs: components["schemas"]["ExperimentCosts"];
-            /** Stress Slippages */
-            stress_slippages: string[];
+            stress: components["schemas"]["StressTerms"];
             model: components["schemas"]["ModelTerms"];
             /** Baselines */
             baselines: components["schemas"]["BaselineTerms"][];
@@ -1501,6 +1533,9 @@ export interface components {
             code_version: string;
             /** Error */
             error: string | null;
+            /** Error Code */
+            error_code: ("missing_data" | "input_changed" | "interrupted" | "error") | null;
+            data_read: components["schemas"]["DataRead"] | null;
             contract: components["schemas"]["ExperimentContract"];
             /** Contract Hash */
             contract_hash: string;
@@ -1604,19 +1639,29 @@ export interface components {
             /** Slippage */
             slippage?: number | null;
             /**
-             * Stress Slippages
+             * Stress Bps
              * @default [
-             *       0.001,
-             *       0.0025,
-             *       0.005
+             *       10,
+             *       25,
+             *       50
              *     ]
              */
-            stress_slippages: number[];
+            stress_bps: number[];
             /**
              * Min Coverage
              * @default 0.8
              */
             min_coverage: number;
+            /**
+             * Min Training Samples
+             * @default 20000
+             */
+            min_training_samples: number;
+            /**
+             * Min Labelled Days
+             * @default 24
+             */
+            min_labelled_days: number;
             /**
              * Min Trades
              * @default 30
@@ -1665,6 +1710,8 @@ export interface components {
             /** Models */
             models: components["schemas"]["ModelReport"][];
             benchmarks: components["schemas"]["Benchmarks"];
+            /** Stress Basis */
+            stress_basis: string;
             /** Replays */
             replays: components["schemas"]["ReplaySummary"][];
             evidence: components["schemas"]["Evidence"];
@@ -1715,6 +1762,8 @@ export interface components {
             retry_of: string | null;
             /** Error */
             error: string | null;
+            /** Error Code */
+            error_code: ("missing_data" | "input_changed" | "interrupted" | "error") | null;
             /** Contract Hash */
             contract_hash: string;
             /** Evidence Status */
@@ -2043,6 +2092,10 @@ export interface components {
         Minimums: {
             /** Coverage */
             coverage: number;
+            /** Training Samples */
+            training_samples: number;
+            /** Labelled Days */
+            labelled_days: number;
             /** Trades */
             trades: number;
         };
@@ -2055,6 +2108,8 @@ export interface components {
              * @enum {string}
              */
             role: "model" | "baseline";
+            /** Label */
+            label: string;
             /** Trainer */
             trainer: string;
             /** Params */
@@ -2307,24 +2362,6 @@ export interface components {
             costs: components["schemas"]["ExperimentCosts"];
             result: components["schemas"]["ReplayResult"];
         };
-        /** ReplayHolding */
-        ReplayHolding: {
-            /** Code */
-            code: string;
-            /** Quantity */
-            quantity: number;
-            /**
-             * Opened On
-             * Format: date
-             */
-            opened_on: string;
-            /** Cost */
-            cost: number;
-            /** Close */
-            close: number;
-            /** Value */
-            value: number;
-        };
         /**
          * ReplayMetrics
          * @description Costs included; dividends and tax not.
@@ -2392,7 +2429,7 @@ export interface components {
             /** Nav */
             nav: components["schemas"]["ReplayNavPoint"][];
             /** Holdings */
-            holdings: components["schemas"]["ReplayHolding"][];
+            holdings: components["schemas"]["ResearchHolding"][];
             /** Pending */
             pending: components["schemas"]["OrderOut"][];
             /** Warnings */
@@ -2409,11 +2446,15 @@ export interface components {
             position: number;
             /** Model */
             model: string;
+            /** Model Label */
+            model_label: string;
             /**
              * Scenario
              * @enum {string}
              */
             scenario: "base" | "stress";
+            /** Extra Bps */
+            extra_bps: number | null;
             costs: components["schemas"]["ExperimentCosts"];
             metrics: components["schemas"]["ReplayMetrics"];
             /** Folds */
@@ -2495,7 +2536,12 @@ export interface components {
             /** Runs */
             runs: components["schemas"]["ResearchSummary"][];
         };
-        /** ResearchHolding */
+        /**
+         * ResearchHolding
+         * @description A holding at a replay's close, valued at that day's execution close:
+         *     a research run's at its end, a model experiment replay's at its end or
+         *     on any of its days. Named for research runs, which had it first.
+         */
         ResearchHolding: {
             /** Code */
             code: string;
@@ -2718,6 +2764,20 @@ export interface components {
             pool_codes: string[];
             warmup_follows: components["schemas"]["WarmupFollowsOut"] | null;
             suggested_rules: components["schemas"]["SuggestedRulesOut"];
+        };
+        /** StressScenario */
+        StressScenario: {
+            /** Extra Bps */
+            extra_bps: string;
+            /** Slippage */
+            slippage: string;
+        };
+        /** StressTerms */
+        StressTerms: {
+            /** Basis */
+            basis: string;
+            /** Scenarios */
+            scenarios: components["schemas"]["StressScenario"][];
         };
         /**
          * SuggestedRulesOut

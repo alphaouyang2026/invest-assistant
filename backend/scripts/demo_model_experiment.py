@@ -13,16 +13,18 @@ copy is never synced either: the app gets a J-Quants client that refuses
 every call, so the evening sync timer cannot fetch into it.
 
 Registers the default contract (Ridge as the smoke-test model, short
-reversal as the rule baseline, ADV20 cap 5%, stress slippage 10/25/50 bps)
-over the test span, prints the job's progress, then JSON lines: wall time
-and the stages' timings; the frozen contract's hash, viewed_through, input
-fingerprint and code identity; the folds and which were already seen; each
-fold's artifact with its hash recomputed from the stored JSON, and the first
-fold's Ridge coefficients; each model's failed folds, Rank IC and coverage;
-the benchmarks; every replay's figures (returns, drawdown, turnover, fill
-rate, cash share, orders against ADV20, by fold and by year); the evidence
-status with its reasons; the base replays' day-by-day decisions tallied,
-and the first two days in full; and each remaining endpoint read once.
+reversal as the rule baseline, ADV20 cap 5%, stress scenarios adding
+10/25/50 bps a side to the base slippage) over the test span, prints the
+job's progress, then JSON lines: wall time and the stages' timings; the
+frozen contract's hash, viewed_through, input fingerprint and code
+identity; what the attempt read and when; the folds and which were already
+seen; each fold's artifact with its hash recomputed from the stored JSON,
+and the first fold's Ridge coefficients; each model's failed folds, Rank IC
+and coverage; the benchmarks; every replay's figures (returns, drawdown,
+turnover, fill rate, cash share, orders against ADV20, by fold and by
+year); the evidence status with its reasons; every replay's day-by-day
+decisions tallied, and the first two days in full; each remaining endpoint
+read once; and how much the experiment's rows take in the copy.
 Removes the copy at the end unless --keep (then it is there for a page
 session: DATABASE_PATH=<copy> and open /accounts/research?mode=experiment).
 """
@@ -116,6 +118,33 @@ def brief(day: dict) -> dict:
             "top_scores": day["top_scores"][:5]}
 
 
+def storage(database: Path, experiment_id: str) -> dict:
+    """The experiment's rows in the copy: how many, and their stored text in bytes, table by table (the
+    days and orders by replay)."""
+    with sqlite3.connect(f"file:{database}?mode=ro", uri=True) as con:
+        def rows(sql: str) -> list:
+            return con.execute(sql, (experiment_id,)).fetchall()
+        found = {
+            "days_by_replay": {position: {"rows": n, "bytes": size} for position, n, size in rows(
+                "SELECT position, count(*), sum(length(record)) FROM model_experiment_days "
+                "WHERE experiment_id = ? GROUP BY position ORDER BY position")},
+            "orders_by_replay": {position: {"rows": n, "bytes": size} for position, n, size in rows(
+                "SELECT position, count(*), sum(length(record)) FROM model_experiment_orders "
+                "WHERE experiment_id = ? GROUP BY position ORDER BY position")},
+            "replays_bytes": rows("SELECT sum(length(result)) FROM model_experiment_replays "
+                                  "WHERE experiment_id = ?")[0][0],
+            "scores_bytes": rows("SELECT sum(length(scores)) FROM model_experiment_scores WHERE experiment_id = ?")[0][0],
+            "folds_bytes": rows("SELECT sum(length(artifact)) FROM model_experiment_folds WHERE experiment_id = ?")[0][0],
+            "experiment_bytes": rows("SELECT length(contract) + length(report) + length(data_read) "
+                                     "FROM model_experiments WHERE id = ?")[0][0],
+        }
+    found["days_bytes"] = sum(part["bytes"] for part in found["days_by_replay"].values())
+    found["orders_bytes"] = sum(part["bytes"] for part in found["orders_by_replay"].values())
+    found["total_bytes"] = sum(found[key] for key in ("days_bytes", "orders_bytes", "replays_bytes", "scores_bytes",
+                                                      "folds_bytes", "experiment_bytes"))
+    return found
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("source", type=Path)
@@ -169,11 +198,12 @@ def main():
                   "policy": {k: contract["policy"][k] for k in ("strategy", "anchor", "rebalance_sessions",
                                                                  "max_holding_sessions")},
                   "portfolio_rules": contract["portfolio_rules"], "costs": contract["costs"],
-                  "stress_slippages": contract["stress_slippages"], "model": contract["model"],
+                  "stress": contract["stress"], "model": contract["model"],
                   "baselines": contract["baselines"], "minimums": contract["minimums"],
                   "code_version": detail["code_version"],
                   "input_fingerprint": {k: detail["input_fingerprint"][k] for k in ("sha256", "from", "through",
                                                                                     "rows")}})
+            show({"data_read": detail["data_read"]})
             show({"sessions": report["sessions"], "decision_days": report["decision_days"],
                   "read_from": report["read_from"],
                   "folds": [[f["number"], f["train_from"], f["train_to"], f["test_from"], f["test_to"], f["viewed"]]
@@ -201,7 +231,8 @@ def main():
 
             for model in report["models"]:
                 d = model["diagnostics"]
-                show({"model": model["key"], "trainer": model["trainer"], "failed_folds": model["failed_folds"],
+                show({"model": model["key"], "label": model["label"], "trainer": model["trainer"],
+                      "failed_folds": model["failed_folds"],
                       **{k: d[k] for k in ("decision_days", "unavailable_days", "ic_days", "ic_mean", "ic_std",
                                            "coverage_mean", "coverage_min")},
                       "ic_by_fold": [[f["fold"], f["ic_mean"]] for f in d["folds"]]})
@@ -209,17 +240,16 @@ def main():
             show({"topix_price": report["benchmarks"]["topix_price"]["total_return"],
                   "eligible_equal_weight": pool["total_return"], "pool_periods": len(pool["periods"])})
             for replay in report["replays"]:
-                show({"replay": replay["position"], "model": replay["model"], "scenario": replay["scenario"],
+                show({"replay": replay["position"], "model": replay["model"], "label": replay["model_label"],
+                      "scenario": replay["scenario"], "extra_bps": replay["extra_bps"],
                       "slippage": replay["costs"]["slippage"], **summary(replay["metrics"]),
                       "folds": [None if f is None else [f["fold"], f["net_return"], f["excess_return"]]
                                 for f in replay["folds"]],
                       "years": [[y["year"], y["net_return"], y["excess_return"]] for y in replay["years"]]})
             show({"evidence": report["evidence"], "warnings": report["warnings"][:10]})
 
-            # The day-by-day decisions of each base replay, then the first two days in full.
+            # The day-by-day decisions of every replay, stress ones too, then the first two days in full.
             for replay in report["replays"]:
-                if replay["scenario"] != "base":
-                    continue
                 days = every_day(client, f"{base}/replays/{replay['position']}")
                 show({"replay": replay["position"], "model": replay["model"], "day_by_day": tally(days)})
                 if replay["position"] == 1:
@@ -229,12 +259,13 @@ def main():
             stress = next(r["position"] for r in report["replays"] if r["scenario"] == "stress")
             first_day = report["models"][0]["diagnostics"]["days"][0]["date"]
             for path, expected in ((f"{base}/replays/1", 200), (f"{base}/replays/1/orders?page_size=5", 200),
-                                   (f"{base}/replays/{stress}/days", 404),
+                                   (f"{base}/replays/{stress}/days", 200),
                                    (f"{base}/scores/model/{first_day}", 200), ("/api/experiments", 200)):
                 found = client.get(path)
                 assert found.status_code == expected, (path, found.status_code, found.text[:500])
                 show({"get": path, "status": found.status_code, "bytes": len(found.content)})
             show({"orders_total": client.get(f"{base}/replays/1/orders?page_size=1").json()["total"]})
+            show({"storage": storage(target, experiment_id)})
     finally:
         if args.keep:
             show({"kept": str(target)})

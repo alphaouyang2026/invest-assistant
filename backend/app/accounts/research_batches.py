@@ -19,7 +19,7 @@ from sqlalchemy import Engine, func, insert, select
 
 from app.accounts import research_tables as db
 from app.accounts.research import ResearchRuns
-from app.accounts.research_jobs import (
+from app.research_jobs import (
     COMPLETED, FAILED, QUEUED, RUNNING, UNFINISHED, KEY_REUSED, RunStatus, code_version, find_request, now,
     plain_json, submit_once,
 )

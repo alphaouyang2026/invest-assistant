@@ -10,7 +10,7 @@ from decimal import ROUND_FLOOR, Decimal
 
 from app.accounts.ledger import Ledger
 from app.accounts.records import (
-    BUY, DELISTING_SETTLEMENT, EXPIRED, FILLED, SELL, SKIPPED, SPLIT_ADJUSTMENT, Record,
+    BUY, DELISTING_SETTLEMENT, EXPIRED, FILLED, SELL, SKIPPED, SPLIT_ADJUSTMENT, SPLIT_ROUNDING, Record,
 )
 
 LOT = 100
@@ -86,7 +86,7 @@ def corporate_actions(ledger: Ledger, session: Session) -> tuple[list[Record], l
             lots = (Decimal(order.planned_quantity) / bar.adjustment_factor / LOT).to_integral_value(rounding=ROUND_FLOOR)
             quantity = int(lots) * LOT
             records.append(replace(order, planned_quantity=quantity) if quantity else
-                           replace(order, planned_quantity=0, status=SKIPPED, outcome_reason="split_rounding"))
+                           replace(order, planned_quantity=0, status=SKIPPED, outcome_reason=SPLIT_ROUNDING))
 
     for code in sorted(session.delisted & ledger.positions.keys()):
         position, last_close = ledger.positions[code], session.previous_closes[code]

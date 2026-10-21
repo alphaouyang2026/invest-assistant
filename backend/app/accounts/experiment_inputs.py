@@ -11,16 +11,14 @@ from datetime import date
 from sqlalchemy import Engine, func, select
 
 from app.accounts import research_tables, tables
-from app.accounts.research_jobs import COMPLETED
-
-TERMS = ("initial_cash", "max_positions", "max_weight", "cash_floor", "commission_rate", "commission_min",
-         "slippage")
+from app.research_jobs import COMPLETED
 
 
 def source_terms(engine: Engine, account_id: int) -> dict:
-    """The account's initial capital, portfolio rules and costs under the
-    names of `TERMS`, as stored (decimal strings); LookupError if there is
-    no such account."""
+    """The account's initial capital, portfolio rules and costs, as stored
+    (decimal strings): `initial_cash`, `max_positions`, `max_weight`,
+    `cash_floor`, `commission_rate`, `commission_min`, `slippage`;
+    LookupError if there is no such account."""
     with engine.connect() as con:
         row = con.execute(select(tables.paper_accounts.c.portfolio_rules, tables.paper_accounts.c.costs)
                           .where(tables.paper_accounts.c.id == account_id)).one_or_none()

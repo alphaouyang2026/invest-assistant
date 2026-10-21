@@ -11,8 +11,8 @@ from pydantic import BaseModel, Field
 
 from app.accounts.research import RESEARCH_STRATEGY
 from app.accounts.research_batches import StaleInput
-from app.accounts.research_jobs import RunStatus
-from app.api.schemas import NavPointOut, OrderOut, Refusal
+from app.research_jobs import RunStatus
+from app.api.schemas import NavPointOut, OrderOut, Refusal, ResearchHolding
 from app.jobs import JobsBusy
 from app.strategies import STRATEGY_DEFAULTS
 
@@ -80,15 +80,6 @@ class ResearchSource(BaseModel):
     id: int
     name: str
     config: ResearchConfig
-
-
-class ResearchHolding(BaseModel):
-    code: str
-    quantity: int
-    opened_on: date
-    cost: float
-    close: float
-    value: float
 
 
 class ResearchResult(BaseModel):

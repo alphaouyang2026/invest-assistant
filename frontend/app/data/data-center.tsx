@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { api, type Schemas } from "@/lib/api/client";
-import { displayCode } from "@/lib/format";
+import { displayCode, minute } from "@/lib/format";
 
 type Status = Schemas["DataStatus"];
 type Quality = Schemas["DataQuality"];
@@ -23,7 +23,6 @@ const KIND_LABELS: Record<string, string> = {
 const GAPS_SHOWN = 20;
 
 const count = (n: number) => n.toLocaleString("en-US");
-const minute = (iso: string) => iso.slice(0, 16).replace("T", " ");
 
 export function DataCenter({ pollMs = 2000 }: { pollMs?: number }) {
   const [status, setStatus] = useState<Status | null>(null);

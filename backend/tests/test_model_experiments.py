@@ -13,7 +13,7 @@ from uuid import uuid4
 
 import pandas as pd
 import pytest
-from sqlalchemy import func, select, text, update
+from sqlalchemy import func, insert, select, text, update
 
 from app.accounts import Accounts, AccountSpec, Costs, PortfolioRules
 from app.accounts import tables as account_tables
@@ -22,6 +22,7 @@ from app.experiments import service as service_module
 from app.experiments import tables as db
 from app.experiments.service import ModelExperiments
 from app.jobs import Jobs
+from app.market_data import TOPIX
 from app.market_data import tables as market_tables
 from app.strategies import Disposition, ScoreTable, ScoreTopN
 from tests.account_market import Script
@@ -57,6 +58,23 @@ class Stub:
 
 def with_stub(stub: Stub):
     return lambda name, params: stub if name == stub.name else build_trainer(name, params)
+
+
+class Recording:
+    """A real trainer that also notes each session's features it scores."""
+
+    def __init__(self, trainer) -> None:
+        self.trainer = trainer
+        self.name, self.params = trainer.name, trainer.params
+        self.scored: dict[date, pd.DataFrame] = {}
+
+    def fit(self, training, cutoff):
+        return self.trainer.fit(training, cutoff)
+
+    def predict(self, artifact, features):
+        (day,) = set(features.index.get_level_values("as_of"))
+        self.scored[day] = features
+        return self.trainer.predict(artifact, features)
 
 
 @pytest.fixture
@@ -100,11 +118,32 @@ def test_an_experiment_freezes_its_contract_scores_out_of_fold_and_replays_five_
     assert contract["baselines"] == [{"trainer": "rule_short_reversal_v1", "params": {}}]
     assert contract["policy"]["anchor"] == TEST_FROM.isoformat() and contract["policy"]["rebalance_sessions"] == 5
     assert contract["portfolio_rules"]["max_adv20_fraction"] == "0.05"
-    assert contract["stress_slippages"] == ["0.001", "0.0025", "0.005"]
+    # Each stress scenario adds to the base slippage, 0.1% here; the fees stay as they are.
+    assert contract["stress"]["scenarios"] == [{"extra_bps": "10", "slippage": "0.002"},
+                                               {"extra_bps": "25", "slippage": "0.0035"},
+                                               {"extra_bps": "50", "slippage": "0.006"}]
+    assert "手续费" in contract["stress"]["basis"] and report["stress_basis"] == contract["stress"]["basis"]
     assert contract["actions"] == ["disposition", "priority"] and contract["viewed_through"] is None
     assert found["contract_hash"] == report["contract_hash"]
     assert found["input_fingerprint"]["from"] == S[9].isoformat()  # 61 bars before the first training day S70
     assert found["input_fingerprint"]["through"] == TEST_TO.isoformat()
+
+    # What it read and when: no row's own time, only this read's — beside the contract, not in it.
+    read = found["data_read"]
+    assert read["observed_at"] >= found["created_at"] and "没有逐行的历史可得时间" in read["note"]
+    sources = {source["kind"]: source for source in read["sources"]}
+    assert list(sources) == ["daily_bars", "segment_periods", "topix", "trading_calendar"]
+    rows = found["input_fingerprint"]["rows"]
+    assert (sources["daily_bars"]["start"], sources["daily_bars"]["end"]) == (S[9].isoformat(), TEST_TO.isoformat())
+    assert sources["daily_bars"]["rows"] == len(CODES) * 121  # S9 to S129
+    assert (sources["segment_periods"]["start"], sources["segment_periods"]["rows"]) == (S[70].isoformat(),
+                                                                                        rows["segments"])
+    assert (sources["topix"]["start"], sources["topix"]["end"], sources["topix"]["rows"]) == (
+        TEST_FROM.isoformat(), TEST_TO.isoformat(), 30)
+    assert (sources["trading_calendar"]["end"], sources["trading_calendar"]["rows"]) == (
+        S[130].isoformat(), rows["calendar"])
+    assert all(source["available_from"] for source in read["sources"])
+    assert "data_read" not in contract and "observed_at" not in str(contract)
 
     # Folds: each model's artifact kept as JSON, its hash re-derivable from it.
     assert [(f["test_from"], f["test_to"]) for f in report["folds"]] == [
@@ -121,19 +160,23 @@ def test_an_experiment_freezes_its_contract_scores_out_of_fold_and_replays_five_
 
     # Five replays: the model at the base costs and each stress slippage, the baseline at the base.
     shapes = [(r["position"], r["model"], r["scenario"], r["costs"]["slippage"]) for r in report["replays"]]
-    assert shapes == [(1, "model", "base", "0.001"), (2, "model", "stress", "0.001"),
-                      (3, "model", "stress", "0.0025"), (4, "model", "stress", "0.005"),
+    assert shapes == [(1, "model", "base", "0.001"), (2, "model", "stress", "0.002"),
+                      (3, "model", "stress", "0.0035"), (4, "model", "stress", "0.006"),
                       (5, "baseline_1", "base", "0.001")]
+    assert [(r["model_label"], r["extra_bps"]) for r in report["replays"]] == [
+        ("主模型", None), ("主模型", 10), ("主模型", 25), ("主模型", 50), ("规则基线 1", None)]
+    assert [r["costs"]["commission_rate"] for r in report["replays"]] == ["0.0"] * 5
+    assert [(m["key"], m["label"]) for m in report["models"]] == [("model", "主模型"), ("baseline_1", "规则基线 1")]
     base, stressed = all_orders(env.experiments, found["id"], 1), all_orders(env.experiments, found["id"], 3)
-    assert base == all_orders(env.experiments, found["id"], 2)  # 10 bps is the base slippage here
     first_buy = next(o for o in stressed if o["kind"] == "buy" and o["status"] == "filled")
     with env.engine.connect() as con:
         opened = con.execute(select(market_tables.daily_bars.c.open).where(
             market_tables.daily_bars.c.code == first_buy["code"],
             market_tables.daily_bars.c.date == date.fromisoformat(first_buy["execution_date"]))).scalar_one()
-    assert first_buy["fill_price"] == pytest.approx(float(opened * Decimal("1.0025")))
+    assert first_buy["fill_price"] == pytest.approx(float(opened * Decimal("1.0035")))
     metrics = [r["metrics"] for r in report["replays"]]
-    assert metrics[1]["total_return"] > metrics[2]["total_return"] > metrics[3]["total_return"]
+    assert [m["total_return"] for m in metrics[:4]] == sorted((m["total_return"] for m in metrics[:4]), reverse=True)
+    assert metrics[0]["total_return"] > metrics[1]["total_return"]  # no stress scenario repeats the base
 
     # Buys are only ever planned on decision days, for codes the model scored.
     for order in base:
@@ -147,6 +190,12 @@ def test_an_experiment_freezes_its_contract_scores_out_of_fold_and_replays_five_
     days = all_days(env.experiments, found["id"])
     assert [d["date"] for d in days] == [p["date"] for p in replay["nav"]] == [d.isoformat() for d in S[100:130]]
     assert [(d["nav"], d["cash"]) for d in days] == [(p["nav"], p["cash"]) for p in replay["nav"]]
+    # A stress replay keeps its days too.
+    stressed_days = all_days(env.experiments, found["id"], 3)
+    stressed_nav = env.experiments.replay(found["id"], 3)["result"]["nav"]
+    assert [(d["date"], d["nav"], d["cash"]) for d in stressed_days] == [
+        (p["date"], p["nav"], p["cash"]) for p in stressed_nav]
+    assert sum(len(d["orders"]) for d in stressed_days) > 0
     assert [d["date"] for d in days if d["decision_day"]] == [d.isoformat() for d in DECISION_DAYS]
     assert all(d["holdings_decisions"] == [] or {h["reason_codes"][0] for h in d["holdings_decisions"]} == {"not_check_day"}
                for d in days if not d["decision_day"])
@@ -215,6 +264,54 @@ def test_later_market_changes_change_neither_earlier_scores_nor_earlier_decision
     assert decided(all_days(env.experiments, before["id"])) == decided(all_days(env.experiments, after["id"]))
 
 
+def test_a_later_roster_change_leaves_earlier_universes_features_scores_and_decisions_alone(env):
+    """CODES[0] leaves Prime after S112, inside fold 2's test stretch: from
+    S113 its market segment period is Standard's. Registered again, the
+    experiment's universe, features, scores and day-by-day decisions up to
+    S112 are what they were; from S113 the code is no longer in the
+    universe."""
+    def recorded_run():
+        made = {}
+
+        def trainers(name, params):
+            made[name] = Recording(build_trainer(name, params))
+            return made[name]
+
+        found = run(env, ModelExperiments(env.engine, env.market, env.jobs, trainers=trainers))
+        return found, made["ridge_v1"].scored  # the last one made is the one that scored
+
+    before, seen_before = recorded_run()
+    cut, leaver = S[112], CODES[0]
+    periods = market_tables.segment_periods
+    with env.engine.begin() as con:
+        con.execute(update(periods).where(periods.c.code == leaver, periods.c.valid_to.is_(None))
+                    .values(valid_to=cut))
+        con.execute(insert(periods).values(code=leaver, valid_from=S[113], valid_to=None, market_code="0112",
+                                           product_category="011", sector33="3700"))
+    after, seen_after = recorded_run()
+    assert after["input_fingerprint"]["sha256"] != before["input_fingerprint"]["sha256"]
+
+    earlier = [day for day in S[100:130] if day <= cut]
+    for day in earlier:  # the features each session was scored on, row for row
+        pd.testing.assert_frame_equal(seen_before[day], seen_after[day])
+        assert leaver in seen_after[day].index.get_level_values("code")
+    assert all(leaver not in seen_after[day].index.get_level_values("code") for day in S[113:130])
+
+    old, new = stored_scores(env.engine, before["id"]), stored_scores(env.engine, after["id"])
+    assert {d: s for d, s in old.items() if d <= cut} == {d: s for d, s in new.items() if d <= cut}
+    assert all(leaver not in new[d] for d in new if d > cut)
+
+    def decided(days):
+        return [(d["date"], d["universe"], d["scored"], d["holdings_decisions"], d["target"], d["candidates"],
+                 [(o["kind"], o["code"], o["planned_quantity"], o["reason_codes"]) for o in d["orders"]])
+                for d in days if date.fromisoformat(d["date"]) <= cut]
+    for position in (1, 5):  # the model's base replay and the baseline's
+        assert decided(all_days(env.experiments, before["id"], position)) == decided(
+            all_days(env.experiments, after["id"], position))
+    later = [d for d in all_days(env.experiments, after["id"]) if date.fromisoformat(d["date"]) > cut]
+    assert {d["universe"] for d in later} == {len(CODES) - 1}
+
+
 def test_the_frozen_scores_through_a_paper_account_trade_as_the_experiment_replayed(env):
     found = run(env)
     table = ScoreTable(frozenset(DECISION_DAYS), stored_scores(env.engine, found["id"]))
@@ -281,7 +378,8 @@ def test_a_failed_experiment_is_kept_and_retried_as_a_new_one_unless_its_input_c
     first = env.experiments.submit(request(), str(uuid4()))
     assert env.jobs.wait_until_idle(60)
     failed = env.experiments.get(first)
-    assert (failed["status"], failed["error"], failed["report"]) == ("failed", "回放中断", None)
+    assert (failed["status"], failed["error"], failed["error_code"], failed["report"]) == (
+        "failed", "回放中断", "error", None)
     assert failed["input_fingerprint"] is not None
 
     second = env.experiments.submit({}, str(uuid4()), retry_of=first)
@@ -304,7 +402,31 @@ def test_a_failed_experiment_is_kept_and_retried_as_a_new_one_unless_its_input_c
     assert env.jobs.wait_until_idle(60)
     refused = env.experiments.get(fourth)
     assert refused["status"] == "failed" and "已变化" in refused["error"]
-    assert refused["input_fingerprint"] is None
+    assert refused["error_code"] == "input_changed" and refused["input_fingerprint"] is None
+
+
+def test_missing_data_is_a_failure_of_its_own_and_a_retry_runs_once_the_data_are_in(env):
+    """Every stock's bar of S50, inside the read, gone: the experiment is
+    accepted (registering reads only TOPIX and the calendar), then fails as
+    missing data, nothing kept. Put back, the retry runs."""
+    bars = market_tables.daily_bars
+    gone = (bars.c.date == S[50]) & (bars.c.code != TOPIX)
+    with env.engine.begin() as con:
+        saved = [dict(row) for row in con.execute(select(bars).where(gone)).mappings()]
+        con.execute(bars.delete().where(gone))
+    first = env.experiments.submit(request(), str(uuid4()))
+    assert env.jobs.wait_until_idle(60)
+    failed = env.experiments.get(first)
+    assert (failed["status"], failed["error_code"]) == ("failed", "missing_data")
+    assert failed["error"].startswith("缺数据") and S[50].isoformat() in failed["error"]
+    assert (failed["input_fingerprint"], failed["data_read"], failed["report"]) == (None, None, None)
+    assert env.experiments.history()["experiments"][0]["error_code"] == "missing_data"
+
+    with env.engine.begin() as con:
+        con.execute(bars.insert(), saved)
+    retried = env.experiments.submit({}, str(uuid4()), retry_of=first)
+    assert env.jobs.wait_until_idle(60)
+    assert env.experiments.get(retried)["status"] == "completed"
 
 
 def test_restart_fails_unfinished_experiments(env):
@@ -313,7 +435,7 @@ def test_restart_fails_unfinished_experiments(env):
         con.execute(update(db.experiments).where(db.experiments.c.id == found["id"]).values(status="running"))
     env.experiments.recover()
     after = env.experiments.get(found["id"])
-    assert after["status"] == "failed" and "服务中断" in after["error"]
+    assert after["status"] == "failed" and "服务中断" in after["error"] and after["error_code"] == "interrupted"
 
 
 REFUSED = [
@@ -328,7 +450,10 @@ REFUSED = [
     ({"test_to": (S[139] + timedelta(days=1)).isoformat()}, "TOPIX"),  # a session the data has not reached
     ({"baselines": []}, "规则基线"),
     ({"max_weight": 0}, "单只上限"),
-    ({"stress_slippages": [0.2]}, "压力场景滑点"),
+    ({"stress_bps": [0]}, "滑点加成"),
+    ({"stress_bps": [10, 10.0]}, "不能重复"),
+    ({"stress_bps": [1000]}, "要小于 0.1"),
+    ({"stress_slippages": [0.002]}, "不认识"),
     ({"source_account_id": 999}, "来源账户不存在"),
     ({"bogus": 1}, "不认识"),
 ]
@@ -383,9 +508,12 @@ def test_history_seen_before_registration_marks_folds_exploratory(env):
     assert wholly["report"]["evidence"]["status"] == "exploratory"
 
 
-def test_too_few_trades_and_zero_trades_are_told_apart(env):
-    few = run(env, min_trades=1000)
-    assert "too_few_trades" in {r["code"] for r in few["report"]["evidence"]["reasons"]}
+def test_too_few_samples_labelled_days_and_trades_and_zero_trades_are_each_their_own_reason(env):
+    few = run(env, min_trades=1000, min_training_samples=1000, min_labelled_days=10)
+    reasons = {r["code"]: r["message"] for r in few["report"]["evidence"]["reasons"]}
+    assert {"too_few_trades", "too_few_training_samples", "too_few_labelled_days"} <= set(reasons)
+    assert "第 1、2、3 折" in reasons["too_few_training_samples"] and "288" in reasons["too_few_training_samples"]
+    assert "只有 5 个决策日" in reasons["too_few_labelled_days"]
     assert few["report"]["evidence"]["status"] == "insufficient_evidence"
     none = run(env, initial_cash=1000)  # not a lot of anything
     codes = {r["code"] for r in none["report"]["evidence"]["reasons"]}

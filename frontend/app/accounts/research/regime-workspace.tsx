@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { api, type Schemas } from "@/lib/api/client";
-import { signedPercent, tone } from "@/lib/format";
+import { minute, signedPercent, tone } from "@/lib/format";
 import { Pager } from "../../pager";
 import { BatchView } from "./batch-view";
 import { BATCH_STATES, Configuration, message, poll, STATES, unfinished, useSubmit } from "./research-shared";
@@ -198,7 +198,7 @@ export function RegimeWorkspace({ sources, sourceId = "", initialDiscovery = "",
       <div className="scroll"><table aria-label="本次发现的批次"><thead><tr><th>批次</th><th>创建时间</th><th>所选区间</th><th>状态</th></tr></thead>
         <tbody>{discovery.batches.map(b => <tr key={b.id}>
           <td><button type="button" className="btn" onClick={() => openBatch(b.id)}>{b.id.slice(0, 8)}</button></td>
-          <td>{b.created_at.slice(0, 16).replace("T", " ")}</td>
+          <td>{minute(b.created_at)}</td>
           <td>{b.selection.interval_ids?.map(id => `#${id}`).join("、")}（共 {b.selection.candidate_count ?? "—"} 段候选）</td>
           <td>{BATCH_STATES[b.status]}</td></tr>)}</tbody></table></div>
     </section>}
@@ -293,7 +293,7 @@ function BatchHistory({ onOpen }: { onOpen: (id: string, discovery: string | nul
     <div className="scroll"><table aria-label="研究批次历史"><thead><tr><th>批次</th><th>创建时间</th><th>来源与阈值</th><th>段数</th><th>状态</th></tr></thead>
       <tbody>{data.batches.map(b => <tr key={b.id}>
         <td><button type="button" className="btn" onClick={() => onOpen(b.id, b.discovery_id)}>{b.id.slice(0, 8)}</button></td>
-        <td>{b.created_at.slice(0, 16).replace("T", " ")}</td>
+        <td>{minute(b.created_at)}</td>
         <td>{b.source_name} · {b.entry_above} / {b.exit_below}</td>
         <td>完成 {b.completed} / 失败 {b.failed} / 共 {b.segments}</td>
         <td>{BATCH_STATES[b.status]}</td></tr>)}</tbody></table></div>

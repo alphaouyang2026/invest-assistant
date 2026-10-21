@@ -218,12 +218,20 @@ export const experimentReasonTone = (code: string) => EXPERIMENT_REASONS[code]?.
 
 export const DISPOSITIONS: Record<string, string> = { hold: "持有", exit: "卖出" };
 
-/** What a contract may say its policy does: 06a runs the first two and refuses the rest. */
+/** The kinds of instruction a contract may say its holding rules give: 06a runs the first two and refuses the rest. */
 export const ACTIONS: Record<string, string> = {
   disposition: "每只持有还是卖出",
   priority: "排序优先级",
   target_weight: "目标权重",
   gross_exposure: "总敞口",
+};
+
+/** What kind of failure stopped a model experiment, and what to do about it. */
+export const EXPERIMENT_FAILURES: Record<string, { label: string; hint: string }> = {
+  missing_data: { label: "缺数据", hint: "行情、TOPIX 或交易日历还没补齐；补齐后可以重试" },
+  input_changed: { label: "行情已变", hint: "读取区间的行情和第一次尝试时不同，重试不会通过；请登记新实验" },
+  interrupted: { label: "服务中断", hint: "运行到一半服务停了；可以重试" },
+  error: { label: "运行出错", hint: "" },
 };
 
 export const EXPERIMENT_EVIDENCE: Record<string, { label: string; tone: string }> = {

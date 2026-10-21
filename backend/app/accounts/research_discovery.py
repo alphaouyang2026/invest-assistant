@@ -22,7 +22,7 @@ import pandas as pd
 from sqlalchemy import Engine, insert, select, update
 
 from app.accounts import research_tables as db
-from app.accounts.research_jobs import (
+from app.research_jobs import (
     COMPLETED, FAILED, QUEUED, RUNNING, UNFINISHED, code_version, find_request, now, plain_json, submit_once,
 )
 from app.accounts.research_batches import MAX_BATCH_RUNS, ResearchBatches, SegmentSpec, StaleInput

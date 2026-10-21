@@ -3271,6 +3271,98 @@
         ],
         "title": "DataQuality"
       },
+      "DataRead": {
+        "properties": {
+          "observed_at": {
+            "type": "string",
+            "title": "Observed At"
+          },
+          "note": {
+            "type": "string",
+            "title": "Note"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/DataSourceRead"
+            },
+            "type": "array",
+            "title": "Sources"
+          }
+        },
+        "type": "object",
+        "required": [
+          "observed_at",
+          "note",
+          "sources"
+        ],
+        "title": "DataRead",
+        "description": "What one attempt read and when: not when each row first became known\n— the database keeps no such time (ADR-0001) — only this read."
+      },
+      "DataSourceRead": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "daily_bars",
+              "segment_periods",
+              "topix",
+              "trading_calendar"
+            ],
+            "title": "Kind"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "start": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start"
+          },
+          "end": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End"
+          },
+          "rows": {
+            "type": "integer",
+            "title": "Rows"
+          },
+          "detail": {
+            "type": "string",
+            "title": "Detail"
+          },
+          "available_from": {
+            "type": "string",
+            "title": "Available From"
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind",
+          "name",
+          "start",
+          "end",
+          "rows",
+          "detail",
+          "available_from"
+        ],
+        "title": "DataSourceRead"
+      },
       "DataStatus": {
         "properties": {
           "latest_date": {
@@ -3584,7 +3676,7 @@
           },
           "holdings": {
             "items": {
-              "$ref": "#/components/schemas/ReplayHolding"
+              "$ref": "#/components/schemas/ResearchHolding"
             },
             "type": "array",
             "title": "Holdings"
@@ -4418,12 +4510,8 @@
           "costs": {
             "$ref": "#/components/schemas/ExperimentCosts"
           },
-          "stress_slippages": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "title": "Stress Slippages"
+          "stress": {
+            "$ref": "#/components/schemas/StressTerms"
           },
           "model": {
             "$ref": "#/components/schemas/ModelTerms"
@@ -4490,7 +4578,7 @@
           "policy",
           "portfolio_rules",
           "costs",
-          "stress_slippages",
+          "stress",
           "model",
           "baselines",
           "benchmarks",
@@ -4701,6 +4789,33 @@
             ],
             "title": "Error"
           },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "missing_data",
+                  "input_changed",
+                  "interrupted",
+                  "error"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "data_read": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DataRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "contract": {
             "$ref": "#/components/schemas/ExperimentContract"
           },
@@ -4754,6 +4869,8 @@
           "input_fingerprint",
           "code_version",
           "error",
+          "error_code",
+          "data_read",
           "contract",
           "contract_hash",
           "evidence_status",
@@ -4958,22 +5075,32 @@
             ],
             "title": "Slippage"
           },
-          "stress_slippages": {
+          "stress_bps": {
             "items": {
               "type": "number"
             },
             "type": "array",
-            "title": "Stress Slippages",
+            "title": "Stress Bps",
             "default": [
-              0.001,
-              0.0025,
-              0.005
+              10,
+              25,
+              50
             ]
           },
           "min_coverage": {
             "type": "number",
             "title": "Min Coverage",
             "default": 0.8
+          },
+          "min_training_samples": {
+            "type": "integer",
+            "title": "Min Training Samples",
+            "default": 20000
+          },
+          "min_labelled_days": {
+            "type": "integer",
+            "title": "Min Labelled Days",
+            "default": 24
           },
           "min_trades": {
             "type": "integer",
@@ -5072,6 +5199,10 @@
           "benchmarks": {
             "$ref": "#/components/schemas/Benchmarks"
           },
+          "stress_basis": {
+            "type": "string",
+            "title": "Stress Basis"
+          },
           "replays": {
             "items": {
               "$ref": "#/components/schemas/ReplaySummary"
@@ -5104,6 +5235,7 @@
           "folds",
           "models",
           "benchmarks",
+          "stress_basis",
           "replays",
           "evidence",
           "warnings",
@@ -5221,6 +5353,23 @@
             ],
             "title": "Error"
           },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "missing_data",
+                  "input_changed",
+                  "interrupted",
+                  "error"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
           "contract_hash": {
             "type": "string",
             "title": "Contract Hash"
@@ -5282,6 +5431,7 @@
           "finished_at",
           "retry_of",
           "error",
+          "error_code",
           "contract_hash",
           "evidence_status",
           "test_from",
@@ -6114,6 +6264,14 @@
             "type": "number",
             "title": "Coverage"
           },
+          "training_samples": {
+            "type": "integer",
+            "title": "Training Samples"
+          },
+          "labelled_days": {
+            "type": "integer",
+            "title": "Labelled Days"
+          },
           "trades": {
             "type": "integer",
             "title": "Trades"
@@ -6122,6 +6280,8 @@
         "type": "object",
         "required": [
           "coverage",
+          "training_samples",
+          "labelled_days",
           "trades"
         ],
         "title": "Minimums"
@@ -6139,6 +6299,10 @@
               "baseline"
             ],
             "title": "Role"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
           },
           "trainer": {
             "type": "string",
@@ -6164,6 +6328,7 @@
         "required": [
           "key",
           "role",
+          "label",
           "trainer",
           "params",
           "failed_folds",
@@ -6768,45 +6933,6 @@
         ],
         "title": "ReplayDetail"
       },
-      "ReplayHolding": {
-        "properties": {
-          "code": {
-            "type": "string",
-            "title": "Code"
-          },
-          "quantity": {
-            "type": "integer",
-            "title": "Quantity"
-          },
-          "opened_on": {
-            "type": "string",
-            "format": "date",
-            "title": "Opened On"
-          },
-          "cost": {
-            "type": "number",
-            "title": "Cost"
-          },
-          "close": {
-            "type": "number",
-            "title": "Close"
-          },
-          "value": {
-            "type": "number",
-            "title": "Value"
-          }
-        },
-        "type": "object",
-        "required": [
-          "code",
-          "quantity",
-          "opened_on",
-          "cost",
-          "close",
-          "value"
-        ],
-        "title": "ReplayHolding"
-      },
       "ReplayMetrics": {
         "properties": {
           "sessions": {
@@ -7013,7 +7139,7 @@
           },
           "holdings": {
             "items": {
-              "$ref": "#/components/schemas/ReplayHolding"
+              "$ref": "#/components/schemas/ResearchHolding"
             },
             "type": "array",
             "title": "Holdings"
@@ -7079,6 +7205,10 @@
             "type": "string",
             "title": "Model"
           },
+          "model_label": {
+            "type": "string",
+            "title": "Model Label"
+          },
           "scenario": {
             "type": "string",
             "enum": [
@@ -7086,6 +7216,17 @@
               "stress"
             ],
             "title": "Scenario"
+          },
+          "extra_bps": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Extra Bps"
           },
           "costs": {
             "$ref": "#/components/schemas/ExperimentCosts"
@@ -7119,7 +7260,9 @@
         "required": [
           "position",
           "model",
+          "model_label",
           "scenario",
+          "extra_bps",
           "costs",
           "metrics",
           "folds",
@@ -7379,7 +7522,8 @@
           "close",
           "value"
         ],
-        "title": "ResearchHolding"
+        "title": "ResearchHolding",
+        "description": "A holding at a replay's close, valued at that day's execution close:\na research run's at its end, a model experiment replay's at its end or\non any of its days. Named for research runs, which had it first."
       },
       "ResearchIn": {
         "properties": {
@@ -7932,6 +8076,45 @@
           "suggested_rules"
         ],
         "title": "StrategyOut"
+      },
+      "StressScenario": {
+        "properties": {
+          "extra_bps": {
+            "type": "string",
+            "title": "Extra Bps"
+          },
+          "slippage": {
+            "type": "string",
+            "title": "Slippage"
+          }
+        },
+        "type": "object",
+        "required": [
+          "extra_bps",
+          "slippage"
+        ],
+        "title": "StressScenario"
+      },
+      "StressTerms": {
+        "properties": {
+          "basis": {
+            "type": "string",
+            "title": "Basis"
+          },
+          "scenarios": {
+            "items": {
+              "$ref": "#/components/schemas/StressScenario"
+            },
+            "type": "array",
+            "title": "Scenarios"
+          }
+        },
+        "type": "object",
+        "required": [
+          "basis",
+          "scenarios"
+        ],
+        "title": "StressTerms"
       },
       "SuggestedRulesOut": {
         "properties": {

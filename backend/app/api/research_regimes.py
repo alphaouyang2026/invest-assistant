@@ -8,7 +8,7 @@ from fastapi import APIRouter, Query, Request
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.accounts.research_batches import BatchStatus
-from app.accounts.research_jobs import RunStatus
+from app.research_jobs import RunStatus
 from app.api.research import ERRORS, STALE_ERRORS, FrozenConfig, ResearchAccepted, Thresholds, call_service
 
 router = APIRouter(prefix="/api/research", tags=["research"])

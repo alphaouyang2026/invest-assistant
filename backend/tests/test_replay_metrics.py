@@ -1,6 +1,7 @@
-"""A replay's report figures (06a): fill rate, cash share, returns by year
-and by range, turnover, order size against ADV20. Every expected number is
-worked by hand on five sessions across a new year."""
+"""A replay's report figures: what it ended with — a research run's result
+and each model experiment replay's alike — and (06a) fill rate, cash share,
+returns by year and by range, turnover, order size against ADV20. Every
+expected number is worked by hand on five sessions across a new year."""
 
 from __future__ import annotations
 
@@ -10,11 +11,12 @@ from decimal import Decimal
 
 import pytest
 
+from app.accounts.ledger import Ledger
 from app.accounts.records import Record
-from app.accounts.replay import NavPoint
+from app.accounts.replay import NavPoint, Replay
 from app.accounts.replay_metrics import (
-    Adv20Usage, PeriodReturn, adv20_usage, annual_turnover, average_cash_share, fill_rate, period_returns,
-    yearly_returns,
+    Adv20Usage, PeriodReturn, adv20_usage, annual_turnover, average_cash_share, end_state, fill_rate,
+    period_returns, traded, yearly_returns,
 )
 from tests.records import bought, pending_buy, sold
 
@@ -124,3 +126,25 @@ def test_order_size_over_adv20_takes_the_filled_amount_over_the_signal_days_adv2
     assert usage == Adv20Usage(3, pytest.approx(0.05), pytest.approx(0.113), pytest.approx(0.12), 1, 0)
     assert adv20_usage(RECORDS, no_b).over_cap == 0 and adv20_usage(RECORDS, no_b).without_adv20 == 1
     assert adv20_usage([], adv20) == Adv20Usage(0, None, None, None, 0, 0)
+
+
+def test_a_replay_ends_with_its_holdings_at_the_last_close_its_pending_orders_and_its_profit() -> None:
+    """A bought for ¥100,010 and sold for ¥119,988 (fees ¥10 and ¥12); B
+    bought for ¥150,000 and held at ¥520: ¥6,000 not yet realised. The NAV
+    went from ¥1,000,000 to ¥1,320,000: the other ¥314,000 is realised."""
+    records = [bought(1, "A", D[1], 100, "1000", fees="10"), sold(2, "A", D[2], 100, "1200", fees="12"),
+               bought(3, "B", D[2], 300, "500"), pending_buy(4, "G", signal=D[4], execution=date(2026, 1, 8),
+                                                            quantity=100)]
+    replay = Replay(Ledger(INITIAL, records), POINTS, ["配股", "配股", "退市"])
+
+    ended = end_state(replay, {"B": Decimal("520")})
+
+    assert ended["holdings"] == [{"code": "B", "quantity": 300, "opened_on": D[2].isoformat(), "cost": 150000.0,
+                                  "close": 520.0, "value": 156000.0}]
+    assert [(o["id"], o["code"], o["status"], o["name"]) for o in ended["pending"]] == [(4, "G", "pending", None)]
+    assert ended["warnings"] == ["退市", "配股"]
+    assert (ended["total_return"], ended["topix_return"]) == (pytest.approx(0.32), pytest.approx(0.155))
+    assert ended["excess_return"] == pytest.approx(0.32 - 0.155)
+    assert (ended["trades"], ended["fees"], ended["cash"]) == (3, 22.0, 869978.0)
+    assert (ended["unrealised_pnl"], ended["realised_pnl"]) == (6000.0, 314000.0)
+    assert traded(records) == {"buy": Decimal("250000"), "sell": Decimal("120000")}

@@ -8,14 +8,18 @@ a research run, over everything it reads — works out the features and
 labels, cuts the folds, scores out of fold with the model and each rule
 baseline, keeps the decision days' scores, and replays them through score
 top-N with `replay_range`, the paper accounts' own trading day by day: the
-model at the base costs and each stress scenario, each baseline at the base
-costs. Nothing is written until the whole of it is done, then all at once.
+model at the base costs and each stress scenario (the base slippage plus
+its addition), each baseline at the base costs — every replay with its
+day-by-day decisions. What it read and when is noted as soon as it has read
+it (`reads`); the rest is written only when the whole of it is done, all
+at once.
 
 Trainers come from the `trainers` factory (`build_trainer` by default), so
 a test swaps the learner without touching the folds, replays or report. A
-restart fails what was left unfinished; a retry is a new experiment with
-the same contract, refused once the input fingerprint differs from the
-earliest attempt's.
+failure is kept with its kind (`error_code`): data missing, the input
+changed since the first attempt, a restart cutting it off, or any other
+error. A retry is a new experiment with the same contract, refused once
+the input fingerprint differs from the earliest attempt's.
 """
 from __future__ import annotations
 
@@ -23,7 +27,6 @@ import uuid
 from collections.abc import Callable, Mapping
 from dataclasses import asdict, replace
 from datetime import date
-from decimal import Decimal
 from time import perf_counter
 from typing import Any
 
@@ -32,16 +35,18 @@ from sqlalchemy import func, insert, select, update
 
 from app.accounts.accounts import Prices, trading_terms
 from app.accounts import experiment_inputs
-from app.accounts.records import BUY, FILLED, SELL
+from app.accounts.records import BUY, FILLED, SELL, record_json
 from app.accounts.replay import replay_range
-from app.accounts.research_jobs import (
+from app.research_jobs import (
     COMPLETED, FAILED, QUEUED, RUNNING, UNFINISHED, code_version, find_request, now, plain_json, submit_once,
 )
-from app.experiments import contract as terms
+from app.experiments import contract as contracts
 from app.experiments import tables as db
+from app.experiments.contract import BASE, MAIN, ExperimentModel
 from app.experiments.decisions import Recorded, day_records
 from app.experiments.features import feature_table, labels, within_universe
 from app.experiments.oof import out_of_fold
+from app.experiments.reads import data_read
 from app.experiments.report import (
     eligible_equal_weight, evidence, kept_scores, labels_by_day, prediction_diagnostics, replay_figures, score_table,
     TOPIX_BASIS,
@@ -52,7 +57,21 @@ from app.market_data import EXEC_CLOSE, TOPIX, UniverseRule
 from app.strategies import ScoreTopN
 
 PROGRESS_EVERY = 20  # sessions between stored progress updates in a replay
-MAIN = "model"
+# What kind of failure stopped an attempt (`error_code`).
+MISSING_DATA, INPUT_CHANGED, INTERRUPTED, ERROR = "missing_data", "input_changed", "interrupted", "error"
+
+
+class MissingData(ValueError):
+    """Data the experiment needs are not held: a failure of its own kind,
+    put right by syncing, not by changing the contract."""
+
+    code = MISSING_DATA
+
+
+class InputChanged(ValueError):
+    """A retry's input differs from the first attempt's."""
+
+    code = INPUT_CHANGED
 
 
 class ModelExperiments:
@@ -71,7 +90,8 @@ class ModelExperiments:
         """Call under the writer lock: nothing runs then."""
         with self._engine.begin() as con:
             con.execute(update(db.experiments).where(db.experiments.c.status.in_(UNFINISHED)).values(
-                status=FAILED, error="服务中断，实验未完成；请显式重试（将创建新实验）", finished_at=now()))
+                status=FAILED, error="服务中断，实验未完成；请显式重试（将创建新实验）", error_code=INTERRUPTED,
+                finished_at=now()))
 
     def submit(self, request: dict, key: str, *, retry_of: str | None = None) -> str:
         """Register `request` (the contract's terms, see `contract.DEFAULTS`)
@@ -100,7 +120,7 @@ class ModelExperiments:
             with self._engine.begin() as con:
                 con.execute(insert(db.experiments).values(
                     id=experiment_id, request_key=key, request=request, contract=contract,
-                    contract_hash=terms.contract_hash(contract), retry_of=retry_of, status=QUEUED,
+                    contract_hash=contracts.contract_hash(contract), retry_of=retry_of, status=QUEUED,
                     created_at=now(), progress={}, code_version=code_version()))
 
         job = Job("model_experiment", lambda progress: self.execute(
@@ -113,7 +133,7 @@ class ModelExperiments:
         if it names one, and how far history has been seen."""
         source_id = request.get("source_account_id")
         source = None if source_id is None else experiment_inputs.source_terms(self._engine, source_id)
-        return terms.freeze(request, sessions=self._market.calendar().sessions(), source=source,
+        return contracts.freeze(request, sessions=self._market.calendar().sessions(), source=source,
                             viewed_through=self.viewed_through(), trainers=self._trainers)
 
     def viewed_through(self) -> date | None:
@@ -123,22 +143,24 @@ class ModelExperiments:
         seen = [experiment_inputs.viewed_through(self._engine), self._latest_experiment_end()]
         return max((day for day in seen if day is not None), default=None)
 
-    def validate(self, contract: Mapping[str, Any]) -> terms.ExperimentPlan:
+    def validate(self, contract: Mapping[str, Any]) -> contracts.ExperimentPlan:
         """Whether `contract` can run on the data held now — the folds' history,
         its trainers, TOPIX over the test span, the session after it;
-        ValueError naming why not. Cheap: the calendar and one TOPIX read."""
+        ValueError naming why not (MissingData for data not held yet).
+        Cheap: the calendar and one TOPIX read."""
         calendar = self._market.calendar()
-        plan = terms.plan(contract, calendar.sessions())
-        for model in (contract["model"], *contract["baselines"]):
-            self._trainers(model["trainer"], model["params"])
+        plan = contracts.plan(contract, calendar.sessions())
+        for model in contracts.models(contract):
+            self._trainers(model.trainer, model.params)
         values = self._market.read([TOPIX], plan.test_days[0], plan.test_days[-1]).wide(EXEC_CLOSE)
         values = values.reindex(plan.test_days)
         if TOPIX not in values or any(pd.isna(v) or v <= 0 for v in values[TOPIX]):
-            raise ValueError("测试区间 TOPIX 数据缺失或无效，请先补齐行情")
+            raise MissingData(f"缺数据：测试区间 {plan.test_days[0]} 至 {plan.test_days[-1]} 的 TOPIX 收盘缺失或无效，"
+                              "请先补齐行情")
         try:
             calendar.next(plan.test_days[-1])
         except LookupError:
-            raise ValueError("测试终点后缺少开市日历，无法记录末日待执行订单，请先同步日历") from None
+            raise MissingData("缺数据：测试终点后缺少开市日历，无法记录末日待执行订单，请先同步日历") from None
         return plan
 
     # --- the job -------------------------------------------------------------
@@ -147,7 +169,8 @@ class ModelExperiments:
                 expect_fingerprint: str | None = None) -> JobOutcome:
         """Run one queued experiment, inside a job. With `expect_fingerprint`,
         refuse once the research input fingerprint differs from it (a
-        retry). Records a failure on the experiment, then raises."""
+        retry). Records a failure, and its kind, on the experiment, then
+        raises."""
         started = perf_counter()
         self._set(experiment_id, status=RUNNING)
         try:
@@ -160,18 +183,26 @@ class ModelExperiments:
 
             step({"stage": "fingerprint"})
             fingerprint = self._market.input_fingerprint(plan.read_from, last)
-            if fingerprint["missing_stock_sessions"]:
-                raise ValueError("实验读取区间缺少股票行情：" + ", ".join(fingerprint["missing_stock_sessions"][:5]))
+            missing = fingerprint["missing_stock_sessions"]
+            if missing:
+                raise MissingData(f"缺数据：实验读取区间 {plan.read_from} 至 {last} 有 {len(missing)} 个开市日没有股票日线"
+                                  f"（{'、'.join(missing[:5])}{'……' if len(missing) > 5 else ''}），补齐行情后可以重试")
             if expect_fingerprint is not None and fingerprint["sha256"] != expect_fingerprint:
-                raise ValueError("该实验读取区间的行情自首次尝试后已变化，不能按原契约重试，请登记新实验")
+                raise InputChanged("该实验读取区间的行情自首次尝试后已变化，不能按原契约重试，请登记新实验")
             self._set(experiment_id, input_fingerprint=fingerprint)
             timings["fingerprint"] = perf_counter() - started
 
             step({"stage": "reading"})
             mark = perf_counter()
+            observed_at = now()
             universes = self._market.universe(first, last, rule=UniverseRule(contract["universe_rule"]))
             codes = sorted({code for listed in universes.values() for code in listed})
             frame = self._market.read(codes, plan.read_from, last)
+            topix = self._market.read([TOPIX], plan.test_days[0], last).wide(EXEC_CLOSE)[TOPIX]
+            sessions = calendar.sessions()
+            self._set(experiment_id, data_read=data_read(
+                observed_at=observed_at, fingerprint=fingerprint, frame=frame, universes=universes, topix=topix,
+                calendar=[day for day in sessions if plan.read_from <= day <= last] + [calendar.next(last)]))
             timings["reading"] = perf_counter() - mark
 
             step({"stage": "features"})
@@ -180,34 +211,32 @@ class ModelExperiments:
             targets = within_universe(labels(frame, plan.feature_days, contract["task"]["horizon"]), universes)
             timings["features"] = perf_counter() - mark
 
-            models = [(MAIN, contract["model"])] + [
-                (f"baseline_{n}", baseline) for n, baseline in enumerate(contract["baselines"], 1)]
+            models = contracts.models(contract)
             oofs, kept = {}, {}
             timings["training"] = {}
-            for key, spec in models:
-                step({"stage": "training", "model": key})
+            for model in models:
+                step({"stage": "training", "model": model.key, "label": model.label, "trainer": model.trainer})
                 mark = perf_counter()
-                trainer = self._trainers(spec["trainer"], spec["params"])
-                oofs[key] = out_of_fold(trainer, plan.folds, features, targets, sessions=plan.sessions,
-                                        label_sessions=contract["task"]["label_sessions"])
-                kept[key] = kept_scores(oofs[key].scores, plan.decision_days)
-                timings["training"][key] = perf_counter() - mark
+                trainer = self._trainers(model.trainer, model.params)
+                oofs[model.key] = out_of_fold(trainer, plan.folds, features, targets, sessions=plan.sessions,
+                                              label_sessions=contract["task"]["label_sessions"])
+                kept[model.key] = kept_scores(oofs[model.key].scores, plan.decision_days)
+                timings["training"][model.key] = perf_counter() - mark
 
             prices = Prices(frame)
-            topix = self._market.read([TOPIX], plan.test_days[0], last).wide(EXEC_CLOSE)[TOPIX]
             rules, base, initial = trading_terms(contract)
-            runs = [(MAIN, "base", base)] + [(MAIN, "stress", replace(base, slippage=Decimal(s)))
-                                             for s in contract["stress_slippages"]]
-            runs += [(key, "base", base) for key, _ in models[1:]]
+            planned = contracts.replays(contract)
             policy = {name: contract["policy"][name] for name in ("max_holding_sessions", "warmup_sessions")}
             replays, timings["replays"] = [], []
-            for position, (key, scenario, costs) in enumerate(runs, 1):
+            for run in planned:
                 mark = perf_counter()
+                key = run.model.key
+                costs = base if run.scenario == BASE else replace(base, slippage=run.slippage)
                 strategy = Recorded(ScoreTopN(score_table(kept[key], plan.decision_days), policy))
 
-                def on_session(done: int, day: date, position: int = position) -> None:
+                def on_session(done: int, day: date, position: int = run.position) -> None:
                     if done % PROGRESS_EVERY == 0 or done == len(plan.test_days):
-                        step({"stage": "replaying", "replays_done": position - 1, "replays_total": len(runs),
+                        step({"stage": "replaying", "replays_done": position - 1, "replays_total": len(planned),
                               "sessions_done": done, "sessions_total": len(plan.test_days),
                               "current_session": day.isoformat()})
 
@@ -219,17 +248,15 @@ class ModelExperiments:
                     found = prices.adv20(r.signal_date, [r.code]).get(r.code)
                     if found is not None:
                         adv20[(r.signal_date, r.code)] = found
-                figures = replay_figures(replay, initial, plan.folds, cap=rules.max_adv20_fraction, adv20=adv20,
+                figures = replay_figures(replay, plan.folds, cap=rules.max_adv20_fraction, adv20=adv20,
                                          closes=prices.closes(last, replay.ledger.positions))
-                figures["pending"] = [_record(r) for r in replay.ledger.pending]
-                replays.append({"position": position, "model": key, "scenario": scenario,
+                replays.append({"position": run.position, "model": key, "model_label": run.model.label,
+                                "scenario": run.scenario,
+                                "extra_bps": None if run.extra_bps is None else float(run.extra_bps),
                                 "costs": {name: str(value) for name, value in asdict(costs).items()},
                                 "result": figures, "records": replay.ledger.records,
-                                # A stress replay differs from its base only in costs: its ledger and
-                                # NAV are kept, its day-by-day decisions are not.
-                                "days": [] if scenario == "stress" else day_records(
-                                    replay, strategy, prices, universes, plan.test_days, plan.decision_days,
-                                    kept[key])})
+                                "days": day_records(replay, strategy, prices, universes, plan.decision_days,
+                                                    kept[key])})
                 timings["replays"].append(perf_counter() - mark)
 
             step({"stage": "reporting"})
@@ -241,29 +268,35 @@ class ModelExperiments:
                                "sessions": len(plan.test_days), "seconds": round(timings["total"], 1)},
                               report["warnings"])
         except Exception as error:
-            self._set(experiment_id, status=FAILED, error=str(error), finished_at=now())
+            self._set(experiment_id, status=FAILED, error=str(error), error_code=getattr(error, "code", ERROR),
+                      finished_at=now())
             raise
 
-    def _report(self, contract, plan, models, oofs, kept, targets, universes, replays) -> dict:
+    def _report(self, contract, plan, models: list[ExperimentModel], oofs, kept, targets, universes,
+                replays) -> dict:
         daily = labels_by_day(targets)
         seen_through = contract["viewed_through"] and date.fromisoformat(contract["viewed_through"])
         out_models = []
-        for key, spec in models:
-            failed = [r.fold.number for r in oofs[key].folds if r.failed]
+        for model in models:
+            failed = [r.fold.number for r in oofs[model.key].folds if r.failed]
             out_models.append({
-                "key": key, "role": "model" if key == MAIN else "baseline", "trainer": spec["trainer"],
-                "params": spec["params"], "failed_folds": failed,
-                "diagnostics": prediction_diagnostics(kept[key], daily, universes, plan.decision_days, plan.folds)})
+                "key": model.key, "role": model.role, "label": model.label, "trainer": model.trainer,
+                "params": model.params, "failed_folds": failed,
+                "diagnostics": prediction_diagnostics(kept[model.key], daily, universes, plan.decision_days,
+                                                      plan.folds)})
         main = out_models[0]
         base_metrics = replays[0]["result"]["metrics"]
+        minimums = contract["minimums"]
         found = evidence(
             folds=plan.folds, viewed_through=seen_through or None,
-            failed={_model_label(m): m["failed_folds"] for m in out_models},
-            coverage=main["diagnostics"]["coverage_mean"], min_coverage=contract["minimums"]["coverage"],
-            ic_days=main["diagnostics"]["ic_days"], trades=base_metrics["trades"],
-            min_trades=contract["minimums"]["trades"])
+            failed={f"{m['label']}（{m['trainer']}）": m["failed_folds"] for m in out_models},
+            samples={r.fold.number: r.samples for r in oofs[MAIN].folds},
+            min_samples=minimums["training_samples"],
+            coverage=main["diagnostics"]["coverage_mean"], min_coverage=minimums["coverage"],
+            ic_days=main["diagnostics"]["ic_days"], min_labelled_days=minimums["labelled_days"],
+            trades=base_metrics["trades"], min_trades=minimums["trades"])
         return plain_json({
-            "contract_hash": terms.contract_hash(contract),
+            "contract_hash": contracts.contract_hash(contract),
             "sessions": len(plan.test_days), "decision_days": len(plan.decision_days),
             "read_from": plan.read_from.isoformat(),
             "folds": [{"number": fold.number, **_fold(fold), "viewed": fold.number in found["viewed_folds"]}
@@ -273,21 +306,22 @@ class ModelExperiments:
                 "topix_price": {"basis": TOPIX_BASIS, "total_return": base_metrics["topix_return"]},
                 "eligible_equal_weight": eligible_equal_weight(daily, universes, plan.decision_days),
             },
-            "replays": [{"position": r["position"], "model": r["model"], "scenario": r["scenario"],
-                         "costs": r["costs"], **{k: r["result"][k] for k in ("metrics", "folds", "years")}}
-                        for r in replays],
+            "stress_basis": contracts.STRESS_BASIS,
+            "replays": [{key: r[key] for key in ("position", "model", "model_label", "scenario", "extra_bps",
+                                                 "costs")}
+                        | {key: r["result"][key] for key in ("metrics", "folds", "years")} for r in replays],
             "evidence": found,
             "warnings": sorted({w for r in replays for w in r["result"]["warnings"]}),
         })
 
-    def _store(self, experiment_id, models, oofs, kept, replays, report) -> None:
-        folds = [{"experiment_id": experiment_id, "model": key, "fold": r.fold.number, **_fold(r.fold),
+    def _store(self, experiment_id, models: list[ExperimentModel], oofs, kept, replays, report) -> None:
+        folds = [{"experiment_id": experiment_id, "model": model.key, "fold": r.fold.number, **_fold(r.fold),
                   "samples": r.samples, "seconds": r.seconds,
                   "artifact": None if r.artifact is None else r.artifact.as_dict(),
                   "artifact_hash": None if r.artifact is None else r.artifact.hash(), "error": r.error}
-                 for key, _ in models for r in oofs[key].folds]
-        scores = [{"experiment_id": experiment_id, "model": key, "as_of": day.isoformat(), **entry}
-                  for key, _ in models for day, entry in kept[key].items()]
+                 for model in models for r in oofs[model.key].folds]
+        scores = [{"experiment_id": experiment_id, "model": model.key, "as_of": day.isoformat(), **entry}
+                  for model in models for day, entry in kept[model.key].items()]
         with self._engine.begin() as con:
             con.execute(insert(db.folds), plain_json(folds))
             if scores:
@@ -298,7 +332,7 @@ class ModelExperiments:
                     costs=r["costs"], result=plain_json(r["result"])))
                 if r["records"]:
                     con.execute(insert(db.orders), [{"experiment_id": experiment_id, "position": r["position"],
-                                                     "sequence": record.id, "record": _record(record)}
+                                                     "sequence": record.id, "record": record_json(record)}
                                                     for record in r["records"]])
                 if r["days"]:
                     con.execute(insert(db.days), [{"experiment_id": experiment_id, "position": r["position"],
@@ -360,7 +394,7 @@ class ModelExperiments:
     def history(self, page: int = 1, page_size: int = 20) -> dict:
         e = db.experiments
         columns = [e.c.id, e.c.contract, e.c.contract_hash, e.c.retry_of, e.c.status, e.c.created_at,
-                   e.c.finished_at, e.c.error, e.c.evidence_status]
+                   e.c.finished_at, e.c.error, e.c.error_code, e.c.evidence_status]
         with self._engine.connect() as con:
             total = con.execute(select(func.count()).select_from(e)).scalar_one()
             rows = con.execute(select(*columns).order_by(e.c.created_at.desc(), e.c.id)
@@ -391,11 +425,9 @@ class ModelExperiments:
 
     def days(self, experiment_id: str, position: int, page: int = 1, page_size: int = 20, *,
              decision_only: bool = False) -> dict:
-        """One replay's days, oldest first; each decision day with the
-        model's best scores that day. A stress replay keeps none."""
-        replay = self._replay_row(experiment_id, position, columns=("model", "scenario"))
-        if replay["scenario"] == "stress":
-            raise LookupError("压力场景回放只保存订单和净值，逐日决定请看同一模型的基础成本回放")
+        """One replay's days, oldest first — a stress scenario's as much as
+        the base's; each decision day with the model's best scores that day."""
+        replay = self._replay_row(experiment_id, position, columns=("model",))
         contract = self.get_contract(experiment_id)
         top = max(20, 2 * contract["portfolio_rules"]["max_positions"])
         d = db.days
@@ -456,11 +488,3 @@ def _fold(fold) -> dict:
             "test_from": fold.test_from.isoformat(), "test_to": fold.test_to.isoformat()}
 
 
-def _model_label(model: Mapping[str, Any]) -> str:
-    return f"{'主模型' if model['role'] == 'model' else '规则基线'} {model['trainer']}"
-
-
-def _record(record) -> dict:
-    return {**plain_json(asdict(record)), "name": None, "fees": float(record.fees),
-            "fill_price": None if record.fill_price is None else float(record.fill_price),
-            "cash_delta": float(record.cash_delta)}
