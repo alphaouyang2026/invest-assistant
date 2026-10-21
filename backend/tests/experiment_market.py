@@ -47,6 +47,9 @@ def experiment_market(engine, prices: dict[str, list[str | None]] | None = None,
 
 def request(**changes) -> dict:
     """A small contract: three folds of ten test sessions on a 30-session
-    rolling window, three positions, decisions every five sessions."""
+    rolling window, three positions, decisions every five sessions — with
+    minimums a market this small can meet (each fold trains on 24 days of
+    12 codes, five decision days have labels)."""
     return {"test_from": TEST_FROM.isoformat(), "test_to": TEST_TO.isoformat(), "train_sessions": 30,
-            "test_sessions": 10, "max_positions": 3, "max_weight": 0.3, "min_trades": 1, **changes}
+            "test_sessions": 10, "max_positions": 3, "max_weight": 0.3, "min_trades": 1,
+            "min_training_samples": 100, "min_labelled_days": 3, **changes}

@@ -22,6 +22,8 @@ def test_register_poll_browse_retry_and_refusals(migrated_database):
         assert defaults["defaults"]["trainer"] == "ridge_v1" and defaults["trainers"]["ridge_v1"] == {"alpha": 1.0}
         assert defaults["unsupported_actions"] == ["target_weight", "gross_exposure"]
         assert defaults["viewed_through"] is None and defaults["task"]["label_sessions"] == 6
+        assert defaults["defaults"]["stress_bps"] == [10, 25, 50]
+        assert (defaults["defaults"]["min_training_samples"], defaults["defaults"]["min_labelled_days"]) == (20_000, 24)
 
         body = {**request(), "request_key": str(uuid4())}
         response = client.post("/api/experiments", json=body)
@@ -35,6 +37,9 @@ def test_register_poll_browse_retry_and_refusals(migrated_database):
         assert "request_key" not in detail and "request" not in detail
         assert detail["contract"]["test_from"] == TEST_FROM.isoformat()
         assert detail["report"]["evidence"]["status"] == "exploratory"
+        assert detail["error_code"] is None and len(detail["data_read"]["sources"]) == 4
+        assert [m["label"] for m in detail["report"]["models"]] == ["主模型", "规则基线 1"]
+        assert detail["contract"]["stress"]["scenarios"][0] == {"extra_bps": "10", "slippage": "0.002"}
         assert [r["scenario"] for r in detail["report"]["replays"]] == ["base", "stress", "stress", "stress", "base"]
         assert [(f["model"], f["fold"]) for f in detail["fold_results"]] == [
             ("model", 1), ("model", 2), ("model", 3), ("baseline_1", 1), ("baseline_1", 2), ("baseline_1", 3)]
@@ -42,6 +47,7 @@ def test_register_poll_browse_retry_and_refusals(migrated_database):
         assert detail["fold_results"][-1]["artifact"]["state"] == {}
         listed = client.get("/api/experiments").json()
         assert listed["total"] == 1 and listed["experiments"][0]["evidence_status"] == "exploratory"
+        assert listed["experiments"][0]["error_code"] is None
 
         replay = client.get(f"/api/experiments/{experiment_id}/replays/1").json()
         assert len(replay["result"]["nav"]) == 30 and "cash" in replay["result"]["nav"][0]
@@ -49,7 +55,8 @@ def test_register_poll_browse_retry_and_refusals(migrated_database):
         assert page["total"] > 1 and len(page["orders"]) == 1
         days = client.get(f"/api/experiments/{experiment_id}/replays/1/days?decision_only=true&page_size=2").json()
         assert days["total"] == 6 and len(days["days"]) == 2 and len(days["days"][0]["top_scores"]) == 12
-        assert client.get(f"/api/experiments/{experiment_id}/replays/2/days").status_code == 404
+        stressed = client.get(f"/api/experiments/{experiment_id}/replays/2/days?page_size=100").json()
+        assert stressed["total"] == 30  # a stress replay keeps its days too
         assert client.get(f"/api/experiments/{experiment_id}/replays/9").status_code == 404
         scores = client.get(f"/api/experiments/{experiment_id}/scores/model/{TEST_FROM.isoformat()}").json()
         assert [s["rank"] for s in scores["scores"]] == list(range(1, 13))

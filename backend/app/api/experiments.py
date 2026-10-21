@@ -18,6 +18,9 @@ from app.market_data import UniverseRule
 router = APIRouter(prefix="/api/experiments", tags=["experiments"])
 
 EvidenceStatus = Literal["exploratory", "insufficient_evidence"]
+# What kind of failure stopped an attempt: the data were not all there, the
+# input changed since the first attempt, a restart cut it off, or another error.
+FailureKind = Literal["missing_data", "input_changed", "interrupted", "error"]
 
 
 # --- registering ---------------------------------------------------------------
@@ -46,8 +49,10 @@ class ExperimentRequest(BaseModel):
     commission_rate: float | None = Field(default=None, allow_inf_nan=False)
     commission_min: float | None = Field(default=None, allow_inf_nan=False)
     slippage: float | None = Field(default=None, allow_inf_nan=False)
-    stress_slippages: list[float] = DEFAULTS["stress_slippages"]
+    stress_bps: list[float] = DEFAULTS["stress_bps"]  # each a stress scenario's addition to the base slippage
     min_coverage: float = Field(default=DEFAULTS["min_coverage"], allow_inf_nan=False)
+    min_training_samples: int = DEFAULTS["min_training_samples"]
+    min_labelled_days: int = DEFAULTS["min_labelled_days"]
     min_trades: int = DEFAULTS["min_trades"]
     actions: list[str] = DEFAULTS["actions"]
 
@@ -131,8 +136,20 @@ class ModelTerms(BaselineTerms):
     search_budget: int
 
 
+class StressScenario(BaseModel):
+    extra_bps: str  # added to the base slippage, each side
+    slippage: str   # what that makes, each side
+
+
+class StressTerms(BaseModel):
+    basis: str      # how a stress scenario is worked out: fees as at the base costs
+    scenarios: list[StressScenario]
+
+
 class Minimums(BaseModel):
     coverage: float
+    training_samples: int  # in each of the model's folds
+    labelled_days: int     # decision days with a rank IC
     trades: int
 
 
@@ -149,7 +166,7 @@ class ExperimentContract(BaseModel):
     policy: PolicyTerms
     portfolio_rules: ExperimentRules
     costs: ExperimentCosts
-    stress_slippages: list[str]
+    stress: StressTerms
     model: ModelTerms
     baselines: list[BaselineTerms]
     benchmarks: list[str]
@@ -201,8 +218,9 @@ class Diagnostics(DiagnosticSummary):
 
 
 class ModelReport(BaseModel):
-    key: str  # "model", "baseline_1", …
+    key: str    # "model", "baseline_1", …: what folds, scores and replays are stored under
     role: Literal["model", "baseline"]
+    label: str  # its name on screen: 主模型, 规则基线 1, …
     trainer: str
     params: dict[str, Any]
     failed_folds: list[int]
@@ -293,7 +311,9 @@ class YearPeriod(PeriodOut):
 class ReplaySummary(BaseModel):
     position: int
     model: str
+    model_label: str               # the model's name on screen, as ModelReport.label
     scenario: Literal["base", "stress"]
+    extra_bps: float | None        # a stress scenario's addition to the base slippage
     costs: ExperimentCosts
     metrics: ReplayMetrics
     folds: list[FoldPeriod | None]
@@ -319,6 +339,7 @@ class ExperimentReport(BaseModel):
     folds: list[FoldOut]
     models: list[ModelReport]
     benchmarks: Benchmarks
+    stress_basis: str
     replays: list[ReplaySummary]
     evidence: Evidence
     warnings: list[str]
@@ -347,6 +368,24 @@ class FoldResultOut(BaseModel):
     error: str | None
 
 
+class DataSourceRead(BaseModel):
+    kind: Literal["daily_bars", "segment_periods", "topix", "trading_calendar"]
+    name: str
+    start: date | None    # the first day it covered
+    end: date | None      # the last
+    rows: int
+    detail: str           # what the rows count
+    available_from: str   # when a row of it may be used for a decision
+
+
+class DataRead(BaseModel):
+    """What one attempt read and when: not when each row first became known
+    — the database keeps no such time (ADR-0001) — only this read."""
+    observed_at: str      # when the attempt read the market data, UTC
+    note: str
+    sources: list[DataSourceRead]
+
+
 class ExperimentSummary(BaseModel):
     id: str
     name: str
@@ -355,6 +394,7 @@ class ExperimentSummary(BaseModel):
     finished_at: str | None
     retry_of: str | None
     error: str | None
+    error_code: FailureKind | None
     contract_hash: str
     evidence_status: EvidenceStatus | None
     test_from: date
@@ -376,6 +416,8 @@ class ExperimentDetail(BaseModel):
     input_fingerprint: dict[str, Any] | None
     code_version: str
     error: str | None
+    error_code: FailureKind | None
+    data_read: DataRead | None  # None until the attempt has read the data
     contract: ExperimentContract
     contract_hash: str
     evidence_status: EvidenceStatus | None

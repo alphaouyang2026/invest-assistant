@@ -14,7 +14,9 @@ dicts out.
   (fill rate, cash held, turnover, orders against ADV20, returns by fold
   and by year).
 - The evidence status: 06a only ever says `exploratory` or
-  `insufficient_evidence`, with every reason.
+  `insufficient_evidence`, with every reason — a failed fold, too few
+  training samples, too little coverage, too few decision days with labels,
+  too few trades, each on its own.
 """
 from __future__ import annotations
 
@@ -154,11 +156,16 @@ def replay_figures(replay: Replay, folds: Sequence[Fold], *, cap: Decimal | None
 
 
 def evidence(*, folds: Sequence[Fold], viewed_through: date | None, failed: Mapping[str, Sequence[int]],
-             coverage: float | None, min_coverage: float, ic_days: int, trades: int, min_trades: int) -> dict:
-    """06a's verdict: `insufficient_evidence` when a fold failed, coverage or
-    trades fall short or nothing could be diagnosed, else `exploratory` —
-    never passed. `failed` is each model's (by its label) failed folds.
-    Every reason found is listed, the history already seen first."""
+             samples: Mapping[int, int], min_samples: int, coverage: float | None, min_coverage: float,
+             ic_days: int, min_labelled_days: int, trades: int, min_trades: int) -> dict:
+    """06a's verdict: `insufficient_evidence` when a fold failed, a fold of
+    the model trained on too few samples, coverage falls short, too few
+    decision days had labels to judge the scores by, or too few trades
+    filled — else `exploratory`, never passed. `failed` is each model's (by
+    its label) failed folds, `samples` the model's training samples by fold,
+    `ic_days` its decision days with a rank IC (labels known for at least
+    three codes it scored). Every reason found is listed, the history
+    already seen first."""
     reasons = []
     seen = [fold.number for fold in folds if viewed_through is not None and fold.test_from <= viewed_through]
     if seen and len(seen) == len(folds):
@@ -172,11 +179,21 @@ def evidence(*, folds: Sequence[Fold], viewed_through: date | None, failed: Mapp
         if numbers:
             insufficient.append(_reason("fold_failed", f"{label} 第 {_numbers(numbers)} 折训练或打分失败："
                                         "这些折的决策日没有分数，不开新仓"))
+    short = [number for number, count in sorted(samples.items()) if count < min_samples]
+    if short:
+        fewest = min(samples[number] for number in short)
+        insufficient.append(_reason("too_few_training_samples",
+                                    f"主模型第 {_numbers(short)} 折的训练样本少于最低要求 {min_samples:,} 个"
+                                    f"（最少的一折 {fewest:,} 个）：训练窗太短，或大半落在还没有股票池的日子"))
     if coverage is None or coverage < min_coverage:
         shown = "无" if coverage is None else f"{coverage:.1%}"
         insufficient.append(_reason("coverage_below_minimum", f"决策日平均覆盖率 {shown}，低于最低要求 {min_coverage:.1%}"))
     if ic_days == 0:
         insufficient.append(_reason("no_prediction_diagnostics", "没有标签已知的决策日，算不出 Rank IC"))
+    elif ic_days < min_labelled_days:
+        insufficient.append(_reason("too_few_labelled_days",
+                                    f"只有 {ic_days} 个决策日的标签已知、算得出 Rank IC，少于最低要求 "
+                                    f"{min_labelled_days} 天：测试区间太短，看不出分数排得准不准"))
     if trades == 0:
         insufficient.append(_reason("zero_trades", "主模型基础成本回放零成交"))
     elif trades < min_trades:
