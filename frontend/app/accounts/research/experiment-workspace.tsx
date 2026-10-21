@@ -2,11 +2,12 @@
 
 import { useEffect, useState } from "react";
 import { api, type Schemas } from "@/lib/api/client";
-import { fraction, percentText, yen } from "@/lib/format";
-import { ACTIONS, EXPERIMENT_EVIDENCE, FEATURES, TRAINER_PARAMS, trainerAbout, trainerLabel } from "@/lib/labels";
+import { fraction, minute, percentText, yen } from "@/lib/format";
+import {
+  ACTIONS, EXPERIMENT_EVIDENCE, EXPERIMENT_FAILURES, FEATURES, TRAINER_PARAMS, trainerAbout, trainerLabel,
+} from "@/lib/labels";
 import { Pager } from "../../pager";
 import { ExperimentView } from "./experiment-view";
-import { bps } from "./experiment-shared";
 import { message, STATES, useSubmit } from "./research-shared";
 
 type Defaults = Schemas["ExperimentDefaults"];
@@ -21,7 +22,7 @@ type Field = { key: string; label: string; unit: string; min?: number; max?: num
 const SPAN: Field[] = [
   { key: "train_sessions", label: "训练窗", unit: "开市日", min: 7, step: 1, hint: "每折只用测试段之前这么多个开市日的样本训练" },
   { key: "test_sessions", label: "每折测试段", unit: "开市日", min: 1, step: 1, hint: "测试段按这个长度切成首尾相接的折，最后一折可以短些" },
-  { key: "rebalance_sessions", label: "调仓间隔", unit: "开市日", min: 1, step: 1, hint: "从测试起点起，每隔这么多个开市日决策一次" },
+  { key: "rebalance_sessions", label: "决策日间隔", unit: "开市日", min: 1, step: 1, hint: "测试起点是第一个决策日，之后每隔这么多个开市日一个决策日" },
   { key: "max_holding_sessions", label: "最长持有", unit: "开市日", min: 0, step: 1, hint: "0 表示不限；到期卖出" },
 ];
 const TRADING: Field[] = [
@@ -37,6 +38,8 @@ const OTHER: Field[] = [
   { key: "max_adv20_fraction", label: "成交额上限", unit: "% ADV20", min: 0, max: 100, percent: true,
     hint: "每笔买单金额不超过前 20 个开市日平均成交额的这个比例" },
   { key: "min_coverage", label: "最低覆盖率", unit: "%", min: 0, max: 100, percent: true, hint: "决策日有分数的证券占当天股票池的比例，平均低于它算证据不足" },
+  { key: "min_training_samples", label: "每折最少训练样本", unit: "个", min: 0, step: 1, hint: "主模型任何一折的训练样本少于它算证据不足" },
+  { key: "min_labelled_days", label: "最少有标签的决策日", unit: "天", min: 0, step: 1, hint: "标签已知、算得出 Rank IC 的决策日少于它算证据不足" },
   { key: "min_trades", label: "最少成交", unit: "笔", min: 0, step: 1, hint: "主模型基础成本回放的成交笔数少于它算证据不足" },
 ];
 const FIELDS = [...SPAN, ...TRADING, ...OTHER];
@@ -58,11 +61,12 @@ function initialForm({ defaults: v, trainers }: Defaults): Form {
     name: String(v.name ?? ""), testFrom: "", testTo: "", expanding: Boolean(v.expanding), trainer,
     params: paramsText(trainers[trainer]), baselines: (v.baselines as string[]) ?? [], source: "",
     numbers: Object.fromEntries(FIELDS.map(f => [f.key, shown(f, v[f.key])])),
-    noCap: v.max_adv20_fraction === null, stress: ((v.stress_slippages as number[]) ?? []).map(percentText).join(", "),
+    noCap: v.max_adv20_fraction === null, stress: ((v.stress_bps as number[]) ?? []).map(String).join(", "),
   };
 }
 
-const stressList = (text: string) => text.split(/[\s,，、]+/).filter(Boolean).map(fraction);
+/** "10, 25，50" → [10, 25, 50]: the basis points each stress scenario adds to the base slippage. */
+const stressList = (text: string) => text.split(/[\s,，、]+/).filter(Boolean).map(Number);
 
 /** What the form registers. The trading terms are left out (null) when a source account lends its own. */
 function requestBody(form: Form, defaults: Defaults): Body {
@@ -82,7 +86,9 @@ function requestBody(form: Form, defaults: Defaults): Body {
     cash_floor: trading("cash_floor"), commission_rate: trading("commission_rate"),
     commission_min: trading("commission_min"), slippage: trading("slippage"),
     max_adv20_fraction: form.noCap ? null : number("max_adv20_fraction"),
-    stress_slippages: stressList(form.stress), min_coverage: number("min_coverage"), min_trades: number("min_trades"),
+    stress_bps: stressList(form.stress), min_coverage: number("min_coverage"),
+    min_training_samples: number("min_training_samples"), min_labelled_days: number("min_labelled_days"),
+    min_trades: number("min_trades"),
     actions: defaults.supported_actions,
   };
 }
@@ -204,10 +210,10 @@ export function ExperimentWorkspace({ initialExperiment = "" }: { initialExperim
           <NumberField field={OTHER[0]} value={form.numbers.max_adv20_fraction} disabled={form.noCap}
             onChange={v => setNumber("max_adv20_fraction", v)} bare />
           <label><input type="checkbox" checked={form.noCap} onChange={e => update({ noCap: e.target.checked })} /> 不设上限</label></div>
-        <div className="field"><label htmlFor="experiment-stress">压力场景滑点</label>
-          <div className="affix"><input id="experiment-stress" className="input" required value={form.stress}
-            onChange={e => update({ stress: e.target.value })} /><span>% 每边</span></div>
-          <div className="hint">至多 5 个，用逗号隔开；只换主模型回放的滑点，手续费不变</div></div>
+        <div className="field"><label htmlFor="experiment-stress">压力场景：滑点加成</label>
+          <div className="affix"><input id="experiment-stress" className="input" value={form.stress}
+            onChange={e => update({ stress: e.target.value })} /><span>bps 每边</span></div>
+          <div className="hint">每个场景在基础滑点上再加这么多（1 bps = 0.01%）；至多 5 个，用逗号隔开，都大于 0、互不相同；只回放主模型，手续费不加压</div></div>
         {OTHER.slice(1).map(f => <NumberField key={f.key} field={f} value={form.numbers[f.key]} onChange={v => setNumber(f.key, v)} />)}
       </div>
       <Consequences defaults={defaults} form={form}
@@ -225,7 +231,7 @@ export function ExperimentWorkspace({ initialExperiment = "" }: { initialExperim
         <li>每折只用测试段之前、标签已经结束的样本训练；同一天的所有证券在同一折。分数只在决策日保存，回放只用这些折外分数。</li>
         <li>「已看过」的折在登记前就可能被看到过结果，换一种切分也不是盲测；本步只给出「探索性」或「证据不足」，不会判定通过。</li>
         <li>合格池等权和 TOPIX 是参照，不是可成交的账户：合格池不扣费用、不受整手和现金约束，TOPIX 是价格指数，都不含分红。</li>
-        <li>压力场景只换滑点，逐日决定只为基础成本的回放保存；结果不含税，不代表未来有效。</li>
+        <li>压力场景在基础滑点上再加声明的 bps、手续费不加压；每个回放（含压力场景）都保存逐日决定。结果不含税，不代表未来有效。</li>
       </ul></section>
   </>;
 }
@@ -264,11 +270,11 @@ function Consequences({ defaults: d, form, maxPositions }: { defaults: Defaults;
       <li>任务 {d.task.name}：{d.task.decision}。标签：{d.task.label}。</li>
       <li>特征 {d.features.version}：{d.features.names.map(n => FEATURES[n] ?? n).join("、")}。都只用当天收盘前已知的日线；缺任何一项的证券当天不打分。</li>
       <li>股票池：每个决策日当天的 Prime 普通股（20 日平均成交额 ≥ 5 亿日元），只给它们打分。</li>
-      <li>政策：从测试起点起每 {form.numbers.rebalance_sessions || "—"} 个开市日决策一次，持有分数最高的前 {maxPositions || "—"} 只；
+      <li>持有规则（按分数持仓）：测试起点是第一个决策日，之后每隔 {form.numbers.rebalance_sessions || "—"} 个开市日一个决策日；决策日持有分数最高的前 {maxPositions || "—"} 只；
         决策日模型没有分数时不开新仓、已有持仓保留，不沿用旧分数。</li>
-      <li>共 {replays} 个回放：主模型 × 基础成本和 {stress.length} 个压力场景（每边滑点 {stress.map(bps).join("、") || "—"}），
+      <li>共 {replays} 个回放：主模型 × 基础成本和 {stress.length} 个压力场景（每边滑点在基础上加 {stress.join("、") || "—"} bps，手续费不加压），
         每个规则基线 × 基础成本；对照 TOPIX 价格指数和合格池等权。</li>
-      <li>动作能力：只支持{d.supported_actions.map(a => ACTIONS[a] ?? a).join("和")}；{unsupported}尚未实现，契约里声明了会被拒绝登记，不会悄悄忽略。</li>
+      <li>持有规则能下达的指令种类：只有{d.supported_actions.map(a => ACTIONS[a] ?? a).join("和")}；{unsupported}尚未实现，契约里声明了会被拒绝登记，不会悄悄忽略。</li>
       <li>证据：本步只给出「{EXPERIMENT_EVIDENCE.exploratory.label}」或「{EXPERIMENT_EVIDENCE.insufficient_evidence.label}」，不会判定通过。</li>
     </ul>
     <Viewed through={d.viewed_through} from={form.testFrom} to={form.testTo} />
@@ -312,9 +318,9 @@ function ExperimentHistory({ version, onOpen }: { version: number; onOpen: (id: 
           <td className="wrap">{x.name || "—"}</td>
           <td>{x.test_from} — {x.test_to}</td>
           <td>{trainerLabel(x.trainer)} / {x.baselines.map(trainerLabel).join("、")}</td>
-          <td>{STATES[x.status]}</td>
+          <td>{STATES[x.status]}{x.error_code && <span className="sub">（{EXPERIMENT_FAILURES[x.error_code]?.label ?? x.error_code}）</span>}</td>
           <td>{evidence ? <span className={`badge ${evidence.tone}`}>{evidence.label}</span> : "—"}</td>
-          <td>{x.created_at.slice(0, 16).replace("T", " ")}</td>
+          <td>{minute(x.created_at)}</td>
         </tr>;
       })}</tbody></table></div>
     {data?.total === 0 && <p className="empty">还没有模型实验</p>}
