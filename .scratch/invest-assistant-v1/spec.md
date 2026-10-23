@@ -685,7 +685,7 @@ backend/
   app/
     main.py            # FastAPI 应用；启动任务线程与定时器
     config.py
-    db.py
+    db.py              # SQLite 引擎；账户、研究和实验的表共用的 JSON 列类型 JsonText
     cli.py
     jobs.py            # 任务队列、文件锁、定时器、jobs.jsonl
     market_data/       # 4 张行情表、J-Quants 适配器、同步、研究价格、质量标记、读取
@@ -927,7 +927,7 @@ def viewed_through(engine) -> date | None                            # 模拟账
 
 `replay_range` 就是原来研究运行里的逐日循环原样搬出，研究运行改用它以后结果逐位不变；实验把同一个函数用在每个回放上，压力场景只把 `Costs` 的滑点换成基础滑点加上加成。实验经 `Replay.days()` 读每天的计划单、开盘生效的记录和计划想要的持仓（拆合股把买单压成 0 这类账本规则只在账户模块里），经 `end_state`、`replay_statistics` 和其余 `replay_metrics` 出报告；研究运行的期末数字和订单 JSON 也用 `end_state`、`record_json`，同一件事只写一处。实验不直接调用 `Ledger`、`plan_orders`、`open_session`、`statistics`。
 
-研究运行、研究批次、区间发现和模型实验共用的任务辅助函数（状态常量、`now`、`plain_json`、`code_version`、`find_request`、`submit_once`）在 `app/research_jobs.py`，不属于账户模块：两个模块都用它，就放在 `jobs` 旁边。
+研究运行、研究批次、区间发现和模型实验共用的任务辅助函数（状态常量、`now`、`plain_json`、`code_version`、`find_request`、`submit_once`）在 `app/research_jobs.py`，不属于账户模块：两个模块都用它，就放在 `jobs` 旁边。同样，各模块的表存 JSON 用的列类型 `JsonText`（键排好序再存成文字，同一个值总是同一段文字）在 `app/db.py`，实验的表从那里拿，不引用账户模块的表定义。
 
 ### A.5 任务模块 `jobs`
 

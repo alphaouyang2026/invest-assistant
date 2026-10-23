@@ -12,7 +12,7 @@ accounts and manual research: nothing here is a foreign key to either.
 """
 from sqlalchemy import Boolean, Column, Float, Integer, MetaData, Table, Text
 
-from app.accounts.tables import JsonText
+from app.db import JsonText
 
 metadata = MetaData()
 experiments = Table(

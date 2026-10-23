@@ -9,7 +9,7 @@ code and API use the glossary names:
 """
 from sqlalchemy import Column, Integer, MetaData, Table, Text
 
-from app.accounts.tables import JsonText
+from app.db import JsonText
 
 metadata = MetaData()
 runs = Table(

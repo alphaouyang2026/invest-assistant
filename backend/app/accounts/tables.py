@@ -6,26 +6,10 @@ imports this.
 
 from __future__ import annotations
 
-import json
+from sqlalchemy import Column, Float, Integer, MetaData, Table, Text
 
-from sqlalchemy import Column, Float, Integer, MetaData, Table, Text, TypeDecorator
-
+from app.db import JsonText
 from app.market_data.tables import DecimalText, IsoDate
-
-
-class JsonText(TypeDecorator):
-    """A JSON value stored as its text, keys sorted so the same value is
-    always the same text."""
-
-    impl = Text
-    cache_ok = True
-
-    def process_bind_param(self, value, dialect):
-        return None if value is None else json.dumps(value, ensure_ascii=False, sort_keys=True)
-
-    def process_result_value(self, value, dialect):
-        return None if value is None else json.loads(value)
-
 
 metadata = MetaData()
 
