@@ -28,7 +28,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import asdict, replace
 from datetime import date
 from time import perf_counter
-from typing import Any
+from typing import Any, Literal
 
 import pandas as pd
 from sqlalchemy import func, insert, select, update
@@ -57,21 +57,27 @@ from app.market_data import EXEC_CLOSE, TOPIX, UniverseRule
 from app.strategies import ScoreTopN
 
 PROGRESS_EVERY = 20  # sessions between stored progress updates in a replay
-# What kind of failure stopped an attempt (`error_code`).
-MISSING_DATA, INPUT_CHANGED, INTERRUPTED, ERROR = "missing_data", "input_changed", "interrupted", "error"
+# What kind of failure stopped an attempt (`error_code`): the data were not all
+# there, the input changed since the first attempt, a restart cut it off, or
+# any other error.
+FailureKind = Literal["missing_data", "input_changed", "interrupted", "error"]
+MISSING_DATA: FailureKind = "missing_data"
+INPUT_CHANGED: FailureKind = "input_changed"
+INTERRUPTED: FailureKind = "interrupted"
+ERROR: FailureKind = "error"
 
 
 class MissingData(ValueError):
     """Data the experiment needs are not held: a failure of its own kind,
     put right by syncing, not by changing the contract."""
 
-    code = MISSING_DATA
+    code: FailureKind = MISSING_DATA
 
 
 class InputChanged(ValueError):
     """A retry's input differs from the first attempt's."""
 
-    code = INPUT_CHANGED
+    code: FailureKind = INPUT_CHANGED
 
 
 class ModelExperiments:
@@ -268,8 +274,10 @@ class ModelExperiments:
                                "sessions": len(plan.test_days), "seconds": round(timings["total"], 1)},
                               report["warnings"])
         except Exception as error:
-            self._set(experiment_id, status=FAILED, error=str(error), error_code=getattr(error, "code", ERROR),
-                      finished_at=now())
+            # Only this module's own failures name their kind: another error's
+            # `code` (SQLAlchemy's, say) is not a FailureKind.
+            kind = error.code if isinstance(error, MissingData | InputChanged) else ERROR
+            self._set(experiment_id, status=FAILED, error=str(error), error_code=kind, finished_at=now())
             raise
 
     def _report(self, contract, plan, models: list[ExperimentModel], oofs, kept, targets, universes,

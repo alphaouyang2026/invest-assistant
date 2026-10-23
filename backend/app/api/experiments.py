@@ -12,15 +12,13 @@ from app.api.research import ERRORS, call_service
 from app.api.schemas import NavPointOut, OrderOut, ResearchHolding
 from app.experiments.contract import DEFAULTS, SUPPORTED_ACTIONS, TASK, UNSUPPORTED_ACTIONS
 from app.experiments.features import FEATURE_NAMES, FEATURES_V1
+from app.experiments.service import FailureKind
 from app.experiments.trainers import TRAINER_DEFAULTS
 from app.market_data import UniverseRule
 
 router = APIRouter(prefix="/api/experiments", tags=["experiments"])
 
 EvidenceStatus = Literal["exploratory", "insufficient_evidence"]
-# What kind of failure stopped an attempt: the data were not all there, the
-# input changed since the first attempt, a restart cut it off, or another error.
-FailureKind = Literal["missing_data", "input_changed", "interrupted", "error"]
 
 
 # --- registering ---------------------------------------------------------------

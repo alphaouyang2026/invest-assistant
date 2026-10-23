@@ -5,9 +5,12 @@ from __future__ import annotations
 
 from uuid import uuid4
 
+import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy.exc import NoResultFound, OperationalError
 
 from app.config import Settings
+from app.experiments import service as service_module
 from app.main import create_app
 from tests.account_market import fake_client
 from tests.experiment_market import SESSIONS, TEST_FROM, request, topix_walk, walks
@@ -71,3 +74,32 @@ def test_register_poll_browse_retry_and_refusals(migrated_database):
         assert client.post("/api/experiments", json={**body, "request_key": str(uuid4()),
                                                       "test_from": "2026-05-23"}).status_code == 422
         assert client.get("/api/experiments").json()["total"] == 1
+
+
+@pytest.mark.parametrize("error", [
+    OperationalError("SELECT 1", {}, Exception("disk I/O error")),  # carries a code of its own, "e3q8"
+    NoResultFound(),                                                # carries code None
+], ids=["operational_error", "no_result"])
+def test_any_other_failure_is_kept_as_an_error_whatever_code_it_carries(migrated_database, monkeypatch, error):
+    """Neither missing data nor a changed input: the attempt fails as
+    `error`, not as whatever `code` the exception brings, and the list and
+    the detail still read it."""
+    def fails(*args, **kwargs):
+        raise error
+
+    monkeypatch.setattr(service_module, "feature_table", fails)
+    app = create_app(Settings(_env_file=None), client=fake_client(walks(), topix=topix_walk(), sessions=SESSIONS),
+                     today=lambda: SESSIONS[-1])
+    with TestClient(app) as client:
+        app.state.market.sync()
+        response = client.post("/api/experiments", json={**request(), "request_key": str(uuid4())})
+        assert response.status_code == 202, response.text
+        experiment_id = response.json()["id"]
+        assert app.state.jobs.wait_until_idle(60)
+
+        detail = client.get(f"/api/experiments/{experiment_id}")
+        assert detail.status_code == 200, detail.text
+        assert (detail.json()["status"], detail.json()["error_code"]) == ("failed", "error")
+        listed = client.get("/api/experiments")
+        assert listed.status_code == 200, listed.text
+        assert listed.json()["experiments"][0]["error_code"] == "error"
