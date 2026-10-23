@@ -140,7 +140,7 @@ class ModelExperiments:
         source_id = request.get("source_account_id")
         source = None if source_id is None else experiment_inputs.source_terms(self._engine, source_id)
         return contracts.freeze(request, sessions=self._market.calendar().sessions(), source=source,
-                            viewed_through=self.viewed_through(), trainers=self._trainers)
+                                viewed_through=self.viewed_through(), trainers=self._trainers)
 
     def viewed_through(self) -> date | None:
         """The latest session whose results could have been seen by now:
@@ -375,9 +375,9 @@ class ModelExperiments:
 
     def _latest_experiment_end(self) -> date | None:
         with self._engine.connect() as con:
-            contracts = con.execute(select(db.experiments.c.contract)
+            completed = con.execute(select(db.experiments.c.contract)
                                     .where(db.experiments.c.status == COMPLETED)).scalars().all()
-        return max((date.fromisoformat(c["test_to"]) for c in contracts), default=None)
+        return max((date.fromisoformat(c["test_to"]) for c in completed), default=None)
 
     # --- reading -------------------------------------------------------------
 
