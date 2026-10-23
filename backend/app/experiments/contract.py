@@ -133,7 +133,7 @@ class ExperimentPlan:
 
 @dataclass(frozen=True)
 class ExperimentModel:
-    """One of the models an experiment scores with: the model, or a rule baseline."""
+    """One of the models an experiment scores with: the model, or a comparison model."""
 
     key: str                   # MAIN, or BASELINE numbered
     role: ModelRole
@@ -259,7 +259,7 @@ def plan(contract: Mapping[str, Any], sessions: Sequence[date]) -> ExperimentPla
 
 
 def models(contract: Mapping[str, Any]) -> list[ExperimentModel]:
-    """The model first, then each rule baseline in the contract's order."""
+    """The model first, then each comparison model in the contract's order."""
     model = contract["model"]
     return [ExperimentModel(MAIN, MODEL_ROLE, "主模型", model["trainer"], model["params"], model.get("search"))] + [
         ExperimentModel(BASELINE.format(n), BASELINE_ROLE, f"对照 {n}", baseline["trainer"], baseline["params"])
@@ -268,7 +268,7 @@ def models(contract: Mapping[str, Any]) -> list[ExperimentModel]:
 
 def replays(contract: Mapping[str, Any]) -> list[PlannedReplay]:
     """The model at the base costs, then at each stress scenario, then each
-    rule baseline at the base costs."""
+    comparison model at the base costs."""
     main, *baselines = models(contract)
     base = Decimal(contract["costs"]["slippage"])
     runs = [(main, BASE, base, None)] + [
