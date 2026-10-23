@@ -4,9 +4,10 @@ import { useEffect, useState } from "react";
 import { api, type Schemas } from "@/lib/api/client";
 import { fraction, minute, percentText, yen } from "@/lib/format";
 import {
-  ACTIONS, EXPERIMENT_EVIDENCE, EXPERIMENT_FAILURES, FEATURES, TRAINER_PARAMS, trainerAbout, trainerLabel,
+  ACTIONS, EXPERIMENT_EVIDENCE, EXPERIMENT_FAILURES, FEATURES, TRAINER_PARAMS, paramSetText, trainerAbout, trainerLabel,
 } from "@/lib/labels";
 import { Pager } from "../../pager";
+import { searchedKeys } from "./experiment-shared";
 import { ExperimentView } from "./experiment-view";
 import { message, STATES, useSubmit } from "./research-shared";
 
@@ -47,6 +48,7 @@ const FIELDS = [...SPAN, ...TRADING, ...OTHER];
 type Form = {
   name: string; testFrom: string; testTo: string; expanding: boolean; trainer: string; params: Record<string, string>;
   baselines: string[]; source: string; numbers: Record<string, string>; noCap: boolean; stress: string;
+  validation: string;
 };
 
 const shown = (field: Field, value: unknown) =>
@@ -62,8 +64,13 @@ function initialForm({ defaults: v, trainers }: Defaults): Form {
     params: paramsText(trainers[trainer]), baselines: (v.baselines as string[]) ?? [], source: "",
     numbers: Object.fromEntries(FIELDS.map(f => [f.key, shown(f, v[f.key])])),
     noCap: v.max_adv20_fraction === null, stress: ((v.stress_bps as number[]) ?? []).map(String).join(", "),
+    validation: String(v.validation_sessions ?? ""),
   };
 }
+
+/** The parameter sets `trainer` tries as the model; one set is no search. */
+const searchOf = (defaults: Defaults, trainer: string) => defaults.searches[trainer] ?? [{}];
+
 
 /** "10, 25，50" → [10, 25, 50]: the basis points each stress scenario adds to the base slippage. */
 const stressList = (text: string) => text.split(/[\s,，、]+/).filter(Boolean).map(Number);
@@ -90,6 +97,8 @@ function requestBody(form: Form, defaults: Defaults): Body {
     min_training_samples: number("min_training_samples"), min_labelled_days: number("min_labelled_days"),
     min_trades: number("min_trades"),
     actions: defaults.supported_actions,
+    // Sized only for a model that tries more than one parameter set; the contract ignores it otherwise.
+    validation_sessions: Number(form.validation),
   };
 }
 
@@ -158,9 +167,11 @@ export function ExperimentWorkspace({ initialExperiment = "" }: { initialExperim
 
   const update = (change: Partial<Form>) => setForm(current => (current ? { ...current, ...change } : current));
   const setNumber = (key: string, value: string) => setForm(current => (current ? { ...current, numbers: { ...current.numbers, [key]: value } } : current));
+  const grid = defaults && form ? searchOf(defaults, form.trainer) : [{}];
+  const varied = searchedKeys(grid);
 
   return <>
-    <p className="meta">先登记一份冻结的实验契约，再按日期折逐折训练、只用折外分数选股，用同一套账户成交规则回放。Ridge 冒烟只证明这套框架能跑通，不代表模型有效。</p>
+    <p className="meta">先登记一份冻结的实验契约，再按日期折逐折训练、只用折外分数选股，用同一套账户成交规则回放。默认的 Ridge 冒烟只证明这套框架能跑通；横截面排序策略（06b）选「XGBoost 排序」作主模型，Ridge 和短期反转作对照。结果不代表模型有效。</p>
     {error && <div role="alert">{error} <button type="button" className="btn" onClick={() => { setError(null); setVersion(v => v + 1); }}>重新读取</button></div>}
     {!defaults && !error && <p role="status">正在读取实验默认值…</p>}
     {defaults && form && <form className="card" aria-label="登记模型实验" onSubmit={e => { e.preventDefault(); void submit(); }}>
@@ -185,13 +196,22 @@ export function ExperimentWorkspace({ initialExperiment = "" }: { initialExperim
             onChange={e => update({ trainer: e.target.value, params: paramsText(defaults.trainers[e.target.value]) })}>
             {Object.keys(defaults.trainers).map(name => <option key={name} value={name}>{trainerLabel(name)}</option>)}
           </select>
-          <div className="hint">{trainerAbout(form.trainer) && `${trainerAbout(form.trainer)}。`}搜索预算 1：参数登记时固定，不在测试段上调</div></div>
-        {Object.keys(form.params).map(key => <div className="field" key={key}>
+          <div className="hint">{trainerAbout(form.trainer) && `${trainerAbout(form.trainer)}。`}{grid.length > 1
+            ? `搜索预算 ${grid.length}：每折在训练窗最后的验证段上比较下面 ${grid.length} 组参数，选一组再用整个训练窗重训；测试段不参与选择`
+            : "搜索预算 1：参数登记时固定，不在测试段上调"}</div></div>
+        {grid.length > 1 && <div className="field wide"><span className="label">要比较的参数组</span>
+          <ol className="plain">{grid.map((set, n) => <li key={n}>第 {n + 1} 组：{paramSetText(set, varied)}</li>)}</ol>
+          <div className="hint">每组只用验证段之前、标签在验证段开始前已结束的样本训练，在验证段上逐日比较「分数前 N 名的平均收益比当天全部打分证券高出多少」（N = 最多持有只数），取日均最高的一组，并列取靠前的</div></div>}
+        {grid.length > 1 && <div className="field"><label htmlFor="experiment-validation">验证段</label>
+          <div className="affix"><input id="experiment-validation" className="input" type="number" min={1} step={1} required
+            value={form.validation} onChange={e => update({ validation: e.target.value })} /><span>个开市日</span></div>
+          <div className="hint">从每折训练窗末尾留出这么多个开市日来比较参数组；训练窗要比它多出至少 {defaults.task.label_sessions + 1} 个开市日</div></div>}
+        {Object.keys(form.params).filter(key => !varied.includes(key)).map(key => <div className="field" key={key}>
           <label htmlFor={`experiment-param-${key}`}>{TRAINER_PARAMS[key]?.label ?? key}</label>
           <input id={`experiment-param-${key}`} className="input" type="number" step="any" required value={form.params[key]}
             onChange={e => update({ params: { ...form.params, [key]: e.target.value } })} />
           {TRAINER_PARAMS[key] && <div className="hint">{TRAINER_PARAMS[key].hint}</div>}</div>)}
-        <fieldset className="choice wide"><legend>规则基线（1 到 3 个，用同样的折、股票池和成交规则回放）</legend>
+        <fieldset className="choice wide"><legend>对照模型（1 到 3 个：规则基线或更简单的模型，用同样的折、股票池、持有规则和成交规则回放）</legend>
           {Object.keys(defaults.trainers).map(name => <label key={name} className="opt">
             <input type="checkbox" checked={form.baselines.includes(name)} onChange={() => update({
               baselines: form.baselines.includes(name) ? form.baselines.filter(b => b !== name) : [...form.baselines, name] })} />
@@ -273,7 +293,9 @@ function Consequences({ defaults: d, form, maxPositions }: { defaults: Defaults;
       <li>持有规则（按分数持仓）：测试起点是第一个决策日，之后每隔 {form.numbers.rebalance_sessions || "—"} 个开市日一个决策日；决策日持有分数最高的前 {maxPositions || "—"} 只；
         决策日模型没有分数时不开新仓、已有持仓保留，不沿用旧分数。</li>
       <li>共 {replays} 个回放：主模型 × 基础成本和 {stress.length} 个压力场景（每边滑点在基础上加 {stress.join("、") || "—"} bps，手续费不加压），
-        每个规则基线 × 基础成本；对照 TOPIX 价格指数和合格池等权。</li>
+        每个对照模型 × 基础成本；另对照 TOPIX 价格指数和合格池等权。</li>
+      {searchOf(d, form.trainer).length > 1 && <li>{`参数搜索：主模型每折从 ${searchOf(d, form.trainer).length} 组参数里，`
+        + `在训练窗最后 ${form.validation || "—"} 个开市日的验证段上选一组；各组的尝试、得分和选中的那组都会留下。对照模型不搜索。`}</li>}
       <li>持有规则能下达的指令种类：只有{d.supported_actions.map(a => ACTIONS[a] ?? a).join("和")}；{unsupported}尚未实现，契约里声明了会被拒绝登记，不会悄悄忽略。</li>
       <li>证据：本步只给出「{EXPERIMENT_EVIDENCE.exploratory.label}」或「{EXPERIMENT_EVIDENCE.insufficient_evidence.label}」，不会判定通过。</li>
     </ul>

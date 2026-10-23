@@ -4,13 +4,15 @@ import { useEffect, useRef, useState } from "react";
 import { api, type Schemas } from "@/lib/api/client";
 import { displayCode, fixed, minute, percentText, signedPercent, signedYen, tone, yen } from "@/lib/format";
 import {
-  ACTIONS, EXPERIMENT_EVIDENCE, EXPERIMENT_FAILURES, FEATURES, ORDER_KINDS, ORDER_STATUSES, outcome, percent, stage,
-  trainerLabel,
+  ACTIONS, EXPERIMENT_EVIDENCE, EXPERIMENT_FAILURES, FEATURES, ORDER_KINDS, ORDER_STATUSES, outcome, paramSetText, percent,
+  stage, trainerLabel,
 } from "@/lib/labels";
 import { NavChart } from "../nav-chart";
 import { Pager } from "../../pager";
 import { DayBrowser } from "./experiment-days";
-import { bps, Reasons, replayName, scenarioName, shortHash, smallPercent, trainerOf, withTrainer } from "./experiment-shared";
+import {
+  bps, Reasons, replayName, scenarioName, searchedKeys, shortHash, smallPercent, trainerOf, withTrainer,
+} from "./experiment-shared";
 import { message, poll, STATES, unfinished, useSubmit } from "./research-shared";
 
 const readExperiment = (id: string, signal: AbortSignal) =>
@@ -83,7 +85,7 @@ export function ExperimentView({ id, onOpen, onStatus }: { id: string; onOpen: (
     <ContractTerms detail={x} />
     {x.data_read && <DataReadCard read={x.data_read} />}
     {x.report && <Folds report={x.report} detail={x} />}
-    {x.report && <Diagnostics report={x.report} />}
+    {x.report && <Diagnostics report={x.report} topN={x.contract.portfolio_rules.max_positions} />}
     {x.report && <Comparison report={x.report} contract={c} />}
     {x.report && x.report.replays.length > 0 && <ReplayPanel id={x.id} report={x.report} />}
     <details className="card card-body"><summary>输入与版本记录</summary>
@@ -154,8 +156,11 @@ function ContractTerms({ detail: x }: { detail: Detail }) {
     ["组合规则", `初始资金 ¥${yen(Number(r.initial_cash))} · 最多 ${r.max_positions} 只 · 单只上限 ${percentText(Number(r.max_weight))}% · 现金下限 ${percentText(Number(r.cash_floor))}% · 成交额上限 ${r.max_adv20_fraction ? `${percentText(Number(r.max_adv20_fraction))}% ADV20` : "不设"}`],
     ["基础成本", `手续费率 ${percentText(Number(c.costs.commission_rate))}% · 最低手续费 ¥${yen(Number(c.costs.commission_min))} · 每边滑点 ${bps(c.costs.slippage)}`],
     ["压力场景", `${c.stress.scenarios.map(s => `每边滑点 +${s.extra_bps} bps（共 ${bps(s.slippage)}）`).join("、")}。${c.stress.basis}`],
-    ["主模型", `${trainerLabel(c.model.trainer)} · 参数 ${JSON.stringify(c.model.params)} · 搜索预算 ${c.model.search_budget}`],
-    ["规则基线", c.baselines.map(b => trainerLabel(b.trainer)).join("、")],
+    ["主模型", `${trainerLabel(c.model.trainer)} · ${paramSetText(c.model.params) || "没有参数"} · 搜索预算 ${c.model.search_budget}`],
+    ...(c.model.search ? [["参数搜索", `验证段 ${c.model.search.validation_sessions} 个开市日 · 看前 ${c.model.search.top_n} 名 · ${
+      c.model.search.grid.map((set, n) => `第 ${n + 1} 组 ${paramSetText(set, searchedKeys(c.model.search!.grid))}`).join("；")}。${
+      c.model.search.basis}`] as [string, string]] : []),
+    ["对照模型", c.baselines.map(b => trainerLabel(b.trainer)).join("、")],
     ["基准", c.benchmarks.map(b => BENCHMARKS[b] ?? b).join("、")],
     ["最低要求", `平均覆盖率 ${percentText(c.minimums.coverage)}% · 主模型每折至少 ${c.minimums.training_samples.toLocaleString("en-US")} 个训练样本 · 至少 ${c.minimums.labelled_days} 个有标签的决策日 · 主模型基础成本回放至少 ${c.minimums.trades} 笔成交`],
     ["已看过截至", c.viewed_through ?? "登记时还没有看过任何历史"],
@@ -185,6 +190,8 @@ function DataReadCard({ read }: { read: DataRead }) {
 
 function Folds({ report, detail }: { report: Report; detail: Detail }) {
   const viewed = report.folds.filter(f => f.viewed).length;
+  const varied = searchedKeys(detail.contract.model.search?.grid ?? []);
+  const searches = detail.fold_results.filter(r => r.search);
   const result = (model: string, fold: number) => detail.fold_results.find(r => r.model === model && r.fold === fold);
   return <section className="card" aria-label="日期折">
     <div className="card-h"><h2>日期折</h2>
@@ -196,34 +203,54 @@ function Folds({ report, detail }: { report: Report; detail: Detail }) {
         <td>{f.viewed ? <span className="badge warn">探索性（已看过）</span> : <span className="badge ok">登记前未看过</span>}</td>
         {report.models.map(m => {
           const r = result(m.key, f.number);
+          const kept = r?.search?.find(t => t.chosen);
           return <td key={m.key}>{!r ? "—" : r.error ? <span className="down">训练失败：{r.error}</span>
-            : <>{r.samples.toLocaleString("en-US")} 个 · <span className="mono">{shortHash(r.artifact_hash)}</span></>}</td>;
+            : <>{r.samples.toLocaleString("en-US")} 个 · <span className="mono">{shortHash(r.artifact_hash)}</span>
+              {kept && r.search && <div className="meta">选第 {r.search.indexOf(kept) + 1} 组：{paramSetText(kept.params, varied)}</div>}</>}</td>;
         })}
       </tr>)}</tbody></table></div>
     <p className="card-body meta">训练只用标签在训练截止日前已经结束的样本（标签要 {detail.contract.task.label_sessions} 个开市日后才知道）；同一天的所有证券在同一折。
       测试段第一天不晚于「已看过截至」的折标「探索性（已看过）」。工件是每折拟合结果的 JSON，后面是它的 sha256 前 12 位。</p>
+    {searches.length > 0 && <details className="card-body"><summary>各折参数搜索（每组在验证段上的得分）</summary>
+      <div className="scroll"><table aria-label="各折参数搜索"><thead><tr><th>折</th><th>参数组</th>
+        <th className="r">验证得分</th><th className="r">比较的日子</th><th className="r">训练样本</th><th>结果</th></tr></thead>
+        <tbody>{searches.flatMap(r => (r.search ?? []).map((t, n) => <tr key={`${r.fold}-${n}`}>
+          <td>第 {r.fold} 折</td><td>第 {n + 1} 组：{paramSetText(t.params, varied)}</td>
+          <td className={`r ${tone(t.validation)}`}>{t.validation === null ? "—" : signedPercent(t.validation)}</td>
+          <td className="r">{t.days} 天</td><td className="r">{t.samples.toLocaleString("en-US")}</td>
+          <td>{t.error ? <span className="down">失败：{t.error}</span> : t.chosen ? <span className="badge ok">选中</span> : "未选"}</td>
+        </tr>))}</tbody></table></div>
+      <p className="meta">验证得分：验证段每天「分数前 {detail.contract.model.search?.top_n ?? "N"} 名的平均五日收益 − 当天全部打分证券的平均」，再对日子取平均；选得分最高的一组用整个训练窗重训。</p></details>}
     {detail.fold_results.length > 0 && <details className="card-body"><summary>查看各折工件</summary>
+      <p className="meta">太长的部分（例如排序模型的树）这里只列长度和 sha256，点每折的链接取完整工件。</p>
+      <ul className="plain">{detail.fold_results.filter(r => r.artifact).map(r => <li key={`${r.model}-${r.fold}`}>
+        <a href={`/api/experiments/${detail.id}/folds/${r.model}/${r.fold}/artifact`} target="_blank" rel="noreferrer">
+          {report.models.find(m => m.key === r.model)?.label ?? r.model} 第 {r.fold} 折的完整工件</a></li>)}</ul>
       <pre>{JSON.stringify(detail.fold_results.map(r => ({ model: r.model, fold: r.fold, seconds: r.seconds,
         artifact_hash: r.artifact_hash, error: r.error, artifact: r.artifact })), null, 2)}</pre></details>}
   </section>;
 }
 
-function Diagnostics({ report }: { report: Report }) {
+function Diagnostics({ report, topN }: { report: Report; topN: number }) {
   return <section className="card" aria-label="预测效果">
     <div className="card-h"><h2>预测效果（模型诊断）</h2><span>只看分数排得准不准，不含成交和费用</span></div>
     <div className="scroll"><table aria-label="模型诊断"><thead><tr><th>模型</th><th className="r">决策日</th><th className="r">模型不可用</th>
       <th className="r">Rank IC 均值</th><th className="r">Rank IC 标准差</th><th className="r">算 IC 的天数</th>
-      <th className="r">平均覆盖率</th><th className="r">最低覆盖率</th><th>训练失败的折</th></tr></thead>
+      <th className="r">平均覆盖率</th><th className="r">最低覆盖率</th><th className="r">前 {topN} 名命中率</th>
+      <th className="r">前 {topN} 名超额</th><th>训练失败的折</th></tr></thead>
       <tbody>{report.models.map(m => {
         const d = m.diagnostics;
         return <tr key={m.key}><td>{withTrainer(m.label, m.trainer)}</td><td className="r">{d.decision_days}</td>
           <td className={`r ${d.unavailable_days ? "down" : ""}`}>{d.unavailable_days} 天</td>
           <td className={`r ${tone(d.ic_mean)}`}>{fixed(d.ic_mean, 3)}</td><td className="r">{fixed(d.ic_std, 3)}</td>
           <td className="r">{d.ic_days}</td><td className="r">{percent(d.coverage_mean)}</td><td className="r">{percent(d.coverage_min)}</td>
+          <td className="r">{percent(d.top_n_hit_mean)}</td>
+          <td className={`r ${tone(d.top_n_excess_mean)}`}>{d.top_n_excess_mean == null ? "—" : signedPercent(d.top_n_excess_mean)}</td>
           <td>{m.failed_folds.length ? <span className="down">{m.failed_folds.map(f => `第 ${f} 折`).join("、")}</span> : "没有"}</td></tr>;
       })}</tbody></table></div>
     <p className="card-body meta">Rank IC：每个决策日把分数和标签（t+1 开盘到 t+6 开盘的收益）各自排名后算相关系数，再对日子取平均；标签越过测试终点的决策日不算。
-      覆盖率 = 当天有分数的证券 ÷ 当天股票池，模型不可用的决策日记 0。</p>
+      覆盖率 = 当天有分数的证券 ÷ 当天股票池，模型不可用的决策日记 0。
+      前 {topN} 名命中率：分数前 {topN} 名里有几成也在当天收益前 {topN} 名；前 {topN} 名超额：分数前 {topN} 名的平均收益比当天全部打分证券高多少（未扣费用，只看排序）。</p>
     <details className="card-body"><summary>逐折诊断</summary>
       <div className="scroll"><table aria-label="逐折诊断"><thead><tr><th>折</th><th>模型</th><th className="r">决策日</th><th className="r">模型不可用</th>
         <th className="r">Rank IC 均值</th><th className="r">Rank IC 标准差</th><th className="r">平均覆盖率</th></tr></thead>

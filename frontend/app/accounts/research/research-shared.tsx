@@ -61,7 +61,8 @@ const FIELDS: Record<string, string> = {
   // model experiments
   name: "实验名称", test_from: "测试起点", test_to: "测试终点", train_sessions: "训练窗", test_sessions: "测试段长度",
   expanding: "扩展训练窗", rebalance_sessions: "决策日间隔", max_holding_sessions: "最长持有", trainer: "主模型",
-  trainer_params: "模型参数", baselines: "规则基线", initial_cash: "初始资金", max_positions: "最多持有只数",
+  trainer_params: "模型参数", search_grid: "参数搜索", validation_sessions: "验证段", baselines: "对照模型",
+  initial_cash: "初始资金", max_positions: "最多持有只数",
   max_weight: "单只上限", cash_floor: "现金下限", max_adv20_fraction: "成交额上限", commission_rate: "手续费率",
   commission_min: "最低手续费", slippage: "每边滑点", stress_bps: "压力场景的滑点加成", min_coverage: "最低覆盖率",
   min_training_samples: "每折最少训练样本", min_labelled_days: "最少有标签的决策日", min_trades: "最少成交数",

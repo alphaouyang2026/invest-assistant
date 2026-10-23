@@ -248,6 +248,10 @@ const TRAINERS: Record<string, { label: string; about: string }> = {
     label: "规则：短期反转",
     about: "不训练：分数 = 过去 5 个开市日收益取负，跌得越多越优先，和 05 短期反转的排序一样",
   },
+  xgb_rank_ndcg_v1: {
+    label: "XGBoost 排序",
+    about: "每个交易日的证券算一组，把当天的五日收益分成十档，用梯度提升树学「当天谁排前面」（NDCG 排序）；分数只表示当天的先后，不是收益预测",
+  },
 };
 
 /** "Ridge 回归（ridge_v1）". */
@@ -256,7 +260,20 @@ export const trainerAbout = (name: string) => TRAINERS[name]?.about ?? "";
 
 export const TRAINER_PARAMS: Record<string, { label: string; hint: string }> = {
   alpha: { label: "正则强度 alpha", hint: "越大，系数被压得越小；固定一个值，不调参" },
+  max_depth: { label: "树的最大深度", hint: "每棵树最多分几层；越深越能刻画特征之间的配合，也越容易记住噪声" },
+  n_estimators: { label: "树的棵数", hint: "一共训练多少棵树" },
+  learning_rate: { label: "学习率", hint: "每棵树的贡献打多少折；越小越稳，要的树越多" },
+  subsample: { label: "每棵树用的样本比例", hint: "每棵树随机抽这么多比例的样本来训练" },
+  colsample_bytree: { label: "每棵树用的特征比例", hint: "每棵树随机抽这么多比例的特征" },
+  min_child_weight: { label: "叶子最少权重", hint: "一个叶子至少要有这么多样本权重才能再分" },
+  pairs_per_sample: { label: "每只比较几对", hint: "排序训练时，每只证券和排在它附近的几只比较先后" },
+  seed: { label: "随机种子", hint: "固定它，同样的训练样本才得到同样的模型" },
+  threads: { label: "线程数", hint: "固定它，结果才能逐位复现" },
 };
+
+/** "树的最大深度 3、树的棵数 100": a parameter set, by its names on screen. */
+export const paramSetText = (params: Record<string, unknown>, keys: string[] = Object.keys(params)) =>
+  keys.map(key => `${TRAINER_PARAMS[key]?.label ?? key} ${String(params[key])}`).join("、");
 
 export const FEATURES: Record<string, string> = {
   ret_1: "1 日收益",
