@@ -2,7 +2,9 @@
 days alone — every code of a day together, no label running past the
 cutoff — and scores its test stretch a session at a time; bars after a day
 change nothing about it; any trainer slots in; a fold that fails scores
-nothing and the others go on."""
+nothing and the others go on. With a search (06b) each fold fits every
+candidate before its validation stretch, compares them on it, keeps the
+best and fits that on the whole window; every try is recorded."""
 
 from __future__ import annotations
 
@@ -17,6 +19,7 @@ from app.experiments import (
     AS_OF, SCORE_COLUMNS, Fold, ModelArtifact, TrainingSet, build_trainer, feature_table, label_sessions, labels,
     make_folds, out_of_fold,
 )
+from app.experiments.oof import Search, top_n_excess, validation_fold
 from app.market_data import CLOSE, HIGH, LOW, OPEN, VOLUME
 from app.market_data.frame import CODE, DATE
 from tests.frames import sessions
@@ -193,3 +196,95 @@ def test_with_every_fold_failing_there_are_no_scores() -> None:
 
     assert list(result.scores.columns) == SCORE_COLUMNS and result.scores.empty
     assert [record.error for record in result.folds] == ["ValueError: 不收敛"] * 4
+
+
+class Peeking:
+    """A stub candidate that scores by the label itself times `sign` (only a
+    stub may peek), and keeps every training set it was handed and the days
+    each fit's artifact scored, by its cutoff."""
+
+    name = "stub"
+
+    def __init__(self, known: pd.Series, sign: float, tag: str, fail: bool = False) -> None:
+        self.known, self.sign, self.fail = known, sign, fail
+        self.params = {"tag": tag}
+        self.fits: dict[date, TrainingSet] = {}
+        self.scored: dict[date, list[date]] = {}
+
+    def fit(self, training: TrainingSet, cutoff: date) -> ModelArtifact:
+        self.fits[cutoff] = training
+        if self.fail:
+            raise RuntimeError("这组参数训练失败")
+        return ModelArtifact(self.name, self.params, {}, cutoff, len(training.labels))
+
+    def predict(self, artifact: ModelArtifact, features: pd.DataFrame) -> pd.Series:
+        self.scored.setdefault(artifact.train_cutoff, []).extend(sorted(set(features.index.get_level_values(AS_OF))))
+        return (self.sign * self.known.reindex(features.index)).fillna(0.0)
+
+
+VALIDATION = 8
+
+
+def search_run(*candidates: Peeking):
+    features, found, folds = experiment()
+    result = out_of_fold(Search(candidates, VALIDATION, top_n=3), folds, features, found, sessions=DAYS,
+                         label_sessions=LABEL_SESSIONS)
+    return result, folds
+
+
+def test_the_validation_stretch_is_the_training_windows_last_sessions():
+    fold = make_folds(DAYS, test_from=DAYS[90], test_to=DAYS[99], train_sessions=20, test_sessions=10)[0]
+    inner = validation_fold(fold, DAYS, VALIDATION)
+    assert (inner.train_from, inner.train_to, inner.test_from, inner.test_to) == (
+        DAYS[70], DAYS[81], DAYS[82], DAYS[89])
+    with pytest.raises(ValueError, match="放不下 20 个开市日的验证段"):
+        validation_fold(fold, DAYS, 20)
+
+
+def test_a_search_fits_each_candidate_before_the_validation_stretch_and_keeps_the_best():
+    _, found, _ = experiment()
+    worst, best, same = Peeking(found, -1, "worst"), Peeking(found, 1, "best"), Peeking(found, 1, "same")
+    result, folds = search_run(worst, best, same)
+    for fold, outcome in zip(folds, result.folds):
+        inner = validation_fold(fold, DAYS, VALIDATION)
+        cutoff = DAYS.index(inner.train_to)
+        for candidate in (worst, best, same):
+            trained = set(candidate.fits[inner.train_to].labels.index.get_level_values(AS_OF))
+            # Every label ends by the stretch's cutoff: six sessions after its day.
+            assert max(DAYS.index(day) for day in trained) == cutoff - LABEL_SESSIONS
+            assert min(trained) == fold.train_from
+        stretch = best.scored[inner.train_to]
+        assert all(inner.test_from <= day <= inner.test_to for day in stretch)
+        # Only the stretch's days whose labels are known by the fold's own cutoff.
+        assert stretch and max(DAYS.index(day) for day in stretch) <= DAYS.index(fold.train_to) - LABEL_SESSIONS
+        assert [(t["params"]["tag"], t["chosen"]) for t in outcome.search] == [
+            ("worst", False), ("best", True), ("same", False)]  # a tie keeps the earlier
+        assert outcome.search[1]["validation"] == outcome.search[2]["validation"] > outcome.search[0]["validation"]
+        assert all(t["days"] == 2 and t["error"] is None for t in outcome.search)
+        # The kept candidate is fitted again on the whole window, and scores the test stretch.
+        assert set(best.fits[fold.train_to].labels.index.get_level_values(AS_OF)) == set(
+            DAYS[DAYS.index(fold.train_from):DAYS.index(fold.train_to) - LABEL_SESSIONS + 1])
+        assert fold.train_to not in worst.fits and fold.train_to not in same.fits
+        assert outcome.artifact.params == {"tag": "best"} and not outcome.failed
+    assert set(result.scores["artifact_hash"]) == {r.artifact.hash() for r in result.folds}
+
+
+def test_a_candidate_that_fails_is_recorded_and_a_fold_with_none_to_compare_fails():
+    _, found, _ = experiment()
+    result, _ = search_run(Peeking(found, 1, "broken", fail=True), Peeking(found, -1, "works"))
+    tries = result.folds[0].search
+    assert [(t["params"]["tag"], t["chosen"]) for t in tries] == [("broken", False), ("works", True)]
+    assert "这组参数训练失败" in tries[0]["error"] and tries[0]["validation"] is None
+    assert not result.folds[0].failed
+
+    result, _ = search_run(Peeking(found, 1, "a", fail=True), Peeking(found, 1, "b", fail=True))
+    assert all(r.failed and "没有一组参数能比较" in r.error for r in result.folds)
+    assert all(len(r.search) == 2 and not any(t["chosen"] for t in r.search) for r in result.folds)
+    assert result.scores.empty
+
+
+def test_the_top_n_excess_is_the_best_scored_codes_labels_over_all():
+    scores = pd.Series({"a": 3.0, "b": 2.0, "c": 1.0, "d": 0.0})
+    labels_ = pd.Series({"a": 0.3, "b": 0.1, "c": 0.0, "d": 0.0})
+    assert top_n_excess(scores, labels_, 2) == pytest.approx(0.2 - 0.1)
+    assert top_n_excess(scores, labels_.drop(["b", "c", "d"]), 2) is None

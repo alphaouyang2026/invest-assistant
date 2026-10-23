@@ -471,6 +471,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/experiments/{experiment_id}/folds/{model}/{fold}/artifact": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Artifact
+         * @description One fold's model artifact whole: the detail names a long part (a
+         *     ranker's booster) by its length and sha256 only.
+         */
+        get: operations["artifact_api_experiments__experiment_id__folds__model___fold__artifact_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/experiments/{experiment_id}": {
         parameters: {
             query?: never;
@@ -1212,6 +1233,10 @@ export interface components {
             labelled: number;
             /** Rank Ic */
             rank_ic: number | null;
+            /** Top N Hit */
+            top_n_hit?: number | null;
+            /** Top N Excess */
+            top_n_excess?: number | null;
         };
         /** Diagnostics */
         Diagnostics: {
@@ -1229,6 +1254,10 @@ export interface components {
             coverage_mean: number | null;
             /** Coverage Min */
             coverage_min: number | null;
+            /** Top N Hit Mean */
+            top_n_hit_mean?: number | null;
+            /** Top N Excess Mean */
+            top_n_excess_mean?: number | null;
             /** Days */
             days: components["schemas"]["DiagnosticDay"][];
             /** Folds */
@@ -1479,8 +1508,9 @@ export interface components {
         /**
          * ExperimentDefaults
          * @description For the registration form: every default, the trainers and their
-         *     parameters, the actions a contract may declare, and how far history
-         *     has been seen — what a contract registered now would freeze.
+         *     parameters, the parameter sets each tries when it is the model, the
+         *     actions a contract may declare, and how far history has been seen —
+         *     what a contract registered now would freeze.
          */
         ExperimentDefaults: {
             /** Defaults */
@@ -1492,6 +1522,12 @@ export interface components {
                 [key: string]: {
                     [key: string]: unknown;
                 };
+            };
+            /** Searches */
+            searches: {
+                [key: string]: {
+                    [key: string]: unknown;
+                }[];
             };
             /** Supported Actions */
             supported_actions: string[];
@@ -1610,6 +1646,15 @@ export interface components {
             trainer_params: {
                 [key: string]: unknown;
             };
+            /** Search Grid */
+            search_grid?: {
+                [key: string]: unknown;
+            }[] | null;
+            /**
+             * Validation Sessions
+             * @default 60
+             */
+            validation_sessions: number;
             /**
              * Baselines
              * @default [
@@ -1849,6 +1894,10 @@ export interface components {
             coverage_mean: number | null;
             /** Coverage Min */
             coverage_min: number | null;
+            /** Top N Hit Mean */
+            top_n_hit_mean?: number | null;
+            /** Top N Excess Mean */
+            top_n_excess_mean?: number | null;
             /** Fold */
             fold: number;
         };
@@ -1902,7 +1951,12 @@ export interface components {
             /** Fold */
             fold: number;
         };
-        /** FoldResultOut */
+        /**
+         * FoldResultOut
+         * @description A fold's outcome. Its artifact's long state values (a ranker's
+         *     booster) are shown as {omitted, characters, sha256}; GET
+         *     …/folds/{model}/{fold}/artifact has them whole.
+         */
         FoldResultOut: {
             /** Model */
             model: string;
@@ -1937,6 +1991,8 @@ export interface components {
             artifact_hash: string | null;
             /** Error */
             error: string | null;
+            /** Search */
+            search?: components["schemas"]["SearchTry"][] | null;
         };
         /** FoldTerms */
         FoldTerms: {
@@ -2130,6 +2186,7 @@ export interface components {
             };
             /** Search Budget */
             search_budget: number;
+            search?: components["schemas"]["SearchTerms"] | null;
         };
         /** NavPointOut */
         NavPointOut: {
@@ -2673,6 +2730,36 @@ export interface components {
             code_version: string;
             /** Error */
             error: string | null;
+        };
+        /** SearchTerms */
+        SearchTerms: {
+            /** Grid */
+            grid: {
+                [key: string]: unknown;
+            }[];
+            /** Validation Sessions */
+            validation_sessions: number;
+            /** Top N */
+            top_n: number;
+            /** Basis */
+            basis: string;
+        };
+        /** SearchTry */
+        SearchTry: {
+            /** Params */
+            params: {
+                [key: string]: unknown;
+            };
+            /** Samples */
+            samples: number;
+            /** Validation */
+            validation: number | null;
+            /** Days */
+            days: number;
+            /** Error */
+            error: string | null;
+            /** Chosen */
+            chosen: boolean;
         };
         /** SecurityBarsOut */
         SecurityBarsOut: {
@@ -4053,6 +4140,57 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ExperimentAccepted"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+        };
+    };
+    artifact_api_experiments__experiment_id__folds__model___fold__artifact_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                experiment_id: string;
+                model: string;
+                fold: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArtifactOut"];
                 };
             };
             /** @description Not Found */

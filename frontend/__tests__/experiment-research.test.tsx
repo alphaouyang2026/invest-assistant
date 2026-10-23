@@ -11,11 +11,17 @@ const task = { name: "prime_open_to_open_5d_v1", decision: "t 收盘决策，最
 const features = { version: "ohlcv_ratios_v1", names: ["ret_1", "ret_5", "ret_20"] };
 const defaults: Schemas["ExperimentDefaults"] = {
   defaults: { name: "", train_sessions: 250, test_sessions: 60, expanding: false, rebalance_sessions: 5, max_holding_sessions: 0,
-    trainer: "ridge_v1", trainer_params: {}, baselines: ["rule_short_reversal_v1"], source_account_id: null,
+    trainer: "ridge_v1", trainer_params: {}, search_grid: null, validation_sessions: 60, baselines: ["rule_short_reversal_v1"],
+    source_account_id: null,
     initial_cash: 10_000_000, max_positions: 10, max_weight: 0.1, cash_floor: 0.05, max_adv20_fraction: 0.05,
     commission_rate: 0, commission_min: 0, slippage: 0.001, stress_bps: [10, 25, 50],
     min_coverage: 0.8, min_training_samples: 20_000, min_labelled_days: 24, min_trades: 30, actions: ["disposition", "priority"] },
-  trainers: { ridge_v1: { alpha: 1.0 }, rule_short_reversal_v1: {} },
+  trainers: { ridge_v1: { alpha: 1.0 }, rule_short_reversal_v1: {},
+    xgb_rank_ndcg_v1: { max_depth: 3, n_estimators: 100, learning_rate: 0.05, subsample: 0.8, colsample_bytree: 0.8,
+      min_child_weight: 1, pairs_per_sample: 10, seed: 7, threads: 4 } },
+  searches: { ridge_v1: [{}], rule_short_reversal_v1: [{}],
+    xgb_rank_ndcg_v1: [{ max_depth: 3, n_estimators: 100 }, { max_depth: 3, n_estimators: 200 },
+      { max_depth: 4, n_estimators: 100 }, { max_depth: 4, n_estimators: 200 }] },
   supported_actions: ["disposition", "priority"], unsupported_actions: ["target_weight", "gross_exposure"],
   task, features, viewed_through: "2026-10-19",
 };
@@ -56,14 +62,14 @@ const report: Schemas["ExperimentReport"] = {
   folds: [{ number: 1, train_from: "2025-01-06", train_to: "2025-12-30", test_from: "2026-01-05", test_to: "2026-03-31", viewed: true },
     { number: 2, train_from: "2025-04-01", train_to: "2026-03-31", test_from: "2026-04-01", test_to: "2026-06-25", viewed: false }],
   models: [{ key: "model", role: "model", label: "主模型", trainer: "ridge_v1", params: { alpha: 1 }, failed_folds: [], diagnostics: diagnostics(.004) },
-    { key: "baseline_1", role: "baseline", label: "规则基线 1", trainer: "rule_short_reversal_v1", params: {}, failed_folds: [],
+    { key: "baseline_1", role: "baseline", label: "对照 1", trainer: "rule_short_reversal_v1", params: {}, failed_folds: [],
       diagnostics: diagnostics(.021) }],
   benchmarks: { topix_price: { basis: "TOPIX 价格指数，测试首日收盘到末日收盘，不含分红", total_return: .1 },
     eligible_equal_weight: { basis: "每个决策日当天股票池里有标签的证券等权，不扣费用", total_return: .07,
       periods: [{ date: "2026-01-05", codes: 530, mean_return: .01 }] } },
   stress_basis: "压力场景只回放主模型：每边滑点 = 基础滑点 + 登记时声明的加成；手续费率和最低手续费沿用基础成本，不加压",
   replays: [summary(1, "model", "主模型", "base", "0.001", -.325), summary(2, "model", "主模型", "stress", "0.0035", -.497, 25),
-    summary(3, "baseline_1", "规则基线 1", "base", "0.001", .0007)],
+    summary(3, "baseline_1", "对照 1", "base", "0.001", .0007)],
   evidence: { status: "exploratory", viewed_folds: [1],
     reasons: [{ code: "history_partly_viewed", message: "第 1 折的测试段在登记前已被查看过（截至 2026-03-31），这部分结果只能算探索性" }] },
   warnings: ["50740 在 2023-06-29 配股：持仓未调整"], timings: { total: 185 },
@@ -225,7 +231,7 @@ it("表单默认值来自服务端，提示已看过的历史，登记时按填�
     baselines: ["rule_short_reversal_v1"], source_account_id: null, initial_cash: 10_000_000, max_positions: 10, max_weight: .1,
     cash_floor: .05, commission_rate: 0, commission_min: 0, slippage: .001, max_adv20_fraction: null,
     stress_bps: [25, 50], min_coverage: .8, min_training_samples: 20_000, min_labelled_days: 12, min_trades: 30,
-    actions: ["disposition", "priority"],
+    actions: ["disposition", "priority"], validation_sessions: 60,
   });
   expect(await screen.findByRole("region", { name: "冻结契约" })).toBeInTheDocument();
   expect(window.location.search).toContain("experiment=exp-1-aaaaaaaa");
@@ -288,11 +294,11 @@ it("已完成实验：证据状态、冻结契约与 hash、日期折的已看�
   expect(within(first).getByText("探索性（已看过）")).toBeInTheDocument();
   expect(within(second).getByText("登记前未看过")).toBeInTheDocument();
   expect(within(first).getAllByText("101,891 个 ·")).toHaveLength(2);
-  expect(within(folds).getByRole("columnheader", { name: "规则基线 1：样本 · 工件" })).toBeInTheDocument();
+  expect(within(folds).getByRole("columnheader", { name: "对照 1：样本 · 工件" })).toBeInTheDocument();
 
   const diag = screen.getByRole("table", { name: "模型诊断" });
   expect(within(diag).getByText("0.004")).toBeInTheDocument();
-  expect(within(diag).getByText("规则基线 1 · 规则：短期反转（rule_short_reversal_v1）")).toBeInTheDocument();
+  expect(within(diag).getByText("对照 1 · 规则：短期反转（rule_short_reversal_v1）")).toBeInTheDocument();
   expect(within(diag).getAllByText("99.80%")).toHaveLength(2);
 
   const comparison = screen.getByRole("table", { name: "回放与基准对比" });
@@ -397,4 +403,81 @@ it("运行中显示持久进度，离开页面后不再轮询", async () => {
     await vi.advanceTimersByTimeAsync(10_000);
     expect(reads("/api/experiments/exp-1-aaaaaaaa")).toHaveLength(seen);
   } finally { vi.useRealTimers(); }
+});
+
+it("选 XGBoost 排序作主模型：说明搜索预算和要比较的参数组，由参数组决定的项不再让人填，提交时带上验证段", async () => {
+  render(<ExperimentWorkspace />);
+  const form = await screen.findByRole("form", { name: "登记模型实验" });
+  expect(within(form).getByText(/搜索预算 1：参数登记时固定/)).toBeInTheDocument();
+  expect(within(form).queryByLabelText("验证段")).not.toBeInTheDocument();
+
+  fireEvent.change(within(form).getByLabelText("主模型"), { target: { value: "xgb_rank_ndcg_v1" } });
+  expect(within(form).getByText(/搜索预算 4：每折在训练窗最后的验证段上比较下面 4 组参数/)).toBeInTheDocument();
+  expect(within(form).getByText("第 1 组：树的最大深度 3、树的棵数 100")).toBeInTheDocument();
+  expect(within(form).getByText("第 4 组：树的最大深度 4、树的棵数 200")).toBeInTheDocument();
+  expect(within(form).queryByLabelText("树的最大深度")).not.toBeInTheDocument();  // the sets give it
+  expect(within(form).getByLabelText("学习率")).toHaveValue(0.05);
+  expect(within(form).getByLabelText("验证段")).toHaveValue(60);
+  expect(within(form).getByRole("region", { name: "登记后冻结的内容" })).toHaveTextContent(
+    "参数搜索：主模型每折从 4 组参数里，在训练窗最后 60 个开市日的验证段上选一组");
+
+  fireEvent.click(within(form).getByRole("checkbox", { name: /Ridge 回归/ }));
+  fireEvent.change(within(form).getByLabelText("验证段"), { target: { value: "40" } });
+  fireEvent.change(within(form).getByLabelText("测试起点"), { target: { value: "2026-01-05" } });
+  fireEvent.change(within(form).getByLabelText("测试终点"), { target: { value: "2026-10-16" } });
+  fireEvent.click(within(form).getByRole("button", { name: "登记并运行" }));
+  await waitFor(() => expect(posts).toHaveLength(1));
+  expect(posts[0].body).toMatchObject({
+    trainer: "xgb_rank_ndcg_v1", validation_sessions: 40, baselines: ["rule_short_reversal_v1", "ridge_v1"],
+    trainer_params: { max_depth: 3, n_estimators: 100, learning_rate: 0.05, seed: 7, threads: 4 },
+  });
+});
+
+it("排序模型的实验：契约写出参数搜索，各折写出选了哪组和各组得分，诊断给出前 N 名命中率，工件给出完整链接", async () => {
+  const grid = defaults.searches.xgb_rank_ndcg_v1.map(set => ({ ...defaults.trainers.xgb_rank_ndcg_v1, ...set }));
+  const tries = grid.map((params, n) => ({ params, samples: 90_000, validation: [.001, .002, -.001, null][n], days: 54,
+    error: n === 3 ? "XGBoostError: 内存不足" : null, chosen: n === 1 }));
+  const ranker: Schemas["ExperimentDetail"] = {
+    ...completed, id: "exp-2-bbbbbbbb", name: "横截面排序 A",
+    contract: { ...contract, version: "model_experiment_v2",
+      model: { trainer: "xgb_rank_ndcg_v1", params: defaults.trainers.xgb_rank_ndcg_v1, search_budget: 4,
+        search: { grid, validation_sessions: 60, top_n: 10, basis: "每折把训练窗最后若干个开市日留作验证段" } },
+      baselines: [{ trainer: "ridge_v1", params: { alpha: 1 } }, { trainer: "rule_short_reversal_v1", params: {} }] },
+    report: { ...report, models: [
+      { ...report.models[0], trainer: "xgb_rank_ndcg_v1",
+        diagnostics: { ...diagnostics(.012), top_n_hit_mean: .12, top_n_excess_mean: .0034 } },
+      { ...report.models[1], trainer: "ridge_v1" }] },
+    fold_results: [
+      foldResult("model", 1, { search: tries, artifact: { trainer: "xgb_rank_ndcg_v1", params: grid[1], train_cutoff: "2025-12-30",
+        samples: 101_891, state: { groups: 190, booster: { omitted: true, characters: 420_000, sha256: "beef" } } } }),
+      foldResult("baseline_1", 1)],
+  };
+  experiments["exp-2-bbbbbbbb"] = ranker;
+  render(<ExperimentWorkspace initialExperiment="exp-2-bbbbbbbb" />);
+
+  const terms = await screen.findByRole("table", { name: "冻结契约" });
+  expect(within(terms).getByRole("rowheader", { name: "参数搜索" }).nextSibling).toHaveTextContent(
+    "验证段 60 个开市日 · 看前 10 名 · 第 1 组 树的最大深度 3、树的棵数 100；第 2 组 树的最大深度 3、树的棵数 200");
+  expect(within(terms).getByRole("rowheader", { name: "主模型" }).nextSibling).toHaveTextContent("搜索预算 4");
+  expect(within(terms).getByRole("rowheader", { name: "对照模型" }).nextSibling).toHaveTextContent(
+    "Ridge 回归（ridge_v1）、规则：短期反转（rule_short_reversal_v1）");
+
+  const folds = screen.getByRole("table", { name: "日期折列表" });
+  expect(within(folds).getByText("选第 2 组：树的最大深度 3、树的棵数 200")).toBeInTheDocument();
+  fireEvent.click(screen.getByText("各折参数搜索（每组在验证段上的得分）"));
+  const search = screen.getByRole("table", { name: "各折参数搜索" });
+  const rows = within(search).getAllByRole("row").slice(1);
+  expect(rows).toHaveLength(4);
+  expect(within(rows[1]).getByText("选中")).toBeInTheDocument();
+  expect(within(rows[1]).getByText("+0.20%")).toBeInTheDocument();
+  expect(within(rows[3]).getByText("失败：XGBoostError: 内存不足")).toBeInTheDocument();
+
+  const diag = screen.getByRole("table", { name: "模型诊断" });
+  expect(within(diag).getByRole("columnheader", { name: "前 10 名命中率" })).toBeInTheDocument();
+  expect(within(diag).getByText("12.00%")).toBeInTheDocument();
+  expect(within(diag).getByText("+0.34%")).toBeInTheDocument();
+
+  fireEvent.click(screen.getByText("查看各折工件"));
+  expect(screen.getByRole("link", { name: "主模型 第 1 折的完整工件" })).toHaveAttribute(
+    "href", "/api/experiments/exp-2-bbbbbbbb/folds/model/1/artifact");
 });

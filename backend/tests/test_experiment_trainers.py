@@ -1,7 +1,9 @@
 """Trainers (ticket 06a): `ridge_v1` standardises and fits on the training
 set alone and scores from its JSON artifact, the same artifact and input
 giving the same scores bit for bit; `rule_short_reversal_v1` fits nothing
-and scores by the five-bar fall."""
+and scores by the five-bar fall. `xgb_rank_ndcg_v1` (06b) grades each day's
+labels into ten steps, groups its training by day, learns the day's order
+and gives the same booster for the same training set, byte for byte."""
 
 from __future__ import annotations
 
@@ -15,6 +17,7 @@ import pytest
 from app.experiments import (
     AS_OF, FEATURE_NAMES, TRAINER_DEFAULTS, ModelArtifact, TrainingSet, build_trainer, feature_table,
 )
+from app.experiments.trainers import GRADES, TRAINER_SEARCH, grades
 from app.market_data.frame import CODE
 from tests.frames import sessions
 from tests.random_bars import frame_from, walk
@@ -34,7 +37,7 @@ def training_set(rows: int = 300, seed: int = 0) -> TrainingSet:
 
 
 def test_the_defaults_are_a_single_ridge_alpha_and_no_parameters_for_the_rule() -> None:
-    assert TRAINER_DEFAULTS == {"ridge_v1": {"alpha": 1.0}, "rule_short_reversal_v1": {}}
+    assert TRAINER_DEFAULTS["ridge_v1"] == {"alpha": 1.0} and TRAINER_DEFAULTS["rule_short_reversal_v1"] == {}
 
 
 def test_ridge_v1_keeps_the_training_set_standardisation_and_its_fit_as_json() -> None:
@@ -142,3 +145,67 @@ def test_a_trainer_will_not_score_with_another_trainers_artifact() -> None:
 
     with pytest.raises(ValueError, match="ridge_v1 不能用 rule_short_reversal_v1 的模型工件打分"):
         build_trainer("ridge_v1", {}).predict(artifact, training_set().features)
+
+
+def ranking_set(days: int = 40, per_day: int = 30, seed: int = 1, start: date = date(2025, 1, 6)) -> TrainingSet:
+    """Random features; each day's label is `ret_5` plus a little noise, so
+    the day's order follows `ret_5`."""
+    rng = np.random.default_rng(seed)
+    index = pd.MultiIndex.from_tuples([(day, f"C{n:02d}") for day in sessions(days, start) for n in range(per_day)],
+                                      names=[AS_OF, CODE])
+    features = pd.DataFrame(rng.normal(0, 0.05, (len(index), len(FEATURE_NAMES))), index=index,
+                            columns=list(FEATURE_NAMES))
+    label = features["ret_5"] + rng.normal(0, 0.005, len(index))
+    return TrainingSet(features, label.rename("label"))
+
+
+def test_a_days_labels_are_graded_into_ten_steps_within_the_day() -> None:
+    days = sessions(2)
+    index = pd.MultiIndex.from_tuples([(day, f"C{n:02d}") for day in days for n in range(20)], names=[AS_OF, CODE])
+    # The second day's labels are a hundred times the first's: grading is within each day.
+    labels = pd.Series([n / 100 for n in range(20)] + [n for n in range(20)], index=index, dtype=float)
+    found = grades(labels)
+    assert GRADES == 10
+    assert list(found[:20]) == list(found[20:]) == [n // 2 for n in range(20)]
+    tied = pd.Series([0.1, 0.1, 0.2, 0.3], index=index[:4], dtype=float)
+    assert grades(tied)[0] == grades(tied)[1]
+
+
+def test_the_ranker_groups_its_training_by_day_and_learns_the_days_order() -> None:
+    trainer = build_trainer("xgb_rank_ndcg_v1", {"n_estimators": 200})
+    artifact = trainer.fit(ranking_set(), CUTOFF)
+    assert artifact.trainer == "xgb_rank_ndcg_v1" and artifact.samples == 40 * 30
+    assert artifact.state["groups"] == 40 and artifact.state["features"] == list(FEATURE_NAMES)
+    assert artifact.params["seed"] == 7 and artifact.params["threads"] == 4
+    later = ranking_set(days=5, seed=2, start=date(2025, 9, 1))
+    scores = trainer.predict(artifact, later.features)
+    agreement = [scores[day.index].corr(day["ret_5"], method="spearman")
+                 for _, day in later.features.groupby(level=AS_OF)]
+    assert min(agreement) > 0.5 and np.mean(agreement) > 0.7
+
+
+def test_the_same_training_set_gives_the_same_booster_byte_for_byte() -> None:
+    trainer = build_trainer("xgb_rank_ndcg_v1", {"n_estimators": 30})
+    first, second = trainer.fit(ranking_set(), CUTOFF), trainer.fit(ranking_set(), CUTOFF)
+    assert first.hash() == second.hash() and first.state["booster"] == second.state["booster"]
+    stored = ModelArtifact.from_dict(json.loads(json.dumps(first.as_dict())))
+    rows = ranking_set(days=3, seed=3).features
+    assert np.array_equal(trainer.predict(first, rows).to_numpy(), trainer.predict(stored, rows).to_numpy())
+    assert first.hash() != build_trainer("xgb_rank_ndcg_v1", {"n_estimators": 30, "seed": 8}).fit(
+        ranking_set(), CUTOFF).hash()
+
+
+@pytest.mark.parametrize("params, why", [
+    ({"max_depth": 0}, "max_depth"), ({"learning_rate": 0}, "learning_rate"), ({"subsample": 1.5}, "subsample"),
+    ({"min_child_weight": -1}, "min_child_weight"), ({"threads": 0}, "threads"), ({"depth": 3}, "没有这些参数"),
+])
+def test_the_ranker_refuses_parameters_it_cannot_use(params, why) -> None:
+    with pytest.raises(ValueError, match=why):
+        build_trainer("xgb_rank_ndcg_v1", params)
+
+
+def test_the_ranker_tries_four_parameter_sets_and_the_others_one() -> None:
+    assert TRAINER_SEARCH["xgb_rank_ndcg_v1"] == [
+        {"max_depth": 3, "n_estimators": 100}, {"max_depth": 3, "n_estimators": 200},
+        {"max_depth": 4, "n_estimators": 100}, {"max_depth": 4, "n_estimators": 200}]
+    assert TRAINER_SEARCH["ridge_v1"] == TRAINER_SEARCH["rule_short_reversal_v1"] == [{}]

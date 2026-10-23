@@ -15,19 +15,29 @@ features the same way, bit for bit, wherever it is read back.
 - `rule_short_reversal_v1` is the rule baseline: it fits nothing and scores
   a sample by how far it fell over the last five bars (`−ret_5`) — ticket
   05's short reversal ranking.
+- `xgb_rank_ndcg_v1` (ticket 06b) learns the day's order itself: each
+  training day is one group (XGBoost's query), its labels graded within the
+  day into ten steps by decile (0 the worst tenth, 9 the best), and the
+  trees fitted to rank a day's codes by NDCG with its pairs drawn from each
+  code's nearest neighbours in the top (`rank:ndcg`, `topk` pairs). Its
+  score orders a day's codes and says nothing of how much they will return.
+  The booster is kept as XGBoost's own JSON inside the artifact; a fixed
+  seed and thread count make the same training set give the same booster,
+  byte for byte.
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
 from typing import Any, Protocol
 
 import numpy as np
 import pandas as pd
+import xgboost as xgb
 from sklearn.linear_model import Ridge
 
 
@@ -124,10 +134,83 @@ class RuleShortReversalV1:
         return (-features["ret_5"].astype(float)).rename("score")
 
 
-_TRAINERS = {RidgeV1.name: RidgeV1, RuleShortReversalV1.name: RuleShortReversalV1}
+GRADES = 10  # the steps a day's labels are graded into for the ranker
+
+
+class XgbRankNdcgV1:
+    name = "xgb_rank_ndcg_v1"
+
+    def __init__(self, params: Mapping[str, Any]) -> None:
+        params = {**TRAINER_DEFAULTS[self.name], **params}
+        self.params = {
+            "max_depth": _count(self.name, "max_depth", params["max_depth"], 1),
+            "n_estimators": _count(self.name, "n_estimators", params["n_estimators"], 1),
+            "learning_rate": _share(self.name, "learning_rate", params["learning_rate"]),
+            "subsample": _share(self.name, "subsample", params["subsample"]),
+            "colsample_bytree": _share(self.name, "colsample_bytree", params["colsample_bytree"]),
+            "min_child_weight": _positive(self.name, "min_child_weight", params["min_child_weight"]),
+            "pairs_per_sample": _count(self.name, "pairs_per_sample", params["pairs_per_sample"], 1),
+            "seed": _count(self.name, "seed", params["seed"], 0),
+            "threads": _count(self.name, "threads", params["threads"], 1),
+        }
+
+    def fit(self, training: TrainingSet, cutoff: date) -> ModelArtifact:
+        names = list(training.features.columns)
+        frame = training.features.assign(label=training.labels.reindex(training.features.index)).sort_index()
+        if frame.empty:
+            raise ValueError(f"截至 {cutoff} 没有标签已知的训练样本")
+        x, y = frame[names].to_numpy(float), frame["label"].to_numpy(float)
+        if not (np.isfinite(x).all() and np.isfinite(y).all()):
+            raise ValueError("训练样本里有缺失或无穷大的特征或标签")
+        days = frame.index.get_level_values(0)
+        group = pd.factorize(days, sort=True)[0]
+        booster = xgb.train(self._booster_params(), xgb.DMatrix(x, label=grades(frame["label"]), qid=group,
+                                                               feature_names=names),
+                            num_boost_round=self.params["n_estimators"])
+        state = {"features": names, "groups": int(group.max()) + 1, "booster": bytes(booster.save_raw("json")).decode()}
+        return ModelArtifact(self.name, dict(self.params), state, cutoff, len(frame))
+
+    def predict(self, artifact: ModelArtifact, features: pd.DataFrame) -> pd.Series:
+        _check_trainer(self.name, artifact)
+        names = list(artifact.state["features"])
+        booster = xgb.Booster(params={"nthread": artifact.params["threads"]})
+        booster.load_model(bytearray(artifact.state["booster"].encode()))
+        scores = booster.predict(xgb.DMatrix(features[names].to_numpy(float), feature_names=names))
+        return pd.Series(np.asarray(scores, float), index=features.index, name="score")
+
+    def _booster_params(self) -> dict[str, Any]:
+        p = self.params
+        return {"objective": "rank:ndcg", "eval_metric": "ndcg@10", "tree_method": "hist",
+                "lambdarank_pair_method": "topk", "lambdarank_num_pair_per_sample": p["pairs_per_sample"],
+                "max_depth": p["max_depth"], "learning_rate": p["learning_rate"], "subsample": p["subsample"],
+                "colsample_bytree": p["colsample_bytree"], "min_child_weight": p["min_child_weight"],
+                "seed": p["seed"], "nthread": p["threads"]}
+
+
+def grades(labels: pd.Series) -> np.ndarray:
+    """Each label's step within its own day (the first index level): the
+    share of the day's labels below it, cut into `GRADES` equal steps — 0
+    the worst tenth, `GRADES − 1` the best. Ties share a rank."""
+    by_day = labels.groupby(level=0)
+    below = (by_day.rank(method="average") - 1) / by_day.transform("count")
+    return np.minimum((below.to_numpy(float) * GRADES).astype(int), GRADES - 1)
+
+
+_TRAINERS = {RidgeV1.name: RidgeV1, RuleShortReversalV1.name: RuleShortReversalV1, XgbRankNdcgV1.name: XgbRankNdcgV1}
 TRAINER_DEFAULTS: Mapping[str, Mapping[str, Any]] = {
     RidgeV1.name: {"alpha": 1.0},
     RuleShortReversalV1.name: {},
+    XgbRankNdcgV1.name: {"max_depth": 3, "n_estimators": 100, "learning_rate": 0.05, "subsample": 0.8,
+                         "colsample_bytree": 0.8, "min_child_weight": 1.0, "pairs_per_sample": 10, "seed": 7,
+                         "threads": 4},
+}
+# The parameter sets a model experiment tries on each fold's validation
+# stretch when the trainer is the model under test: each overrides the
+# trainer's parameters. One set means no search.
+TRAINER_SEARCH: Mapping[str, Sequence[Mapping[str, Any]]] = {
+    RidgeV1.name: [{}],
+    RuleShortReversalV1.name: [{}],
+    XgbRankNdcgV1.name: [{"max_depth": depth, "n_estimators": trees} for depth in (3, 4) for trees in (100, 200)],
 }
 
 
@@ -145,3 +228,22 @@ def build_trainer(name: str, params: Mapping[str, Any]) -> Trainer:
 def _check_trainer(name: str, artifact: ModelArtifact) -> None:
     if artifact.trainer != name:
         raise ValueError(f"{name} 不能用 {artifact.trainer} 的模型工件打分")
+
+
+def _count(trainer: str, what: str, value: Any, low: int) -> int:
+    if isinstance(value, bool) or not isinstance(value, int | float) or not float(value).is_integer() \
+            or value < low:
+        raise ValueError(f"{trainer} 的 {what} 要是不小于 {low} 的整数，收到 {value}")
+    return int(value)
+
+
+def _share(trainer: str, what: str, value: Any) -> float:
+    if isinstance(value, bool) or not isinstance(value, int | float) or not 0 < value <= 1:
+        raise ValueError(f"{trainer} 的 {what} 要大于 0、不大于 1，收到 {value}")
+    return float(value)
+
+
+def _positive(trainer: str, what: str, value: Any) -> float:
+    if isinstance(value, bool) or not isinstance(value, int | float) or not 0 < value < float("inf"):
+        raise ValueError(f"{trainer} 的 {what} 要是大于 0 的数，收到 {value}")
+    return float(value)

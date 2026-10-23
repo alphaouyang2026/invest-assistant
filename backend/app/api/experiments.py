@@ -13,7 +13,7 @@ from app.api.schemas import NavPointOut, OrderOut, ResearchHolding
 from app.experiments.contract import DEFAULTS, SUPPORTED_ACTIONS, TASK, UNSUPPORTED_ACTIONS, ModelRole, Scenario
 from app.experiments.features import FEATURE_NAMES, FEATURES_V1
 from app.experiments.service import FailureKind
-from app.experiments.trainers import TRAINER_DEFAULTS
+from app.experiments.trainers import TRAINER_DEFAULTS, TRAINER_SEARCH
 from app.market_data import UniverseRule
 
 router = APIRouter(prefix="/api/experiments", tags=["experiments"])
@@ -37,6 +37,9 @@ class ExperimentRequest(BaseModel):
     max_holding_sessions: int = DEFAULTS["max_holding_sessions"]
     trainer: str = DEFAULTS["trainer"]
     trainer_params: dict[str, Any] = DEFAULTS["trainer_params"]
+    # The parameter sets the model tries fold by fold, each laid over trainer_params; null: the trainer's own.
+    search_grid: list[dict[str, Any]] | None = DEFAULTS["search_grid"]
+    validation_sessions: int = DEFAULTS["validation_sessions"]  # only when it tries more than one set
     baselines: list[str] = DEFAULTS["baselines"]
     source_account_id: int | None = Field(default=None, gt=0)
     initial_cash: float | None = Field(default=None, allow_inf_nan=False)
@@ -82,10 +85,12 @@ class FeaturesOut(BaseModel):
 
 class ExperimentDefaults(BaseModel):
     """For the registration form: every default, the trainers and their
-    parameters, the actions a contract may declare, and how far history
-    has been seen — what a contract registered now would freeze."""
+    parameters, the parameter sets each tries when it is the model, the
+    actions a contract may declare, and how far history has been seen —
+    what a contract registered now would freeze."""
     defaults: dict[str, Any]
     trainers: dict[str, dict[str, Any]]
+    searches: dict[str, list[dict[str, Any]]]  # one set: no search
     supported_actions: list[str]
     unsupported_actions: list[str]
     task: TaskOut
@@ -130,8 +135,16 @@ class BaselineTerms(BaseModel):
     params: dict[str, Any]
 
 
+class SearchTerms(BaseModel):
+    grid: list[dict[str, Any]]  # every parameter set tried, as the trainer takes them
+    validation_sessions: int     # the training window's last sessions, held out to choose on
+    top_n: int                   # the day's best-scored codes the choice looks at
+    basis: str                   # how the sets are compared and the kept one fitted
+
+
 class ModelTerms(BaselineTerms):
     search_budget: int
+    search: SearchTerms | None = None  # only when it tries more than one set (06b)
 
 
 class StressScenario(BaseModel):
@@ -193,6 +206,8 @@ class DiagnosticSummary(BaseModel):
     ic_std: float | None
     coverage_mean: float | None
     coverage_min: float | None
+    top_n_hit_mean: float | None = None     # share of the top N among the day's N best labels (06b)
+    top_n_excess_mean: float | None = None  # the top N's labels over the scored codes' mean (06b)
 
 
 class FoldDiagnostics(DiagnosticSummary):
@@ -208,6 +223,8 @@ class DiagnosticDay(BaseModel):
     coverage: float | None
     labelled: int
     rank_ic: float | None
+    top_n_hit: float | None = None
+    top_n_excess: float | None = None
 
 
 class Diagnostics(DiagnosticSummary):
@@ -218,7 +235,7 @@ class Diagnostics(DiagnosticSummary):
 class ModelReport(BaseModel):
     key: str    # "model", "baseline_1", …: what folds, scores and replays are stored under
     role: ModelRole
-    label: str  # its name on screen: 主模型, 规则基线 1, …
+    label: str  # its name on screen: 主模型, 对照 1, …
     trainer: str
     params: dict[str, Any]
     failed_folds: list[int]
@@ -352,7 +369,19 @@ class ArtifactOut(BaseModel):
     samples: int
 
 
+class SearchTry(BaseModel):
+    params: dict[str, Any]
+    samples: int                # training samples before the validation stretch
+    validation: float | None    # the mean daily top-N excess on the stretch; None when it failed
+    days: int                   # validation days with enough labelled codes
+    error: str | None
+    chosen: bool
+
+
 class FoldResultOut(BaseModel):
+    """A fold's outcome. Its artifact's long state values (a ranker's
+    booster) are shown as {omitted, characters, sha256}; GET
+    …/folds/{model}/{fold}/artifact has them whole."""
     model: str
     fold: int
     train_from: date
@@ -364,6 +393,7 @@ class FoldResultOut(BaseModel):
     artifact: ArtifactOut | None  # None when the fold failed
     artifact_hash: str | None
     error: str | None
+    search: list[SearchTry] | None = None  # 06b: every set the model tried on this fold's validation stretch
 
 
 class DataSourceRead(BaseModel):
@@ -556,6 +586,7 @@ class DayScores(BaseModel):
 def defaults(request: Request) -> ExperimentDefaults:
     return ExperimentDefaults(
         defaults=dict(DEFAULTS), trainers={name: dict(params) for name, params in TRAINER_DEFAULTS.items()},
+        searches={name: [dict(entry) for entry in grid] for name, grid in TRAINER_SEARCH.items()},
         supported_actions=list(SUPPORTED_ACTIONS), unsupported_actions=list(UNSUPPORTED_ACTIONS),
         task=TaskOut(**TASK), features=FeaturesOut(version=FEATURES_V1, names=list(FEATURE_NAMES)),
         viewed_through=request.app.state.model_experiments.viewed_through())
@@ -572,6 +603,13 @@ def submit(request: Request, body: ExperimentIn) -> ExperimentAccepted:
 def history(request: Request, page: int = Query(1, ge=1),
             page_size: int = Query(20, ge=1, le=100)) -> ExperimentHistory:
     return request.app.state.model_experiments.history(page, page_size)
+
+
+@router.get("/{experiment_id}/folds/{model}/{fold}/artifact", responses=ERRORS)
+def artifact(request: Request, experiment_id: str, model: str, fold: int) -> ArtifactOut:
+    """One fold's model artifact whole: the detail names a long part (a
+    ranker's booster) by its length and sha256 only."""
+    return call_service(lambda: request.app.state.model_experiments.artifact(experiment_id, model, fold))
 
 
 @router.get("/{experiment_id}", responses=ERRORS)
