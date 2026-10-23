@@ -1,9 +1,10 @@
-"""06a real-data demo: a model experiment registered and read back through
-the HTTP API on a copy of the database — never the real one.
+"""06a/06b real-data demo: a model experiment registered and read back
+through the HTTP API on a copy of the database — never the real one.
 
 Run from backend:
     uv run python scripts/demo_model_experiment.py ../var/invest.db \
-        [--copy-dir DIR] [--test-from 2023-01-04] [--test-to 2026-10-16] [--keep]
+        [--copy-dir DIR] [--test-from 2023-01-04] [--test-to 2026-10-16] [--keep] \
+        [--trainer xgb_rank_ndcg_v1 --baselines ridge_v1,rule_short_reversal_v1 [--validation-sessions 60]]
 
 Copies the database with SQLite's backup API, the source opened read-only,
 into a new directory under DIR (default: the system's temporary directory),
@@ -13,14 +14,19 @@ copy is never synced either: the app gets a J-Quants client that refuses
 every call, so the evening sync timer cannot fetch into it.
 
 Registers the default contract (Ridge as the smoke-test model, short
-reversal as the rule baseline, ADV20 cap 5%, stress scenarios adding
-10/25/50 bps a side to the base slippage) over the test span, prints the
+reversal as the comparison, ADV20 cap 5%, stress scenarios adding
+10/25/50 bps a side to the base slippage) over the test span — or, with
+--trainer and --baselines, 06b's candidate A (the XGBoost ranker choosing
+among its parameter sets fold by fold, Ridge and short reversal beside
+it) — prints the
 job's progress, then JSON lines: wall time and the stages' timings; the
 frozen contract's hash, viewed_through, input fingerprint and code
 identity; what the attempt read and when; the folds and which were already
-seen; each fold's artifact with its hash recomputed from the stored JSON,
-and the first fold's Ridge coefficients; each model's failed folds, Rank IC
-and coverage; the benchmarks; every replay's figures (returns, drawdown,
+seen; each fold's artifact, read whole, with its hash recomputed from the
+stored JSON, and the first fold's coefficients (Ridge) or booster size (the
+ranker); which parameter set each fold kept and how each did; each model's
+failed folds, Rank IC, coverage and top-N hit rate and excess; the
+benchmarks; every replay's figures (returns, drawdown,
 turnover, fill rate, cash share, orders against ADV20, by fold and by
 year); the evidence status with its reasons; every replay's day-by-day
 decisions tallied, and the first two days in full; each remaining endpoint
@@ -152,6 +158,10 @@ def main():
     parser.add_argument("--test-from", default="2023-01-04")
     parser.add_argument("--test-to", default="2026-10-16")
     parser.add_argument("--keep", action="store_true")
+    parser.add_argument("--trainer", default=None, help="the model's trainer (default: the contract's)")
+    parser.add_argument("--baselines", default=None, help="comparison trainers, comma-separated")
+    parser.add_argument("--validation-sessions", type=int, default=None)
+    parser.add_argument("--name", default=None)
     args = parser.parse_args()
 
     target = copy_database(args.source.resolve(), args.copy_dir)
@@ -175,9 +185,15 @@ def main():
                   "features": defaults["features"]["version"]})
 
             started = time.monotonic()
-            response = client.post("/api/experiments", json={
-                "request_key": str(uuid4()), "test_from": args.test_from, "test_to": args.test_to,
-                "name": "Ridge 冒烟（真实数据演示）"})
+            body = {"request_key": str(uuid4()), "test_from": args.test_from, "test_to": args.test_to,
+                    "name": args.name or ("横截面排序 A（真实数据演示）" if args.trainer else "Ridge 冒烟（真实数据演示）")}
+            if args.trainer:
+                body["trainer"] = args.trainer
+            if args.baselines:
+                body["baselines"] = args.baselines.split(",")
+            if args.validation_sessions:
+                body["validation_sessions"] = args.validation_sessions
+            response = client.post("/api/experiments", json=body)
             assert response.status_code == 202, response.text
             experiment_id = response.json()["id"]
             base = f"/api/experiments/{experiment_id}"
@@ -210,32 +226,45 @@ def main():
                   "folds": [[f["number"], f["train_from"], f["train_to"], f["test_from"], f["test_to"], f["viewed"]]
                             for f in report["folds"]]})
 
-            # Every artifact's hash, recomputed from the JSON the experiment kept.
-            checked = Counter()
+            # Every artifact's hash, recomputed from the whole JSON the experiment kept.
+            checked, whole = Counter(), {}
             for fold in detail["fold_results"]:
                 if fold["artifact"] is None:
                     checked[f"{fold['model']}:failed"] += 1
                     continue
-                same = ModelArtifact.from_dict(fold["artifact"]).hash() == fold["artifact_hash"]
+                read = client.get(f"{base}/folds/{fold['model']}/{fold['fold']}/artifact")
+                assert read.status_code == 200, read.text[:300]
+                whole[(fold["model"], fold["fold"])] = artifact = read.json()
+                same = ModelArtifact.from_dict(artifact).hash() == fold["artifact_hash"]
                 checked[f"{fold['model']}:{'hash_ok' if same else 'hash_MISMATCH'}"] += 1
             first = next(f for f in detail["fold_results"] if f["model"] == MAIN and f["artifact"])
-            state = first["artifact"]["state"]
+            artifact = whole[(MAIN, first["fold"])]
+            state = artifact["state"]
+            fitted = ({"intercept": state["intercept"], "coef": dict(zip(state["features"], state["coef"], strict=True))}
+                      if "coef" in state else
+                      {"groups": state.get("groups"), "booster_characters": len(state.get("booster", "")),
+                       "detail_shows": first["artifact"]["state"].get("booster")})
             show({"artifacts": dict(checked),
                   "samples": {m: [f["samples"] for f in detail["fold_results"] if f["model"] == m]
                               for m in sorted({f["model"] for f in detail["fold_results"]})},
                   "first_model_artifact": {
-                      "fold": first["fold"], "trainer": first["artifact"]["trainer"],
-                      "params": first["artifact"]["params"], "train_cutoff": first["artifact"]["train_cutoff"],
-                      "samples": first["artifact"]["samples"], "hash": first["artifact_hash"],
-                      "intercept": state["intercept"],
-                      "coef": dict(zip(state["features"], state["coef"], strict=True))}})
+                      "fold": first["fold"], "trainer": artifact["trainer"], "params": artifact["params"],
+                      "train_cutoff": artifact["train_cutoff"], "samples": artifact["samples"],
+                      "hash": first["artifact_hash"], **fitted}})
+            # Which parameter set each fold kept, and how every set did on its validation stretch.
+            for fold in detail["fold_results"]:
+                if fold.get("search"):
+                    show({"fold": fold["fold"], "search": [
+                        {"params": {k: t["params"][k] for k in ("max_depth", "n_estimators") if k in t["params"]},
+                         "validation": t["validation"], "days": t["days"], "chosen": t["chosen"], "error": t["error"]}
+                        for t in fold["search"]]})
 
             for model in report["models"]:
                 d = model["diagnostics"]
                 show({"model": model["key"], "label": model["label"], "trainer": model["trainer"],
                       "failed_folds": model["failed_folds"],
-                      **{k: d[k] for k in ("decision_days", "unavailable_days", "ic_days", "ic_mean", "ic_std",
-                                           "coverage_mean", "coverage_min")},
+                      **{k: d.get(k) for k in ("decision_days", "unavailable_days", "ic_days", "ic_mean", "ic_std",
+                                               "coverage_mean", "coverage_min", "top_n_hit_mean", "top_n_excess_mean")},
                       "ic_by_fold": [[f["fold"], f["ic_mean"]] for f in d["folds"]]})
             pool = report["benchmarks"]["eligible_equal_weight"]
             show({"topix_price": report["benchmarks"]["topix_price"]["total_return"],
