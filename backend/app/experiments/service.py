@@ -5,11 +5,13 @@ An experiment is accepted as one job under the shared writer lock, like a
 research run: its contract is frozen and validated inside the lock, then
 the job reads the data — the same scope and research input fingerprint as
 a research run, over everything it reads — works out the features and
-labels, cuts the folds, scores out of fold with the model and each rule
-baseline, keeps the decision days' scores, and replays them through score
+labels, cuts the folds, scores out of fold with the model — choosing its
+parameters fold by fold on a validation stretch when it tries more than
+one set (ticket 06b) — and each comparison model, keeps the decision days'
+scores, and replays them through score
 top-N with `replay_range`, the paper accounts' own trading day by day: the
 model at the base costs and each stress scenario (the base slippage plus
-its addition), each baseline at the base costs — every replay with its
+its addition), each comparison model at the base costs — every replay with its
 day-by-day decisions. What it read and when is noted as soon as it has read
 it (`reads`); the rest is written only when the whole of it is done, all
 at once.
@@ -23,6 +25,8 @@ the input fingerprint differs from the earliest attempt's.
 """
 from __future__ import annotations
 
+import hashlib
+import resource
 import uuid
 from collections.abc import Callable, Mapping
 from dataclasses import asdict, replace
@@ -45,7 +49,7 @@ from app.experiments import tables as db
 from app.experiments.contract import BASE, MAIN, ExperimentModel
 from app.experiments.decisions import Recorded, day_records
 from app.experiments.features import feature_table, labels, within_universe
-from app.experiments.oof import out_of_fold
+from app.experiments.oof import Search, out_of_fold
 from app.experiments.reads import data_read
 from app.experiments.report import (
     eligible_equal_weight, evidence, kept_scores, labels_by_day, prediction_diagnostics, replay_figures, score_table,
@@ -226,6 +230,9 @@ class ModelExperiments:
                 step({"stage": "training", "model": model.key, "label": model.label, "trainer": model.trainer})
                 mark = perf_counter()
                 trainer = self._trainers(model.trainer, model.params)
+                if model.search:
+                    trainer = Search([self._trainers(model.trainer, params) for params in model.search["grid"]],
+                                     model.search["validation_sessions"], model.search["top_n"])
                 oofs[model.key] = out_of_fold(trainer, plan.folds, features, targets, sessions=plan.sessions,
                                               label_sessions=contract["task"]["label_sessions"])
                 kept[model.key] = kept_scores(oofs[model.key].scores, plan.decision_days)
@@ -270,6 +277,8 @@ class ModelExperiments:
             step({"stage": "reporting"})
             report = self._report(contract, plan, models, oofs, kept, targets, universes, replays)
             timings["total"] = perf_counter() - started
+            # The whole process's peak so far, not this job's alone: what the machine had to have.
+            timings["peak_memory_mb"] = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
             report["timings"] = timings
             self._store(experiment_id, models, oofs, kept, replays, report)
             return JobOutcome({"experiment_id": experiment_id, "evidence_status": report["evidence"]["status"],
@@ -293,7 +302,7 @@ class ModelExperiments:
                 "key": model.key, "role": model.role, "label": model.label, "trainer": model.trainer,
                 "params": model.params, "failed_folds": failed,
                 "diagnostics": prediction_diagnostics(kept[model.key], daily, universes, plan.decision_days,
-                                                      plan.folds)})
+                                                      plan.folds, top_n=contract["portfolio_rules"]["max_positions"])})
         main = out_models[0]
         base_metrics = replays[0]["result"]["metrics"]
         minimums = contract["minimums"]
@@ -328,7 +337,8 @@ class ModelExperiments:
         folds = [{"experiment_id": experiment_id, "model": model.key, "fold": r.fold.number, **_fold(r.fold),
                   "samples": r.samples, "seconds": r.seconds,
                   "artifact": None if r.artifact is None else r.artifact.as_dict(),
-                  "artifact_hash": None if r.artifact is None else r.artifact.hash(), "error": r.error}
+                  "artifact_hash": None if r.artifact is None else r.artifact.hash(), "error": r.error,
+                  "search": r.search}
                  for model in models for r in oofs[model.key].folds]
         scores = [{"experiment_id": experiment_id, "model": model.key, "as_of": day.isoformat(), **entry}
                   for model in models for day, entry in kept[model.key].items()]
@@ -397,9 +407,23 @@ class ModelExperiments:
         experiment = dict(row)
         experiment["name"] = experiment["contract"]["name"]
         experiment["retried_by"] = list(retried_by)
-        experiment["fold_results"] = [{k: v for k, v in f.items() if k != "experiment_id"}  # the model's first
-                                      for f in sorted(folds, key=lambda f: (f["model"] != MAIN, f["model"], f["fold"]))]
+        experiment["fold_results"] = [  # the model's first
+            {**{k: v for k, v in f.items() if k != "experiment_id"}, "artifact": _brief(f["artifact"])}
+            for f in sorted(folds, key=lambda f: (f["model"] != MAIN, f["model"], f["fold"]))]
         return experiment
+
+    def artifact(self, experiment_id: str, model: str, fold: int) -> dict:
+        """One fold's model artifact whole, as stored — `get` shortens its
+        long parts (a ranker's booster)."""
+        f = db.folds
+        with self._engine.connect() as con:
+            found = con.execute(select(f.c.artifact).where(
+                f.c.experiment_id == experiment_id, f.c.model == model, f.c.fold == fold)).one_or_none()
+        if found is None:
+            raise LookupError("没有这一折")
+        if found.artifact is None:
+            raise LookupError("这一折训练失败，没有模型工件")
+        return found.artifact
 
     def history(self, page: int = 1, page_size: int = 20) -> dict:
         e = db.experiments
@@ -496,6 +520,20 @@ def _first_days(days: list[str]) -> str:
 def _ranked(scores: Mapping[str, float]) -> list[dict]:
     ordered = sorted(scores.items(), key=lambda item: (-item[1], item[0]))
     return [{"code": code, "score": score, "rank": n} for n, (code, score) in enumerate(ordered, 1)]
+
+
+ARTIFACT_INLINE = 4096  # characters of an artifact's state value shown in the detail; longer ones are named only
+
+
+def _brief(artifact: dict | None) -> dict | None:
+    """An artifact with each long text in its state (a ranker's booster)
+    replaced by its length and sha256 — the whole is one request away."""
+    if artifact is None:
+        return None
+    state = {key: {"omitted": True, "characters": len(value), "sha256": hashlib.sha256(value.encode()).hexdigest()}
+             if isinstance(value, str) and len(value) > ARTIFACT_INLINE else value
+             for key, value in artifact["state"].items()}
+    return {**artifact, "state": state}
 
 
 def _fold(fold) -> dict:

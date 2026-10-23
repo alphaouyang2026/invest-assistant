@@ -8,8 +8,11 @@ rule, the test span and the folds cut from it, the policy (score top-N:
 its first decision day, how many sessions apart its decision days are,
 how long it may hold), the portfolio rules with the ADV20 cap, the base
 costs and the stress scenarios (the base slippage plus a few basis points
-a side, fees as they are), the model's trainer with its parameters and
-search budget, the rule baselines, the minimums its evidence needs
+a side, fees as they are), the model's trainer with its parameters and,
+when it tries more than one set of them (ticket 06b), its search — the
+sets, the validation stretch they are compared on and how — with the
+search budget, the comparison models (a rule baseline, or a simpler
+trained model such as ridge), the minimums its evidence needs
 (coverage, training samples a fold, decision days with labels, trades),
 how far history had already been seen when it was registered
 (`viewed_through`), and the kinds of instruction its policy gives. 06a's
@@ -35,11 +38,12 @@ from typing import Any, Literal
 
 from app.experiments.features import FEATURE_NAMES, FEATURES_V1, HORIZON, label_sessions
 from app.experiments.folds import Fold, make_folds
-from app.experiments.trainers import Trainer
+from app.experiments.trainers import TRAINER_SEARCH, Trainer
 from app.market_data import UniverseRule
 from app.strategies import ScoreTopN
 
-VERSION = "model_experiment_v1"
+# v2 (06b): the model may carry a search; a v1 contract, without one, still reads.
+VERSION = "model_experiment_v2"
 TASK = {
     "name": "prime_open_to_open_5d_v1",
     "decision": "t 收盘决策，最早 t+1 开盘成交",
@@ -65,6 +69,10 @@ TRADING_TERMS = ("initial_cash", "max_positions", "max_weight", "cash_floor", "c
                  "slippage")
 MAX_BASELINES = 3
 MAX_STRESS = 5
+MAX_SEARCH = 8  # parameter sets a model may try
+SEARCH_BASIS = ("每折把训练窗最后若干个开市日留作验证段：每组参数只用验证段之前、标签在验证段开始前结束的样本训练，"
+                "在验证段上逐日打分，比较「当天分数前 N 名的平均标签 − 当天全部打分证券的平均标签」的日均值"
+                "（N = 最多持有只数），取最大的一组（并列取靠前的），再用整个训练窗按这组参数重训；测试段不参与选择")
 MAX_SLIPPAGE = Decimal("0.1")  # each side, exclusive: the base's and every stress scenario's
 STRESS_BASIS = ("压力场景只回放主模型：每边滑点 = 基础滑点 + 登记时声明的加成；手续费率和最低手续费沿用基础成本，"
                 "不加压")
@@ -72,7 +80,7 @@ STRESS_BASIS = ("压力场景只回放主模型：每边滑点 = 基础滑点 + 
 # The keys a model's folds, scores and replays are stored under.
 MAIN = "model"
 BASELINE = "baseline_{}"  # numbered from 1, in the contract's order
-# What a model is there for: the model under test, or a rule baseline beside it.
+# What a model is there for: the model under test, or a comparison beside it (a rule baseline, ridge…).
 ModelRole = Literal["model", "baseline"]
 MODEL_ROLE: ModelRole = "model"
 BASELINE_ROLE: ModelRole = "baseline"
@@ -90,6 +98,8 @@ DEFAULTS: Mapping[str, Any] = {
     "max_holding_sessions": 0,
     "trainer": "ridge_v1",
     "trainer_params": {},
+    "search_grid": None,         # None: the trainer's own (TRAINER_SEARCH)
+    "validation_sessions": 60,   # only used when the search tries more than one set
     "baselines": ["rule_short_reversal_v1"],
     "source_account_id": None,
     "initial_cash": 10_000_000,
@@ -127,9 +137,10 @@ class ExperimentModel:
 
     key: str                   # MAIN, or BASELINE numbered
     role: ModelRole
-    label: str                 # its name on screen: 主模型, 规则基线 1, …
+    label: str                 # its name on screen: 主模型, 对照 1, …
     trainer: str
     params: Mapping[str, Any]
+    search: Mapping[str, Any] | None = None  # the model's search, when it tries more than one set
 
 
 @dataclass(frozen=True)
@@ -188,9 +199,15 @@ def freeze(request: Mapping[str, Any], *, sessions: Sequence[date], source: Mapp
     stress = _stress(values["stress_bps"], Decimal(costs["slippage"]))
 
     model = _model(values["trainer"], values["trainer_params"], trainers)
+    grid = values["search_grid"] if values["search_grid"] is not None else TRAINER_SEARCH.get(model["trainer"], [{}])
+    model["search"] = _search(model, grid, values["validation_sessions"], folds["train_sessions"],
+                              rules["max_positions"], trainers)
+    model["search_budget"] = len(model["search"]["grid"]) if model["search"] else 1
+    if model["search"] is None:
+        del model["search"]
     baselines = values["baselines"]
     if not isinstance(baselines, list) or not 1 <= len(baselines) <= MAX_BASELINES:
-        raise ValueError(f"规则基线要有 1 到 {MAX_BASELINES} 个")
+        raise ValueError(f"对照模型要有 1 到 {MAX_BASELINES} 个")
     baselines = [{k: v for k, v in _model(name, {}, trainers).items() if k != "search_budget"} for name in baselines]
 
     name = values["name"]
@@ -243,8 +260,9 @@ def plan(contract: Mapping[str, Any], sessions: Sequence[date]) -> ExperimentPla
 
 def models(contract: Mapping[str, Any]) -> list[ExperimentModel]:
     """The model first, then each rule baseline in the contract's order."""
-    return [ExperimentModel(MAIN, MODEL_ROLE, "主模型", contract["model"]["trainer"], contract["model"]["params"])] + [
-        ExperimentModel(BASELINE.format(n), BASELINE_ROLE, f"规则基线 {n}", baseline["trainer"], baseline["params"])
+    model = contract["model"]
+    return [ExperimentModel(MAIN, MODEL_ROLE, "主模型", model["trainer"], model["params"], model.get("search"))] + [
+        ExperimentModel(BASELINE.format(n), BASELINE_ROLE, f"对照 {n}", baseline["trainer"], baseline["params"])
         for n, baseline in enumerate(contract["baselines"], 1)]
 
 
@@ -312,6 +330,30 @@ def _model(name: Any, params: Any, trainers: Callable[[str, Mapping[str, Any]], 
         raise ValueError("训练器要给名字和参数表")
     trainer = trainers(name, params)  # refuses a name or parameter it does not know
     return {"trainer": trainer.name, "params": dict(getattr(trainer, "params", params)), "search_budget": 1}
+
+
+def _search(model: Mapping[str, Any], grid: Any, validation: Any, train_sessions: int, top_n: int,
+            trainers: Callable[[str, Mapping[str, Any]], Trainer]) -> dict | None:
+    """The model's search: each set of `grid` laid over its parameters, as
+    the trainer takes them, with the validation stretch they are compared
+    on. None for a single set — the model is fitted as it stands."""
+    if not isinstance(grid, list) or not 1 <= len(grid) <= MAX_SEARCH \
+            or not all(isinstance(entry, Mapping) for entry in grid):
+        raise ValueError(f"参数搜索要列出 1 到 {MAX_SEARCH} 组参数，每组是一张参数表")
+    sets = []
+    for entry in grid:
+        params = dict(getattr(trainers(model["trainer"], {**model["params"], **entry}), "params", {}))
+        if params in sets:
+            raise ValueError(f"参数搜索里有两组参数相同：{json.dumps(entry, ensure_ascii=False)}")
+        sets.append(params)
+    if len(sets) == 1:
+        model["params"] = sets[0]
+        return None
+    sessions = _whole(validation, "验证段", 1)
+    if train_sessions < sessions + label_sessions() + 1:
+        raise ValueError(f"训练窗 {train_sessions} 个开市日放不下 {sessions} 个开市日的验证段："
+                         f"至少要 {sessions + label_sessions() + 1} 个")
+    return {"grid": sets, "validation_sessions": sessions, "top_n": top_n, "basis": SEARCH_BASIS}
 
 
 def _session(value: Any, what: str, sessions: Sequence[date]) -> date:

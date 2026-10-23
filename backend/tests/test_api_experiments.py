@@ -41,7 +41,7 @@ def test_register_poll_browse_retry_and_refusals(migrated_database):
         assert detail["contract"]["test_from"] == TEST_FROM.isoformat()
         assert detail["report"]["evidence"]["status"] == "exploratory"
         assert detail["error_code"] is None and len(detail["data_read"]["sources"]) == 4
-        assert [m["label"] for m in detail["report"]["models"]] == ["主模型", "规则基线 1"]
+        assert [m["label"] for m in detail["report"]["models"]] == ["主模型", "对照 1"]
         assert detail["contract"]["stress"]["scenarios"][0] == {"extra_bps": "10", "slippage": "0.002"}
         assert [r["scenario"] for r in detail["report"]["replays"]] == ["base", "stress", "stress", "stress", "base"]
         assert [(f["model"], f["fold"]) for f in detail["fold_results"]] == [
@@ -64,6 +64,10 @@ def test_register_poll_browse_retry_and_refusals(migrated_database):
         scores = client.get(f"/api/experiments/{experiment_id}/scores/model/{TEST_FROM.isoformat()}").json()
         assert [s["rank"] for s in scores["scores"]] == list(range(1, 13))
         assert client.get(f"/api/experiments/{experiment_id}/scores/model/{SESSIONS[101].isoformat()}").status_code == 404
+        whole = client.get(f"/api/experiments/{experiment_id}/folds/model/1/artifact")
+        assert whole.status_code == 200 and whole.json()["trainer"] == "ridge_v1" and "coef" in whole.json()["state"]
+        assert client.get(f"/api/experiments/{experiment_id}/folds/model/9/artifact").status_code == 404
+        assert client.get(f"/api/experiments/{experiment_id}/folds/nobody/1/artifact").status_code == 404
 
         retried = client.post(f"/api/experiments/{experiment_id}/retry", json={"request_key": str(uuid4())})
         assert retried.status_code == 422 and "失败" in retried.json()["detail"]

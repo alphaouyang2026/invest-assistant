@@ -1616,6 +1616,87 @@
         }
       }
     },
+    "/api/experiments/{experiment_id}/folds/{model}/{fold}/artifact": {
+      "get": {
+        "tags": [
+          "experiments"
+        ],
+        "summary": "Artifact",
+        "description": "One fold's model artifact whole: the detail names a long part (a\nranker's booster) by its length and sha256 only.",
+        "operationId": "artifact_api_experiments__experiment_id__folds__model___fold__artifact_get",
+        "parameters": [
+          {
+            "name": "experiment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Experiment Id"
+            }
+          },
+          {
+            "name": "model",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Model"
+            }
+          },
+          {
+            "name": "fold",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Fold"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArtifactOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        }
+      }
+    },
     "/api/experiments/{experiment_id}": {
       "get": {
         "tags": [
@@ -3814,6 +3895,28 @@
               }
             ],
             "title": "Rank Ic"
+          },
+          "top_n_hit": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Top N Hit"
+          },
+          "top_n_excess": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Top N Excess"
           }
         },
         "type": "object",
@@ -3886,6 +3989,28 @@
               }
             ],
             "title": "Coverage Min"
+          },
+          "top_n_hit_mean": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Top N Hit Mean"
+          },
+          "top_n_excess_mean": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Top N Excess Mean"
           },
           "days": {
             "items": {
@@ -4658,6 +4783,17 @@
             "type": "object",
             "title": "Trainers"
           },
+          "searches": {
+            "additionalProperties": {
+              "items": {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "type": "object",
+            "title": "Searches"
+          },
           "supported_actions": {
             "items": {
               "type": "string"
@@ -4695,6 +4831,7 @@
         "required": [
           "defaults",
           "trainers",
+          "searches",
           "supported_actions",
           "unsupported_actions",
           "task",
@@ -4702,7 +4839,7 @@
           "viewed_through"
         ],
         "title": "ExperimentDefaults",
-        "description": "For the registration form: every default, the trainers and their\nparameters, the actions a contract may declare, and how far history\nhas been seen — what a contract registered now would freeze."
+        "description": "For the registration form: every default, the trainers and their\nparameters, the parameter sets each tries when it is the model, the\nactions a contract may declare, and how far history has been seen —\nwhat a contract registered now would freeze."
       },
       "ExperimentDetail": {
         "properties": {
@@ -4963,6 +5100,26 @@
             "type": "object",
             "title": "Trainer Params",
             "default": {}
+          },
+          "search_grid": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Search Grid"
+          },
+          "validation_sessions": {
+            "type": "integer",
+            "title": "Validation Sessions",
+            "default": 60
           },
           "baselines": {
             "items": {
@@ -5663,6 +5820,28 @@
             ],
             "title": "Coverage Min"
           },
+          "top_n_hit_mean": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Top N Hit Mean"
+          },
+          "top_n_excess_mean": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Top N Excess Mean"
+          },
           "fold": {
             "type": "integer",
             "title": "Fold"
@@ -5837,6 +6016,20 @@
               }
             ],
             "title": "Error"
+          },
+          "search": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/SearchTry"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Search"
           }
         },
         "type": "object",
@@ -5853,7 +6046,8 @@
           "artifact_hash",
           "error"
         ],
-        "title": "FoldResultOut"
+        "title": "FoldResultOut",
+        "description": "A fold's outcome. Its artifact's long state values (a ranker's\nbooster) are shown as {omitted, characters, sha256}; GET\n…/folds/{model}/{fold}/artifact has them whole."
       },
       "FoldTerms": {
         "properties": {
@@ -6350,6 +6544,16 @@
           "search_budget": {
             "type": "integer",
             "title": "Search Budget"
+          },
+          "search": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SearchTerms"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -7815,6 +8019,91 @@
           "error"
         ],
         "title": "ResearchSummary"
+      },
+      "SearchTerms": {
+        "properties": {
+          "grid": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Grid"
+          },
+          "validation_sessions": {
+            "type": "integer",
+            "title": "Validation Sessions"
+          },
+          "top_n": {
+            "type": "integer",
+            "title": "Top N"
+          },
+          "basis": {
+            "type": "string",
+            "title": "Basis"
+          }
+        },
+        "type": "object",
+        "required": [
+          "grid",
+          "validation_sessions",
+          "top_n",
+          "basis"
+        ],
+        "title": "SearchTerms"
+      },
+      "SearchTry": {
+        "properties": {
+          "params": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Params"
+          },
+          "samples": {
+            "type": "integer",
+            "title": "Samples"
+          },
+          "validation": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Validation"
+          },
+          "days": {
+            "type": "integer",
+            "title": "Days"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "chosen": {
+            "type": "boolean",
+            "title": "Chosen"
+          }
+        },
+        "type": "object",
+        "required": [
+          "params",
+          "samples",
+          "validation",
+          "days",
+          "error",
+          "chosen"
+        ],
+        "title": "SearchTry"
       },
       "SecurityBarsOut": {
         "properties": {

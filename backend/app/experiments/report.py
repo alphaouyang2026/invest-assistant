@@ -5,8 +5,10 @@ dicts out.
 - Which out-of-fold scores are kept: the decision days' alone, each with
   the fold and the artifact that scored it.
 - Prediction diagnostics, kept apart from the portfolio's: on each
-  decision day the rank IC of the scores against the labels, and the
-  coverage — codes scored over the day's universe.
+  decision day the rank IC of the scores against the labels, the coverage
+  — codes scored over the day's universe — and (06b) how the top N the
+  policy can hold did: how many of them were among the day's N best labels
+  (the hit rate) and how far their labels beat the scored codes' mean.
 - The benchmarks besides TOPIX: the eligible universe held equally weighted,
   each decision period's label averaged over it — no costs.
 - Each replay's figures, all the accounts module's: what it ended with (as
@@ -36,6 +38,7 @@ from app.accounts.replay_metrics import (
 )
 from app.experiments.features import AS_OF
 from app.experiments.folds import Fold
+from app.experiments.oof import top_n_excess
 from app.market_data.frame import CODE
 from app.strategies import ScoreTable
 
@@ -83,21 +86,40 @@ def rank_ic(scores: Mapping[str, float], labels: pd.Series | None) -> tuple[floa
 
 def prediction_diagnostics(kept: Mapping[date, Mapping[str, Any]], labels: Mapping[date, pd.Series],
                            universes: Mapping[date, Sequence[str]], decision_days: Sequence[date],
-                           folds: Sequence[Fold]) -> dict:
-    """Each decision day's coverage and rank IC, summed up over all of
-    them and fold by fold. A day the model has no scores counts as
-    coverage 0 and has no IC."""
+                           folds: Sequence[Fold], *, top_n: int) -> dict:
+    """Each decision day's coverage, rank IC and top-`top_n` hit rate and
+    excess, summed up over all of them and fold by fold. A day the model
+    has no scores counts as coverage 0 and has none of the rest."""
     days = []
     for day in decision_days:
         pool = universes.get(day, [])
         entry = kept.get(day)
         scored = entry["scores"] if entry else {}
-        ic, pairs = rank_ic(scored, labels.get(day))
+        known = labels.get(day)
+        ic, pairs = rank_ic(scored, known)
         days.append({"date": day.isoformat(), "fold": entry["fold"] if entry else _fold_of(day, folds),
                      "available": entry is not None, "universe": len(pool), "scored": len(scored),
-                     "coverage": len(scored) / len(pool) if pool else None, "labelled": pairs, "rank_ic": ic})
+                     "coverage": len(scored) / len(pool) if pool else None, "labelled": pairs, "rank_ic": ic,
+                     "top_n_hit": top_n_hit(scored, known, top_n),
+                     "top_n_excess": None if known is None or not scored else
+                     top_n_excess(pd.Series(scored, dtype=float), known, top_n)})
     by_fold = [{"fold": fold.number, **_summary([d for d in days if d["fold"] == fold.number])} for fold in folds]
     return {**_summary(days), "days": days, "folds": by_fold}
+
+
+def top_n_hit(scores: Mapping[str, float], labels: pd.Series | None, top_n: int) -> float | None:
+    """Of the day's `top_n` best-scored codes with a label, the share among
+    its `top_n` best labels; None when fewer than `top_n` codes have both.
+    Ties go by code, as the portfolio rules break them."""
+    if labels is None or not scores or top_n < 1:
+        return None
+    both = pd.DataFrame({"score": pd.Series(scores, dtype=float), "label": labels}).dropna()
+    if len(both) < top_n:
+        return None
+    both = both.rename_axis("code").reset_index()
+    picked = set(both.sort_values(["score", "code"], ascending=[False, True]).head(top_n)["code"])
+    best = set(both.sort_values(["label", "code"], ascending=[False, True]).head(top_n)["code"])
+    return len(picked & best) / top_n
 
 
 def eligible_equal_weight(labels: Mapping[date, pd.Series], universes: Mapping[date, Sequence[str]],
@@ -212,7 +234,14 @@ def _summary(days: Sequence[Mapping[str, Any]]) -> dict:
             "ic_days": len(ics), "ic_mean": stats.fmean(ics) if ics else None,
             "ic_std": stats.stdev(ics) if len(ics) > 1 else None,
             "coverage_mean": stats.fmean(coverage) if coverage else None,
-            "coverage_min": min(coverage) if coverage else None}
+            "coverage_min": min(coverage) if coverage else None,
+            "top_n_hit_mean": _mean([d.get("top_n_hit") for d in days]),
+            "top_n_excess_mean": _mean([d.get("top_n_excess") for d in days])}
+
+
+def _mean(values: Sequence[float | None]) -> float | None:
+    known = [value for value in values if value is not None]
+    return stats.fmean(known) if known else None
 
 
 def _fold_of(day: date, folds: Sequence[Fold]) -> int | None:
