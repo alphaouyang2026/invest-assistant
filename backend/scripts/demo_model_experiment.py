@@ -161,6 +161,7 @@ def main():
 
     from app.config import Settings
     from app.experiments import ModelArtifact
+    from app.experiments.contract import MAIN, STRESS
     from app.main import create_app
     from app.migrate import upgrade_to_head
 
@@ -217,7 +218,7 @@ def main():
                     continue
                 same = ModelArtifact.from_dict(fold["artifact"]).hash() == fold["artifact_hash"]
                 checked[f"{fold['model']}:{'hash_ok' if same else 'hash_MISMATCH'}"] += 1
-            first = next(f for f in detail["fold_results"] if f["model"] == "model" and f["artifact"])
+            first = next(f for f in detail["fold_results"] if f["model"] == MAIN and f["artifact"])
             state = first["artifact"]["state"]
             show({"artifacts": dict(checked),
                   "samples": {m: [f["samples"] for f in detail["fold_results"] if f["model"] == m]
@@ -256,11 +257,11 @@ def main():
                     for day in days[:2]:
                         show({"first_days": brief(day)})
 
-            stress = next(r["position"] for r in report["replays"] if r["scenario"] == "stress")
+            stress = next(r["position"] for r in report["replays"] if r["scenario"] == STRESS)
             first_day = report["models"][0]["diagnostics"]["days"][0]["date"]
             for path, expected in ((f"{base}/replays/1", 200), (f"{base}/replays/1/orders?page_size=5", 200),
                                    (f"{base}/replays/{stress}/days", 200),
-                                   (f"{base}/scores/model/{first_day}", 200), ("/api/experiments", 200)):
+                                   (f"{base}/scores/{MAIN}/{first_day}", 200), ("/api/experiments", 200)):
                 found = client.get(path)
                 assert found.status_code == expected, (path, found.status_code, found.text[:500])
                 show({"get": path, "status": found.status_code, "bytes": len(found.content)})

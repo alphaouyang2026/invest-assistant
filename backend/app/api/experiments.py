@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 from app.research_jobs import RunStatus
 from app.api.research import ERRORS, call_service
 from app.api.schemas import NavPointOut, OrderOut, ResearchHolding
-from app.experiments.contract import DEFAULTS, SUPPORTED_ACTIONS, TASK, UNSUPPORTED_ACTIONS
+from app.experiments.contract import DEFAULTS, SUPPORTED_ACTIONS, TASK, UNSUPPORTED_ACTIONS, ModelRole, Scenario
 from app.experiments.features import FEATURE_NAMES, FEATURES_V1
 from app.experiments.service import FailureKind
 from app.experiments.trainers import TRAINER_DEFAULTS
@@ -217,7 +217,7 @@ class Diagnostics(DiagnosticSummary):
 
 class ModelReport(BaseModel):
     key: str    # "model", "baseline_1", …: what folds, scores and replays are stored under
-    role: Literal["model", "baseline"]
+    role: ModelRole
     label: str  # its name on screen: 主模型, 规则基线 1, …
     trainer: str
     params: dict[str, Any]
@@ -310,7 +310,7 @@ class ReplaySummary(BaseModel):
     position: int
     model: str
     model_label: str               # the model's name on screen, as ModelReport.label
-    scenario: Literal["base", "stress"]
+    scenario: Scenario
     extra_bps: float | None        # a stress scenario's addition to the base slippage
     costs: ExperimentCosts
     metrics: ReplayMetrics
@@ -449,7 +449,7 @@ class ReplayResult(BaseModel):
 class ReplayDetail(BaseModel):
     position: int
     model: str
-    scenario: Literal["base", "stress"]
+    scenario: Scenario
     costs: ExperimentCosts
     result: ReplayResult
 

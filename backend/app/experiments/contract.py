@@ -31,7 +31,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
-from typing import Any
+from typing import Any, Literal
 
 from app.experiments.features import FEATURE_NAMES, FEATURES_V1, HORIZON, label_sessions
 from app.experiments.folds import Fold, make_folds
@@ -69,10 +69,17 @@ MAX_SLIPPAGE = Decimal("0.1")  # each side, exclusive: the base's and every stre
 STRESS_BASIS = ("压力场景只回放主模型：每边滑点 = 基础滑点 + 登记时声明的加成；手续费率和最低手续费沿用基础成本，"
                 "不加压")
 
-# The keys a model's folds, scores and replays are stored under, and a replay's cost scenarios.
+# The keys a model's folds, scores and replays are stored under.
 MAIN = "model"
 BASELINE = "baseline_{}"  # numbered from 1, in the contract's order
-BASE, STRESS = "base", "stress"
+# What a model is there for: the model under test, or a rule baseline beside it.
+ModelRole = Literal["model", "baseline"]
+MODEL_ROLE: ModelRole = "model"
+BASELINE_ROLE: ModelRole = "baseline"
+# A replay's costs: the base costs, or a stress scenario on top of them.
+Scenario = Literal["base", "stress"]
+BASE: Scenario = "base"
+STRESS: Scenario = "stress"
 
 DEFAULTS: Mapping[str, Any] = {
     "name": "",
@@ -119,7 +126,7 @@ class ExperimentModel:
     """One of the models an experiment scores with: the model, or a rule baseline."""
 
     key: str                   # MAIN, or BASELINE numbered
-    role: str                  # "model" / "baseline"
+    role: ModelRole
     label: str                 # its name on screen: 主模型, 规则基线 1, …
     trainer: str
     params: Mapping[str, Any]
@@ -131,7 +138,7 @@ class PlannedReplay:
 
     position: int              # from 1
     model: ExperimentModel
-    scenario: str              # BASE or STRESS
+    scenario: Scenario
     slippage: Decimal          # each side
     extra_bps: Decimal | None  # a stress scenario's addition to the base slippage, in basis points
 
@@ -236,8 +243,8 @@ def plan(contract: Mapping[str, Any], sessions: Sequence[date]) -> ExperimentPla
 
 def models(contract: Mapping[str, Any]) -> list[ExperimentModel]:
     """The model first, then each rule baseline in the contract's order."""
-    return [ExperimentModel(MAIN, "model", "主模型", contract["model"]["trainer"], contract["model"]["params"])] + [
-        ExperimentModel(BASELINE.format(n), "baseline", f"规则基线 {n}", baseline["trainer"], baseline["params"])
+    return [ExperimentModel(MAIN, MODEL_ROLE, "主模型", contract["model"]["trainer"], contract["model"]["params"])] + [
+        ExperimentModel(BASELINE.format(n), BASELINE_ROLE, f"规则基线 {n}", baseline["trainer"], baseline["params"])
         for n, baseline in enumerate(contract["baselines"], 1)]
 
 
