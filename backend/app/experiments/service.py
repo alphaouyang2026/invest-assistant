@@ -160,9 +160,11 @@ class ModelExperiments:
             self._trainers(model.trainer, model.params)
         values = self._market.read([TOPIX], plan.test_days[0], plan.test_days[-1]).wide(EXEC_CLOSE)
         values = values.reindex(plan.test_days)
-        if TOPIX not in values or any(pd.isna(v) or v <= 0 for v in values[TOPIX]):
-            raise MissingData(f"缺数据：测试区间 {plan.test_days[0]} 至 {plan.test_days[-1]} 的 TOPIX 收盘缺失或无效，"
-                              "请先补齐行情")
+        closes = values[TOPIX] if TOPIX in values else [None] * len(plan.test_days)
+        missing = [day.isoformat() for day, close in zip(plan.test_days, closes) if pd.isna(close) or close <= 0]
+        if missing:
+            raise MissingData(f"缺数据：测试区间 {plan.test_days[0]} 至 {plan.test_days[-1]} 有 {len(missing)} 个开市日的"
+                              f" TOPIX 收盘缺失或无效（{_first_days(missing)}），补齐行情后可以重试")
         try:
             calendar.next(plan.test_days[-1])
         except LookupError:
@@ -192,7 +194,7 @@ class ModelExperiments:
             missing = fingerprint["missing_stock_sessions"]
             if missing:
                 raise MissingData(f"缺数据：实验读取区间 {plan.read_from} 至 {last} 有 {len(missing)} 个开市日没有股票日线"
-                                  f"（{'、'.join(missing[:5])}{'……' if len(missing) > 5 else ''}），补齐行情后可以重试")
+                                  f"（{_first_days(missing)}），补齐行情后可以重试")
             if expect_fingerprint is not None and fingerprint["sha256"] != expect_fingerprint:
                 raise InputChanged("该实验读取区间的行情自首次尝试后已变化，不能按原契约重试，请登记新实验")
             self._set(experiment_id, input_fingerprint=fingerprint)
@@ -484,6 +486,11 @@ class ModelExperiments:
         if row is None:
             raise LookupError(f"该实验没有第 {position} 个回放（实验未完成，或编号不对）")
         return dict(row)
+
+
+def _first_days(days: list[str]) -> str:
+    """The first five of `days` a missing-data failure names, and "……" if there are more."""
+    return "、".join(days[:5]) + ("……" if len(days) > 5 else "")
 
 
 def _ranked(scores: Mapping[str, float]) -> list[dict]:

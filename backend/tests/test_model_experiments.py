@@ -429,6 +429,20 @@ def test_missing_data_is_a_failure_of_its_own_and_a_retry_runs_once_the_data_are
     assert env.experiments.get(retried)["status"] == "completed"
 
 
+def test_missing_topix_closes_are_named_day_by_day(env):
+    """TOPIX gone on two test days: registering is refused as missing data,
+    naming those days as the stock bars' failure does, and keeps nothing."""
+    bars = market_tables.daily_bars
+    with env.engine.begin() as con:
+        con.execute(bars.delete().where(bars.c.code == TOPIX, bars.c.date.in_([S[105], S[117]])))
+    with pytest.raises(service_module.MissingData) as refused:
+        env.experiments.submit(request(), str(uuid4()))
+    message = str(refused.value)
+    assert message.startswith("缺数据") and "2 个开市日" in message
+    assert f"（{S[105].isoformat()}、{S[117].isoformat()}）" in message
+    assert env.experiments.history()["total"] == 0
+
+
 def test_restart_fails_unfinished_experiments(env):
     found = run(env)
     with env.engine.begin() as con:
