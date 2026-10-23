@@ -58,7 +58,6 @@ def test_a_stress_scenario_adds_to_the_base_slippage_and_the_replays_follow():
     assert frozen()["stress"]["scenarios"] == [{"extra_bps": "10", "slippage": "0.002"},
                                                {"extra_bps": "25", "slippage": "0.0035"},
                                                {"extra_bps": "50", "slippage": "0.006"}]
-    assert frozen(stress_bps=[])["stress"]["scenarios"] == []
     assert [(m.key, m.role, m.label, m.trainer) for m in models(contract)] == [
         ("model", "model", "主模型", "ridge_v1"), ("baseline_1", "baseline", "规则基线 1", "rule_short_reversal_v1")]
     assert [(r.position, r.model.key, r.scenario, str(r.slippage), r.extra_bps) for r in replays(contract)] == [
@@ -73,7 +72,8 @@ def test_a_stress_scenario_adds_to_the_base_slippage_and_the_replays_follow():
     ({"expanding": "yes"}, "扩展训练窗"),
     ({"cash_floor": 1}, "现金下限"),
     ({"initial_cash": -1}, "初始资金"),
-    ({"stress_bps": [1, 2, 3, 4, 5, 6]}, "压力场景"),
+    ({"stress_bps": []}, "压力场景要有 1 到 5 个"),
+    ({"stress_bps": [1, 2, 3, 4, 5, 6]}, "压力场景要有 1 到 5 个"),
     ({"stress_bps": [25, 10, 25.0]}, "不能重复：25 bps"),
     ({"stress_bps": [-5]}, "滑点加成"),
     ({"slippage": 0.095, "stress_bps": [50]}, "要小于 0.1"),

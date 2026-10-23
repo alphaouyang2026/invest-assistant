@@ -284,9 +284,10 @@ def _check_actions(actions: Any) -> None:
 def _stress(extras: Any, base: Decimal) -> list[dict]:
     """Each stress scenario: what it adds to the base slippage each side, in
     basis points (more than 0, no two the same), and the slippage that
-    makes."""
-    if not isinstance(extras, list) or len(extras) > MAX_STRESS:
-        raise ValueError(f"压力场景要是至多 {MAX_STRESS} 个滑点加成（bps）的列表")
+    makes. One at least: the report always shows the model at costs above
+    the base."""
+    if not isinstance(extras, list) or not 1 <= len(extras) <= MAX_STRESS:
+        raise ValueError(f"压力场景要有 1 到 {MAX_STRESS} 个，每个是一个滑点加成（bps）")
     scenarios, seen = [], set()
     for extra in extras:
         bps = Decimal(_decimal(extra, "压力场景的滑点加成（bps）", low=0, open_low=True))

@@ -450,6 +450,7 @@ REFUSED = [
     ({"test_to": (S[139] + timedelta(days=1)).isoformat()}, "TOPIX"),  # a session the data has not reached
     ({"baselines": []}, "规则基线"),
     ({"max_weight": 0}, "单只上限"),
+    ({"stress_bps": []}, "压力场景要有 1 到"),
     ({"stress_bps": [0]}, "滑点加成"),
     ({"stress_bps": [10, 10.0]}, "不能重复"),
     ({"stress_bps": [1000]}, "要小于 0.1"),

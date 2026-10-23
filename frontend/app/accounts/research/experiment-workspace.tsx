@@ -213,7 +213,7 @@ export function ExperimentWorkspace({ initialExperiment = "" }: { initialExperim
         <div className="field"><label htmlFor="experiment-stress">压力场景：滑点加成</label>
           <div className="affix"><input id="experiment-stress" className="input" value={form.stress}
             onChange={e => update({ stress: e.target.value })} /><span>bps 每边</span></div>
-          <div className="hint">每个场景在基础滑点上再加这么多（1 bps = 0.01%）；至多 5 个，用逗号隔开，都大于 0、互不相同；只回放主模型，手续费不加压</div></div>
+          <div className="hint">每个场景在基础滑点上再加这么多（1 bps = 0.01%）；1 到 5 个，用逗号隔开，都大于 0、互不相同；只回放主模型，手续费不加压</div></div>
         {OTHER.slice(1).map(f => <NumberField key={f.key} field={f} value={form.numbers[f.key]} onChange={v => setNumber(f.key, v)} />)}
       </div>
       <Consequences defaults={defaults} form={form}

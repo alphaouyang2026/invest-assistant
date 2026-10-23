@@ -153,9 +153,7 @@ function ContractTerms({ detail: x }: { detail: Detail }) {
     ["某只没有分数时", p.score_missing],
     ["组合规则", `初始资金 ¥${yen(Number(r.initial_cash))} · 最多 ${r.max_positions} 只 · 单只上限 ${percentText(Number(r.max_weight))}% · 现金下限 ${percentText(Number(r.cash_floor))}% · 成交额上限 ${r.max_adv20_fraction ? `${percentText(Number(r.max_adv20_fraction))}% ADV20` : "不设"}`],
     ["基础成本", `手续费率 ${percentText(Number(c.costs.commission_rate))}% · 最低手续费 ¥${yen(Number(c.costs.commission_min))} · 每边滑点 ${bps(c.costs.slippage)}`],
-    ["压力场景", c.stress.scenarios.length > 0
-      ? `${c.stress.scenarios.map(s => `每边滑点 +${s.extra_bps} bps（共 ${bps(s.slippage)}）`).join("、")}。${c.stress.basis}`
-      : "不设"],
+    ["压力场景", `${c.stress.scenarios.map(s => `每边滑点 +${s.extra_bps} bps（共 ${bps(s.slippage)}）`).join("、")}。${c.stress.basis}`],
     ["主模型", `${trainerLabel(c.model.trainer)} · 参数 ${JSON.stringify(c.model.params)} · 搜索预算 ${c.model.search_budget}`],
     ["规则基线", c.baselines.map(b => trainerLabel(b.trainer)).join("、")],
     ["基准", c.benchmarks.map(b => BENCHMARKS[b] ?? b).join("、")],
