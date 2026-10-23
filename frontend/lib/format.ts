@@ -21,6 +21,15 @@ export const signedYen = (value: Maybe) =>
 export const tone = (value: Maybe) =>
   value === null || value === undefined || value === 0 ? "" : value > 0 ? "up" : "down";
 
+/** "0.1" (%) → 0.001, without 0.1 / 100's floating-point tail. */
+export const fraction = (text: string) => Number((Number(text) / 100).toPrecision(12));
+
+/** 0.05 → "5" (%), the other way. */
+export const percentText = (value: number) => String(Number((value * 100).toPrecision(12)));
+
+/** "2026-10-19T08:00:00+00:00" → "2026-10-19 08:00": a stored time to the minute. */
+export const minute = (iso: string) => iso.slice(0, 16).replace("T", " ");
+
 export const fixed = (value: Maybe, digits: number) =>
   value === null || value === undefined ? "—" : value.toFixed(digits);
 

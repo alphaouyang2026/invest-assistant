@@ -1479,6 +1479,626 @@
           }
         }
       }
+    },
+    "/api/experiments/defaults": {
+      "get": {
+        "tags": [
+          "experiments"
+        ],
+        "summary": "Defaults",
+        "operationId": "defaults_api_experiments_defaults_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExperimentDefaults"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/experiments": {
+      "post": {
+        "tags": [
+          "experiments"
+        ],
+        "summary": "Submit",
+        "operationId": "submit_api_experiments_post",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExperimentIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExperimentAccepted"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "experiments"
+        ],
+        "summary": "History",
+        "operationId": "history_api_experiments_get",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Page Size"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExperimentHistory"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/experiments/{experiment_id}": {
+      "get": {
+        "tags": [
+          "experiments"
+        ],
+        "summary": "Detail",
+        "operationId": "detail_api_experiments__experiment_id__get",
+        "parameters": [
+          {
+            "name": "experiment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Experiment Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExperimentDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        }
+      }
+    },
+    "/api/experiments/{experiment_id}/retry": {
+      "post": {
+        "tags": [
+          "experiments"
+        ],
+        "summary": "Retry",
+        "operationId": "retry_api_experiments__experiment_id__retry_post",
+        "parameters": [
+          {
+            "name": "experiment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Experiment Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExperimentRetryIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExperimentAccepted"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        }
+      }
+    },
+    "/api/experiments/{experiment_id}/replays/{position}": {
+      "get": {
+        "tags": [
+          "experiments"
+        ],
+        "summary": "Replay",
+        "operationId": "replay_api_experiments__experiment_id__replays__position__get",
+        "parameters": [
+          {
+            "name": "experiment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Experiment Id"
+            }
+          },
+          {
+            "name": "position",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Position"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReplayDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        }
+      }
+    },
+    "/api/experiments/{experiment_id}/replays/{position}/orders": {
+      "get": {
+        "tags": [
+          "experiments"
+        ],
+        "summary": "Orders",
+        "operationId": "orders_api_experiments__experiment_id__replays__position__orders_get",
+        "parameters": [
+          {
+            "name": "experiment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Experiment Id"
+            }
+          },
+          {
+            "name": "position",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Position"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 50,
+              "title": "Page Size"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExperimentOrders"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        }
+      }
+    },
+    "/api/experiments/{experiment_id}/replays/{position}/days": {
+      "get": {
+        "tags": [
+          "experiments"
+        ],
+        "summary": "Days",
+        "operationId": "days_api_experiments__experiment_id__replays__position__days_get",
+        "parameters": [
+          {
+            "name": "experiment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Experiment Id"
+            }
+          },
+          {
+            "name": "position",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Position"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Page Size"
+            }
+          },
+          {
+            "name": "decision_only",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Decision Only"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExperimentDays"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        }
+      }
+    },
+    "/api/experiments/{experiment_id}/scores/{model}/{day}": {
+      "get": {
+        "tags": [
+          "experiments"
+        ],
+        "summary": "Scores",
+        "operationId": "scores_api_experiments__experiment_id__scores__model___day__get",
+        "parameters": [
+          {
+            "name": "experiment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Experiment Id"
+            }
+          },
+          {
+            "name": "model",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Model"
+            }
+          },
+          {
+            "name": "day",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "title": "Day"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DayScores"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1790,6 +2410,113 @@
         ],
         "title": "AccountSummaryOut"
       },
+      "Adv20Out": {
+        "properties": {
+          "orders": {
+            "type": "integer",
+            "title": "Orders"
+          },
+          "median": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Median"
+          },
+          "p95": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P95"
+          },
+          "max": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max"
+          },
+          "over_cap": {
+            "type": "integer",
+            "title": "Over Cap"
+          },
+          "without_adv20": {
+            "type": "integer",
+            "title": "Without Adv20"
+          },
+          "cap": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cap"
+          }
+        },
+        "type": "object",
+        "required": [
+          "orders",
+          "median",
+          "p95",
+          "max",
+          "over_cap",
+          "without_adv20",
+          "cap"
+        ],
+        "title": "Adv20Out"
+      },
+      "ArtifactOut": {
+        "properties": {
+          "trainer": {
+            "type": "string",
+            "title": "Trainer"
+          },
+          "params": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Params"
+          },
+          "state": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "State"
+          },
+          "train_cutoff": {
+            "type": "string",
+            "format": "date",
+            "title": "Train Cutoff"
+          },
+          "samples": {
+            "type": "integer",
+            "title": "Samples"
+          }
+        },
+        "type": "object",
+        "required": [
+          "trainer",
+          "params",
+          "state",
+          "train_cutoff",
+          "samples"
+        ],
+        "title": "ArtifactOut"
+      },
       "BarOut": {
         "properties": {
           "date": {
@@ -1864,6 +2591,25 @@
         ],
         "title": "BarOut",
         "description": "Research prices: comparable across splits. None on a halted day."
+      },
+      "BaselineTerms": {
+        "properties": {
+          "trainer": {
+            "type": "string",
+            "title": "Trainer"
+          },
+          "params": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Params"
+          }
+        },
+        "type": "object",
+        "required": [
+          "trainer",
+          "params"
+        ],
+        "title": "BaselineTerms"
       },
       "BatchConfig": {
         "properties": {
@@ -2329,6 +3075,22 @@
         ],
         "title": "BatchSummary"
       },
+      "Benchmarks": {
+        "properties": {
+          "topix_price": {
+            "$ref": "#/components/schemas/TopixBenchmark"
+          },
+          "eligible_equal_weight": {
+            "$ref": "#/components/schemas/EqualWeightBenchmark"
+          }
+        },
+        "type": "object",
+        "required": [
+          "topix_price",
+          "eligible_equal_weight"
+        ],
+        "title": "Benchmarks"
+      },
       "CandidateOut": {
         "properties": {
           "code": {
@@ -2509,6 +3271,98 @@
         ],
         "title": "DataQuality"
       },
+      "DataRead": {
+        "properties": {
+          "observed_at": {
+            "type": "string",
+            "title": "Observed At"
+          },
+          "note": {
+            "type": "string",
+            "title": "Note"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/DataSourceRead"
+            },
+            "type": "array",
+            "title": "Sources"
+          }
+        },
+        "type": "object",
+        "required": [
+          "observed_at",
+          "note",
+          "sources"
+        ],
+        "title": "DataRead",
+        "description": "What one attempt read and when: not when each row first became known\n— the database keeps no such time (ADR-0001) — only this read."
+      },
+      "DataSourceRead": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "daily_bars",
+              "segment_periods",
+              "topix",
+              "trading_calendar"
+            ],
+            "title": "Kind"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "start": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start"
+          },
+          "end": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End"
+          },
+          "rows": {
+            "type": "integer",
+            "title": "Rows"
+          },
+          "detail": {
+            "type": "string",
+            "title": "Detail"
+          },
+          "available_from": {
+            "type": "string",
+            "title": "Available From"
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind",
+          "name",
+          "start",
+          "end",
+          "rows",
+          "detail",
+          "available_from"
+        ],
+        "title": "DataSourceRead"
+      },
       "DataStatus": {
         "properties": {
           "latest_date": {
@@ -2547,6 +3401,520 @@
           "recent_jobs"
         ],
         "title": "DataStatus"
+      },
+      "DayConstraints": {
+        "properties": {
+          "skipped": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Skipped"
+          },
+          "adv20_capped": {
+            "type": "integer",
+            "title": "Adv20 Capped"
+          },
+          "ranked_out": {
+            "type": "integer",
+            "title": "Ranked Out"
+          },
+          "unplaced_candidates": {
+            "type": "integer",
+            "title": "Unplaced Candidates"
+          }
+        },
+        "type": "object",
+        "required": [
+          "skipped",
+          "adv20_capped",
+          "ranked_out",
+          "unplaced_candidates"
+        ],
+        "title": "DayConstraints"
+      },
+      "DayExecution": {
+        "properties": {
+          "sequence": {
+            "type": "integer",
+            "title": "Sequence"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "signal_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Signal Date"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "outcome_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outcome Reason"
+          },
+          "filled_quantity": {
+            "type": "integer",
+            "title": "Filled Quantity"
+          },
+          "fill_price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fill Price"
+          },
+          "fees": {
+            "type": "number",
+            "title": "Fees"
+          },
+          "cash_delta": {
+            "type": "number",
+            "title": "Cash Delta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "sequence",
+          "kind",
+          "code",
+          "signal_date",
+          "status",
+          "outcome_reason",
+          "filled_quantity",
+          "fill_price",
+          "fees",
+          "cash_delta"
+        ],
+        "title": "DayExecution"
+      },
+      "DayOrder": {
+        "properties": {
+          "sequence": {
+            "type": "integer",
+            "title": "Sequence"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "execution_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Execution Date"
+          },
+          "planned_quantity": {
+            "type": "integer",
+            "title": "Planned Quantity"
+          },
+          "priority": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Priority"
+          },
+          "reason_codes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Reason Codes"
+          },
+          "capped": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Capped"
+          },
+          "replaces": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Replaces"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "outcome_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outcome Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "sequence",
+          "kind",
+          "code",
+          "execution_date",
+          "planned_quantity",
+          "priority",
+          "reason_codes",
+          "capped",
+          "replaces",
+          "status",
+          "outcome_reason"
+        ],
+        "title": "DayOrder"
+      },
+      "DayRecord": {
+        "properties": {
+          "date": {
+            "type": "string",
+            "format": "date",
+            "title": "Date"
+          },
+          "decision_day": {
+            "type": "boolean",
+            "title": "Decision Day"
+          },
+          "model_available": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Available"
+          },
+          "fold": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fold"
+          },
+          "universe": {
+            "type": "integer",
+            "title": "Universe"
+          },
+          "scored": {
+            "type": "integer",
+            "title": "Scored"
+          },
+          "holdings_decisions": {
+            "items": {
+              "$ref": "#/components/schemas/HoldingDecision"
+            },
+            "type": "array",
+            "title": "Holdings Decisions"
+          },
+          "candidates": {
+            "type": "integer",
+            "title": "Candidates"
+          },
+          "orders": {
+            "items": {
+              "$ref": "#/components/schemas/DayOrder"
+            },
+            "type": "array",
+            "title": "Orders"
+          },
+          "executions": {
+            "items": {
+              "$ref": "#/components/schemas/DayExecution"
+            },
+            "type": "array",
+            "title": "Executions"
+          },
+          "target": {
+            "items": {
+              "$ref": "#/components/schemas/TargetLine"
+            },
+            "type": "array",
+            "title": "Target"
+          },
+          "holdings": {
+            "items": {
+              "$ref": "#/components/schemas/ResearchHolding"
+            },
+            "type": "array",
+            "title": "Holdings"
+          },
+          "cash": {
+            "type": "number",
+            "title": "Cash"
+          },
+          "nav": {
+            "type": "number",
+            "title": "Nav"
+          },
+          "constraints": {
+            "$ref": "#/components/schemas/DayConstraints"
+          },
+          "top_scores": {
+            "items": {
+              "$ref": "#/components/schemas/RankedScore"
+            },
+            "type": "array",
+            "title": "Top Scores"
+          }
+        },
+        "type": "object",
+        "required": [
+          "date",
+          "decision_day",
+          "model_available",
+          "fold",
+          "universe",
+          "scored",
+          "holdings_decisions",
+          "candidates",
+          "orders",
+          "executions",
+          "target",
+          "holdings",
+          "cash",
+          "nav",
+          "constraints",
+          "top_scores"
+        ],
+        "title": "DayRecord",
+        "description": "One replayed session: the holdings' dispositions that morning's close,\nthe orders planned (as they ended), what filled or expired at its open,\nthe holdings the plan aims at, those held at the close, cash and NAV."
+      },
+      "DayScores": {
+        "properties": {
+          "model": {
+            "type": "string",
+            "title": "Model"
+          },
+          "as_of": {
+            "type": "string",
+            "format": "date",
+            "title": "As Of"
+          },
+          "fold": {
+            "type": "integer",
+            "title": "Fold"
+          },
+          "artifact_hash": {
+            "type": "string",
+            "title": "Artifact Hash"
+          },
+          "scores": {
+            "items": {
+              "$ref": "#/components/schemas/RankedScore"
+            },
+            "type": "array",
+            "title": "Scores"
+          }
+        },
+        "type": "object",
+        "required": [
+          "model",
+          "as_of",
+          "fold",
+          "artifact_hash",
+          "scores"
+        ],
+        "title": "DayScores"
+      },
+      "DiagnosticDay": {
+        "properties": {
+          "date": {
+            "type": "string",
+            "format": "date",
+            "title": "Date"
+          },
+          "fold": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fold"
+          },
+          "available": {
+            "type": "boolean",
+            "title": "Available"
+          },
+          "universe": {
+            "type": "integer",
+            "title": "Universe"
+          },
+          "scored": {
+            "type": "integer",
+            "title": "Scored"
+          },
+          "coverage": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coverage"
+          },
+          "labelled": {
+            "type": "integer",
+            "title": "Labelled"
+          },
+          "rank_ic": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rank Ic"
+          }
+        },
+        "type": "object",
+        "required": [
+          "date",
+          "fold",
+          "available",
+          "universe",
+          "scored",
+          "coverage",
+          "labelled",
+          "rank_ic"
+        ],
+        "title": "DiagnosticDay"
+      },
+      "Diagnostics": {
+        "properties": {
+          "decision_days": {
+            "type": "integer",
+            "title": "Decision Days"
+          },
+          "unavailable_days": {
+            "type": "integer",
+            "title": "Unavailable Days"
+          },
+          "ic_days": {
+            "type": "integer",
+            "title": "Ic Days"
+          },
+          "ic_mean": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ic Mean"
+          },
+          "ic_std": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ic Std"
+          },
+          "coverage_mean": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coverage Mean"
+          },
+          "coverage_min": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coverage Min"
+          },
+          "days": {
+            "items": {
+              "$ref": "#/components/schemas/DiagnosticDay"
+            },
+            "type": "array",
+            "title": "Days"
+          },
+          "folds": {
+            "items": {
+              "$ref": "#/components/schemas/FoldDiagnostics"
+            },
+            "type": "array",
+            "title": "Folds"
+          }
+        },
+        "type": "object",
+        "required": [
+          "decision_days",
+          "unavailable_days",
+          "ic_days",
+          "ic_mean",
+          "ic_std",
+          "coverage_mean",
+          "coverage_min",
+          "days",
+          "folds"
+        ],
+        "title": "Diagnostics"
       },
       "DiscoveryDetail": {
         "properties": {
@@ -2997,6 +4365,1104 @@
         "title": "Distribution",
         "description": "Completed segments side by side, each weighing the same; nothing chained."
       },
+      "EqualWeightBenchmark": {
+        "properties": {
+          "basis": {
+            "type": "string",
+            "title": "Basis"
+          },
+          "periods": {
+            "items": {
+              "$ref": "#/components/schemas/PoolPeriod"
+            },
+            "type": "array",
+            "title": "Periods"
+          },
+          "total_return": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Return"
+          }
+        },
+        "type": "object",
+        "required": [
+          "basis",
+          "periods",
+          "total_return"
+        ],
+        "title": "EqualWeightBenchmark"
+      },
+      "Evidence": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "exploratory",
+              "insufficient_evidence"
+            ],
+            "title": "Status"
+          },
+          "reasons": {
+            "items": {
+              "$ref": "#/components/schemas/EvidenceReason"
+            },
+            "type": "array",
+            "title": "Reasons"
+          },
+          "viewed_folds": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Viewed Folds"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "reasons",
+          "viewed_folds"
+        ],
+        "title": "Evidence"
+      },
+      "EvidenceReason": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "EvidenceReason"
+      },
+      "ExperimentAccepted": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "title": "ExperimentAccepted"
+      },
+      "ExperimentContract": {
+        "properties": {
+          "version": {
+            "type": "string",
+            "title": "Version"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "task": {
+            "$ref": "#/components/schemas/TaskOut"
+          },
+          "data": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Data"
+          },
+          "features": {
+            "$ref": "#/components/schemas/FeaturesOut"
+          },
+          "universe_rule": {
+            "$ref": "#/components/schemas/UniverseRule"
+          },
+          "test_from": {
+            "type": "string",
+            "format": "date",
+            "title": "Test From"
+          },
+          "test_to": {
+            "type": "string",
+            "format": "date",
+            "title": "Test To"
+          },
+          "folds": {
+            "$ref": "#/components/schemas/FoldTerms"
+          },
+          "policy": {
+            "$ref": "#/components/schemas/PolicyTerms"
+          },
+          "portfolio_rules": {
+            "$ref": "#/components/schemas/ExperimentRules"
+          },
+          "costs": {
+            "$ref": "#/components/schemas/ExperimentCosts"
+          },
+          "stress": {
+            "$ref": "#/components/schemas/StressTerms"
+          },
+          "model": {
+            "$ref": "#/components/schemas/ModelTerms"
+          },
+          "baselines": {
+            "items": {
+              "$ref": "#/components/schemas/BaselineTerms"
+            },
+            "type": "array",
+            "title": "Baselines"
+          },
+          "benchmarks": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Benchmarks"
+          },
+          "minimums": {
+            "$ref": "#/components/schemas/Minimums"
+          },
+          "viewed_through": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Viewed Through"
+          },
+          "actions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Actions"
+          },
+          "source_account_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Account Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "version",
+          "name",
+          "task",
+          "data",
+          "features",
+          "universe_rule",
+          "test_from",
+          "test_to",
+          "folds",
+          "policy",
+          "portfolio_rules",
+          "costs",
+          "stress",
+          "model",
+          "baselines",
+          "benchmarks",
+          "minimums",
+          "viewed_through",
+          "actions",
+          "source_account_id"
+        ],
+        "title": "ExperimentContract"
+      },
+      "ExperimentCosts": {
+        "properties": {
+          "commission_rate": {
+            "type": "string",
+            "title": "Commission Rate"
+          },
+          "commission_min": {
+            "type": "string",
+            "title": "Commission Min"
+          },
+          "slippage": {
+            "type": "string",
+            "title": "Slippage"
+          }
+        },
+        "type": "object",
+        "required": [
+          "commission_rate",
+          "commission_min",
+          "slippage"
+        ],
+        "title": "ExperimentCosts"
+      },
+      "ExperimentDays": {
+        "properties": {
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "page": {
+            "type": "integer",
+            "title": "Page"
+          },
+          "page_size": {
+            "type": "integer",
+            "title": "Page Size"
+          },
+          "days": {
+            "items": {
+              "$ref": "#/components/schemas/DayRecord"
+            },
+            "type": "array",
+            "title": "Days"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total",
+          "page",
+          "page_size",
+          "days"
+        ],
+        "title": "ExperimentDays"
+      },
+      "ExperimentDefaults": {
+        "properties": {
+          "defaults": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Defaults"
+          },
+          "trainers": {
+            "additionalProperties": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "object",
+            "title": "Trainers"
+          },
+          "supported_actions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Supported Actions"
+          },
+          "unsupported_actions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Unsupported Actions"
+          },
+          "task": {
+            "$ref": "#/components/schemas/TaskOut"
+          },
+          "features": {
+            "$ref": "#/components/schemas/FeaturesOut"
+          },
+          "viewed_through": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Viewed Through"
+          }
+        },
+        "type": "object",
+        "required": [
+          "defaults",
+          "trainers",
+          "supported_actions",
+          "unsupported_actions",
+          "task",
+          "features",
+          "viewed_through"
+        ],
+        "title": "ExperimentDefaults",
+        "description": "For the registration form: every default, the trainers and their\nparameters, the actions a contract may declare, and how far history\nhas been seen — what a contract registered now would freeze."
+      },
+      "ExperimentDetail": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "running",
+              "completed",
+              "failed"
+            ],
+            "title": "Status"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "retry_of": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retry Of"
+          },
+          "retried_by": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Retried By"
+          },
+          "progress": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Progress"
+          },
+          "input_fingerprint": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input Fingerprint"
+          },
+          "code_version": {
+            "type": "string",
+            "title": "Code Version"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "missing_data",
+                  "input_changed",
+                  "interrupted",
+                  "error"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "data_read": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DataRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "contract": {
+            "$ref": "#/components/schemas/ExperimentContract"
+          },
+          "contract_hash": {
+            "type": "string",
+            "title": "Contract Hash"
+          },
+          "evidence_status": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "exploratory",
+                  "insufficient_evidence"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Evidence Status"
+          },
+          "report": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExperimentReport"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "fold_results": {
+            "items": {
+              "$ref": "#/components/schemas/FoldResultOut"
+            },
+            "type": "array",
+            "title": "Fold Results"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "status",
+          "created_at",
+          "finished_at",
+          "retry_of",
+          "retried_by",
+          "progress",
+          "input_fingerprint",
+          "code_version",
+          "error",
+          "error_code",
+          "data_read",
+          "contract",
+          "contract_hash",
+          "evidence_status",
+          "report",
+          "fold_results"
+        ],
+        "title": "ExperimentDetail"
+      },
+      "ExperimentHistory": {
+        "properties": {
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "page": {
+            "type": "integer",
+            "title": "Page"
+          },
+          "page_size": {
+            "type": "integer",
+            "title": "Page Size"
+          },
+          "experiments": {
+            "items": {
+              "$ref": "#/components/schemas/ExperimentSummary"
+            },
+            "type": "array",
+            "title": "Experiments"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total",
+          "page",
+          "page_size",
+          "experiments"
+        ],
+        "title": "ExperimentHistory"
+      },
+      "ExperimentIn": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 100,
+            "title": "Name",
+            "default": ""
+          },
+          "test_from": {
+            "type": "string",
+            "format": "date",
+            "title": "Test From"
+          },
+          "test_to": {
+            "type": "string",
+            "format": "date",
+            "title": "Test To"
+          },
+          "train_sessions": {
+            "type": "integer",
+            "title": "Train Sessions",
+            "default": 250
+          },
+          "test_sessions": {
+            "type": "integer",
+            "title": "Test Sessions",
+            "default": 60
+          },
+          "expanding": {
+            "type": "boolean",
+            "title": "Expanding",
+            "default": false
+          },
+          "rebalance_sessions": {
+            "type": "integer",
+            "title": "Rebalance Sessions",
+            "default": 5
+          },
+          "max_holding_sessions": {
+            "type": "integer",
+            "title": "Max Holding Sessions",
+            "default": 0
+          },
+          "trainer": {
+            "type": "string",
+            "title": "Trainer",
+            "default": "ridge_v1"
+          },
+          "trainer_params": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Trainer Params",
+            "default": {}
+          },
+          "baselines": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Baselines",
+            "default": [
+              "rule_short_reversal_v1"
+            ]
+          },
+          "source_account_id": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Account Id"
+          },
+          "initial_cash": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Initial Cash"
+          },
+          "max_positions": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Positions"
+          },
+          "max_weight": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Weight"
+          },
+          "cash_floor": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cash Floor"
+          },
+          "max_adv20_fraction": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Adv20 Fraction",
+            "default": 0.05
+          },
+          "commission_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Commission Rate"
+          },
+          "commission_min": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Commission Min"
+          },
+          "slippage": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Slippage"
+          },
+          "stress_bps": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Stress Bps",
+            "default": [
+              10,
+              25,
+              50
+            ]
+          },
+          "min_coverage": {
+            "type": "number",
+            "title": "Min Coverage",
+            "default": 0.8
+          },
+          "min_training_samples": {
+            "type": "integer",
+            "title": "Min Training Samples",
+            "default": 20000
+          },
+          "min_labelled_days": {
+            "type": "integer",
+            "title": "Min Labelled Days",
+            "default": 24
+          },
+          "min_trades": {
+            "type": "integer",
+            "title": "Min Trades",
+            "default": 30
+          },
+          "actions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Actions",
+            "default": [
+              "disposition",
+              "priority"
+            ]
+          },
+          "request_key": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Request Key"
+          }
+        },
+        "type": "object",
+        "required": [
+          "test_from",
+          "test_to",
+          "request_key"
+        ],
+        "title": "ExperimentIn"
+      },
+      "ExperimentOrders": {
+        "properties": {
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "page": {
+            "type": "integer",
+            "title": "Page"
+          },
+          "page_size": {
+            "type": "integer",
+            "title": "Page Size"
+          },
+          "orders": {
+            "items": {
+              "$ref": "#/components/schemas/OrderOut"
+            },
+            "type": "array",
+            "title": "Orders"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total",
+          "page",
+          "page_size",
+          "orders"
+        ],
+        "title": "ExperimentOrders"
+      },
+      "ExperimentReport": {
+        "properties": {
+          "contract_hash": {
+            "type": "string",
+            "title": "Contract Hash"
+          },
+          "sessions": {
+            "type": "integer",
+            "title": "Sessions"
+          },
+          "decision_days": {
+            "type": "integer",
+            "title": "Decision Days"
+          },
+          "read_from": {
+            "type": "string",
+            "format": "date",
+            "title": "Read From"
+          },
+          "folds": {
+            "items": {
+              "$ref": "#/components/schemas/FoldOut"
+            },
+            "type": "array",
+            "title": "Folds"
+          },
+          "models": {
+            "items": {
+              "$ref": "#/components/schemas/ModelReport"
+            },
+            "type": "array",
+            "title": "Models"
+          },
+          "benchmarks": {
+            "$ref": "#/components/schemas/Benchmarks"
+          },
+          "stress_basis": {
+            "type": "string",
+            "title": "Stress Basis"
+          },
+          "replays": {
+            "items": {
+              "$ref": "#/components/schemas/ReplaySummary"
+            },
+            "type": "array",
+            "title": "Replays"
+          },
+          "evidence": {
+            "$ref": "#/components/schemas/Evidence"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings"
+          },
+          "timings": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Timings"
+          }
+        },
+        "type": "object",
+        "required": [
+          "contract_hash",
+          "sessions",
+          "decision_days",
+          "read_from",
+          "folds",
+          "models",
+          "benchmarks",
+          "stress_basis",
+          "replays",
+          "evidence",
+          "warnings",
+          "timings"
+        ],
+        "title": "ExperimentReport"
+      },
+      "ExperimentRetryIn": {
+        "properties": {
+          "request_key": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Request Key"
+          }
+        },
+        "type": "object",
+        "required": [
+          "request_key"
+        ],
+        "title": "ExperimentRetryIn"
+      },
+      "ExperimentRules": {
+        "properties": {
+          "initial_cash": {
+            "type": "string",
+            "title": "Initial Cash"
+          },
+          "max_positions": {
+            "type": "integer",
+            "title": "Max Positions"
+          },
+          "max_weight": {
+            "type": "string",
+            "title": "Max Weight"
+          },
+          "cash_floor": {
+            "type": "string",
+            "title": "Cash Floor"
+          },
+          "max_adv20_fraction": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Adv20 Fraction"
+          }
+        },
+        "type": "object",
+        "required": [
+          "initial_cash",
+          "max_positions",
+          "max_weight",
+          "cash_floor"
+        ],
+        "title": "ExperimentRules"
+      },
+      "ExperimentSummary": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "running",
+              "completed",
+              "failed"
+            ],
+            "title": "Status"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "retry_of": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retry Of"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "missing_data",
+                  "input_changed",
+                  "interrupted",
+                  "error"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "contract_hash": {
+            "type": "string",
+            "title": "Contract Hash"
+          },
+          "evidence_status": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "exploratory",
+                  "insufficient_evidence"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Evidence Status"
+          },
+          "test_from": {
+            "type": "string",
+            "format": "date",
+            "title": "Test From"
+          },
+          "test_to": {
+            "type": "string",
+            "format": "date",
+            "title": "Test To"
+          },
+          "trainer": {
+            "type": "string",
+            "title": "Trainer"
+          },
+          "baselines": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Baselines"
+          },
+          "source_account_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Account Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "status",
+          "created_at",
+          "finished_at",
+          "retry_of",
+          "error",
+          "error_code",
+          "contract_hash",
+          "evidence_status",
+          "test_from",
+          "test_to",
+          "trainer",
+          "baselines",
+          "source_account_id"
+        ],
+        "title": "ExperimentSummary"
+      },
+      "FeaturesOut": {
+        "properties": {
+          "version": {
+            "type": "string",
+            "title": "Version"
+          },
+          "names": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Names"
+          }
+        },
+        "type": "object",
+        "required": [
+          "version",
+          "names"
+        ],
+        "title": "FeaturesOut"
+      },
       "FiguresOut": {
         "properties": {
           "total_return": {
@@ -3093,6 +5559,325 @@
         "title": "FiguresOut",
         "description": "Spec §7.4. Dividends and tax are not included."
       },
+      "FillRateOut": {
+        "properties": {
+          "filled": {
+            "type": "integer",
+            "title": "Filled"
+          },
+          "expired": {
+            "type": "integer",
+            "title": "Expired"
+          },
+          "rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rate"
+          },
+          "expired_reasons": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Expired Reasons"
+          },
+          "skipped_reasons": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Skipped Reasons"
+          }
+        },
+        "type": "object",
+        "required": [
+          "filled",
+          "expired",
+          "rate",
+          "expired_reasons",
+          "skipped_reasons"
+        ],
+        "title": "FillRateOut"
+      },
+      "FoldDiagnostics": {
+        "properties": {
+          "decision_days": {
+            "type": "integer",
+            "title": "Decision Days"
+          },
+          "unavailable_days": {
+            "type": "integer",
+            "title": "Unavailable Days"
+          },
+          "ic_days": {
+            "type": "integer",
+            "title": "Ic Days"
+          },
+          "ic_mean": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ic Mean"
+          },
+          "ic_std": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ic Std"
+          },
+          "coverage_mean": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coverage Mean"
+          },
+          "coverage_min": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coverage Min"
+          },
+          "fold": {
+            "type": "integer",
+            "title": "Fold"
+          }
+        },
+        "type": "object",
+        "required": [
+          "decision_days",
+          "unavailable_days",
+          "ic_days",
+          "ic_mean",
+          "ic_std",
+          "coverage_mean",
+          "coverage_min",
+          "fold"
+        ],
+        "title": "FoldDiagnostics"
+      },
+      "FoldOut": {
+        "properties": {
+          "number": {
+            "type": "integer",
+            "title": "Number"
+          },
+          "train_from": {
+            "type": "string",
+            "format": "date",
+            "title": "Train From"
+          },
+          "train_to": {
+            "type": "string",
+            "format": "date",
+            "title": "Train To"
+          },
+          "test_from": {
+            "type": "string",
+            "format": "date",
+            "title": "Test From"
+          },
+          "test_to": {
+            "type": "string",
+            "format": "date",
+            "title": "Test To"
+          },
+          "viewed": {
+            "type": "boolean",
+            "title": "Viewed"
+          }
+        },
+        "type": "object",
+        "required": [
+          "number",
+          "train_from",
+          "train_to",
+          "test_from",
+          "test_to",
+          "viewed"
+        ],
+        "title": "FoldOut"
+      },
+      "FoldPeriod": {
+        "properties": {
+          "start": {
+            "type": "string",
+            "format": "date",
+            "title": "Start"
+          },
+          "end": {
+            "type": "string",
+            "format": "date",
+            "title": "End"
+          },
+          "sessions": {
+            "type": "integer",
+            "title": "Sessions"
+          },
+          "net_return": {
+            "type": "number",
+            "title": "Net Return"
+          },
+          "topix_return": {
+            "type": "number",
+            "title": "Topix Return"
+          },
+          "excess_return": {
+            "type": "number",
+            "title": "Excess Return"
+          },
+          "fold": {
+            "type": "integer",
+            "title": "Fold"
+          }
+        },
+        "type": "object",
+        "required": [
+          "start",
+          "end",
+          "sessions",
+          "net_return",
+          "topix_return",
+          "excess_return",
+          "fold"
+        ],
+        "title": "FoldPeriod"
+      },
+      "FoldResultOut": {
+        "properties": {
+          "model": {
+            "type": "string",
+            "title": "Model"
+          },
+          "fold": {
+            "type": "integer",
+            "title": "Fold"
+          },
+          "train_from": {
+            "type": "string",
+            "format": "date",
+            "title": "Train From"
+          },
+          "train_to": {
+            "type": "string",
+            "format": "date",
+            "title": "Train To"
+          },
+          "test_from": {
+            "type": "string",
+            "format": "date",
+            "title": "Test From"
+          },
+          "test_to": {
+            "type": "string",
+            "format": "date",
+            "title": "Test To"
+          },
+          "samples": {
+            "type": "integer",
+            "title": "Samples"
+          },
+          "seconds": {
+            "type": "number",
+            "title": "Seconds"
+          },
+          "artifact": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ArtifactOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "artifact_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artifact Hash"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          }
+        },
+        "type": "object",
+        "required": [
+          "model",
+          "fold",
+          "train_from",
+          "train_to",
+          "test_from",
+          "test_to",
+          "samples",
+          "seconds",
+          "artifact",
+          "artifact_hash",
+          "error"
+        ],
+        "title": "FoldResultOut"
+      },
+      "FoldTerms": {
+        "properties": {
+          "train_sessions": {
+            "type": "integer",
+            "title": "Train Sessions"
+          },
+          "test_sessions": {
+            "type": "integer",
+            "title": "Test Sessions"
+          },
+          "expanding": {
+            "type": "boolean",
+            "title": "Expanding"
+          }
+        },
+        "type": "object",
+        "required": [
+          "train_sessions",
+          "test_sessions",
+          "expanding"
+        ],
+        "title": "FoldTerms"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -3105,6 +5890,51 @@
         },
         "type": "object",
         "title": "HTTPValidationError"
+      },
+      "HoldingDecision": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "disposition": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disposition"
+          },
+          "reason_codes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Reason Codes"
+          },
+          "score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Score"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "disposition",
+          "reason_codes",
+          "score"
+        ],
+        "title": "HoldingDecision"
       },
       "HoldingOut": {
         "properties": {
@@ -3428,6 +6258,108 @@
         ],
         "title": "LinePoint"
       },
+      "Minimums": {
+        "properties": {
+          "coverage": {
+            "type": "number",
+            "title": "Coverage"
+          },
+          "training_samples": {
+            "type": "integer",
+            "title": "Training Samples"
+          },
+          "labelled_days": {
+            "type": "integer",
+            "title": "Labelled Days"
+          },
+          "trades": {
+            "type": "integer",
+            "title": "Trades"
+          }
+        },
+        "type": "object",
+        "required": [
+          "coverage",
+          "training_samples",
+          "labelled_days",
+          "trades"
+        ],
+        "title": "Minimums"
+      },
+      "ModelReport": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "model",
+              "baseline"
+            ],
+            "title": "Role"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "trainer": {
+            "type": "string",
+            "title": "Trainer"
+          },
+          "params": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Params"
+          },
+          "failed_folds": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Failed Folds"
+          },
+          "diagnostics": {
+            "$ref": "#/components/schemas/Diagnostics"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "role",
+          "label",
+          "trainer",
+          "params",
+          "failed_folds",
+          "diagnostics"
+        ],
+        "title": "ModelReport"
+      },
+      "ModelTerms": {
+        "properties": {
+          "trainer": {
+            "type": "string",
+            "title": "Trainer"
+          },
+          "params": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Params"
+          },
+          "search_budget": {
+            "type": "integer",
+            "title": "Search Budget"
+          }
+        },
+        "type": "object",
+        "required": [
+          "trainer",
+          "params",
+          "search_budget"
+        ],
+        "title": "ModelTerms"
+      },
       "NavPointOut": {
         "properties": {
           "date": {
@@ -3641,6 +6573,97 @@
           "pane"
         ],
         "title": "PlotOut"
+      },
+      "PolicyTerms": {
+        "properties": {
+          "strategy": {
+            "type": "string",
+            "title": "Strategy"
+          },
+          "anchor": {
+            "type": "string",
+            "format": "date",
+            "title": "Anchor"
+          },
+          "rebalance_sessions": {
+            "type": "integer",
+            "title": "Rebalance Sessions"
+          },
+          "max_holding_sessions": {
+            "type": "integer",
+            "title": "Max Holding Sessions"
+          },
+          "warmup_sessions": {
+            "type": "integer",
+            "title": "Warmup Sessions"
+          },
+          "missing_scores": {
+            "type": "string",
+            "title": "Missing Scores"
+          },
+          "score_missing": {
+            "type": "string",
+            "title": "Score Missing"
+          }
+        },
+        "type": "object",
+        "required": [
+          "strategy",
+          "anchor",
+          "rebalance_sessions",
+          "max_holding_sessions",
+          "warmup_sessions",
+          "missing_scores",
+          "score_missing"
+        ],
+        "title": "PolicyTerms"
+      },
+      "PoolPeriod": {
+        "properties": {
+          "date": {
+            "type": "string",
+            "format": "date",
+            "title": "Date"
+          },
+          "codes": {
+            "type": "integer",
+            "title": "Codes"
+          },
+          "mean_return": {
+            "type": "number",
+            "title": "Mean Return"
+          }
+        },
+        "type": "object",
+        "required": [
+          "date",
+          "codes",
+          "mean_return"
+        ],
+        "title": "PoolPeriod"
+      },
+      "RankedScore": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "score": {
+            "type": "number",
+            "title": "Score"
+          },
+          "rank": {
+            "type": "integer",
+            "title": "Rank"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "score",
+          "rank"
+        ],
+        "title": "RankedScore"
       },
       "Refusal": {
         "properties": {
@@ -3874,6 +6897,378 @@
         ],
         "title": "RegimeRules",
         "description": "The fixed classification definition; a change to it is a new version."
+      },
+      "ReplayDetail": {
+        "properties": {
+          "position": {
+            "type": "integer",
+            "title": "Position"
+          },
+          "model": {
+            "type": "string",
+            "title": "Model"
+          },
+          "scenario": {
+            "type": "string",
+            "enum": [
+              "base",
+              "stress"
+            ],
+            "title": "Scenario"
+          },
+          "costs": {
+            "$ref": "#/components/schemas/ExperimentCosts"
+          },
+          "result": {
+            "$ref": "#/components/schemas/ReplayResult"
+          }
+        },
+        "type": "object",
+        "required": [
+          "position",
+          "model",
+          "scenario",
+          "costs",
+          "result"
+        ],
+        "title": "ReplayDetail"
+      },
+      "ReplayMetrics": {
+        "properties": {
+          "sessions": {
+            "type": "integer",
+            "title": "Sessions"
+          },
+          "total_return": {
+            "type": "number",
+            "title": "Total Return"
+          },
+          "topix_return": {
+            "type": "number",
+            "title": "Topix Return"
+          },
+          "excess_return": {
+            "type": "number",
+            "title": "Excess Return"
+          },
+          "annualised_return": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Annualised Return"
+          },
+          "excess_annualised_return": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Excess Annualised Return"
+          },
+          "max_drawdown": {
+            "type": "number",
+            "title": "Max Drawdown"
+          },
+          "sharpe": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sharpe"
+          },
+          "win_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Win Rate"
+          },
+          "closed_positions": {
+            "type": "integer",
+            "title": "Closed Positions"
+          },
+          "average_holding_sessions": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Average Holding Sessions"
+          },
+          "annual_turnover": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Annual Turnover"
+          },
+          "trades": {
+            "type": "integer",
+            "title": "Trades"
+          },
+          "fees": {
+            "type": "number",
+            "title": "Fees"
+          },
+          "cash": {
+            "type": "number",
+            "title": "Cash"
+          },
+          "average_cash_share": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Average Cash Share"
+          },
+          "realised_pnl": {
+            "type": "number",
+            "title": "Realised Pnl"
+          },
+          "unrealised_pnl": {
+            "type": "number",
+            "title": "Unrealised Pnl"
+          },
+          "fill_rate": {
+            "$ref": "#/components/schemas/FillRateOut"
+          },
+          "adv20": {
+            "$ref": "#/components/schemas/Adv20Out"
+          }
+        },
+        "type": "object",
+        "required": [
+          "sessions",
+          "total_return",
+          "topix_return",
+          "excess_return",
+          "annualised_return",
+          "excess_annualised_return",
+          "max_drawdown",
+          "sharpe",
+          "win_rate",
+          "closed_positions",
+          "average_holding_sessions",
+          "annual_turnover",
+          "trades",
+          "fees",
+          "cash",
+          "average_cash_share",
+          "realised_pnl",
+          "unrealised_pnl",
+          "fill_rate",
+          "adv20"
+        ],
+        "title": "ReplayMetrics",
+        "description": "Costs included; dividends and tax not."
+      },
+      "ReplayNavPoint": {
+        "properties": {
+          "date": {
+            "type": "string",
+            "format": "date",
+            "title": "Date"
+          },
+          "nav": {
+            "type": "number",
+            "title": "Nav"
+          },
+          "nav_curve": {
+            "type": "number",
+            "title": "Nav Curve"
+          },
+          "topix_curve": {
+            "type": "number",
+            "title": "Topix Curve"
+          },
+          "drawdown": {
+            "type": "number",
+            "title": "Drawdown"
+          },
+          "cash": {
+            "type": "number",
+            "title": "Cash"
+          }
+        },
+        "type": "object",
+        "required": [
+          "date",
+          "nav",
+          "nav_curve",
+          "topix_curve",
+          "drawdown",
+          "cash"
+        ],
+        "title": "ReplayNavPoint"
+      },
+      "ReplayResult": {
+        "properties": {
+          "nav": {
+            "items": {
+              "$ref": "#/components/schemas/ReplayNavPoint"
+            },
+            "type": "array",
+            "title": "Nav"
+          },
+          "holdings": {
+            "items": {
+              "$ref": "#/components/schemas/ResearchHolding"
+            },
+            "type": "array",
+            "title": "Holdings"
+          },
+          "pending": {
+            "items": {
+              "$ref": "#/components/schemas/OrderOut"
+            },
+            "type": "array",
+            "title": "Pending"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings"
+          },
+          "metrics": {
+            "$ref": "#/components/schemas/ReplayMetrics"
+          },
+          "folds": {
+            "items": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/FoldPeriod"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Folds"
+          },
+          "years": {
+            "items": {
+              "$ref": "#/components/schemas/YearPeriod"
+            },
+            "type": "array",
+            "title": "Years"
+          }
+        },
+        "type": "object",
+        "required": [
+          "nav",
+          "holdings",
+          "pending",
+          "warnings",
+          "metrics",
+          "folds",
+          "years"
+        ],
+        "title": "ReplayResult"
+      },
+      "ReplaySummary": {
+        "properties": {
+          "position": {
+            "type": "integer",
+            "title": "Position"
+          },
+          "model": {
+            "type": "string",
+            "title": "Model"
+          },
+          "model_label": {
+            "type": "string",
+            "title": "Model Label"
+          },
+          "scenario": {
+            "type": "string",
+            "enum": [
+              "base",
+              "stress"
+            ],
+            "title": "Scenario"
+          },
+          "extra_bps": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Extra Bps"
+          },
+          "costs": {
+            "$ref": "#/components/schemas/ExperimentCosts"
+          },
+          "metrics": {
+            "$ref": "#/components/schemas/ReplayMetrics"
+          },
+          "folds": {
+            "items": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/FoldPeriod"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Folds"
+          },
+          "years": {
+            "items": {
+              "$ref": "#/components/schemas/YearPeriod"
+            },
+            "type": "array",
+            "title": "Years"
+          }
+        },
+        "type": "object",
+        "required": [
+          "position",
+          "model",
+          "model_label",
+          "scenario",
+          "extra_bps",
+          "costs",
+          "metrics",
+          "folds",
+          "years"
+        ],
+        "title": "ReplaySummary"
       },
       "ResearchAccepted": {
         "properties": {
@@ -4127,7 +7522,8 @@
           "close",
           "value"
         ],
-        "title": "ResearchHolding"
+        "title": "ResearchHolding",
+        "description": "A holding at a replay's close, valued at that day's execution close:\na research run's at its end, a model experiment replay's at its end or\non any of its days. Named for research runs, which had it first."
       },
       "ResearchIn": {
         "properties": {
@@ -4681,6 +8077,45 @@
         ],
         "title": "StrategyOut"
       },
+      "StressScenario": {
+        "properties": {
+          "extra_bps": {
+            "type": "string",
+            "title": "Extra Bps"
+          },
+          "slippage": {
+            "type": "string",
+            "title": "Slippage"
+          }
+        },
+        "type": "object",
+        "required": [
+          "extra_bps",
+          "slippage"
+        ],
+        "title": "StressScenario"
+      },
+      "StressTerms": {
+        "properties": {
+          "basis": {
+            "type": "string",
+            "title": "Basis"
+          },
+          "scenarios": {
+            "items": {
+              "$ref": "#/components/schemas/StressScenario"
+            },
+            "type": "array",
+            "title": "Scenarios"
+          }
+        },
+        "type": "object",
+        "required": [
+          "basis",
+          "scenarios"
+        ],
+        "title": "StressTerms"
+      },
       "SuggestedRulesOut": {
         "properties": {
           "max_positions": {
@@ -4717,6 +8152,75 @@
           "job_id"
         ],
         "title": "SyncAccepted"
+      },
+      "TargetLine": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "quantity": {
+            "type": "integer",
+            "title": "Quantity"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "quantity"
+        ],
+        "title": "TargetLine"
+      },
+      "TaskOut": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "decision": {
+            "type": "string",
+            "title": "Decision"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "horizon": {
+            "type": "integer",
+            "title": "Horizon"
+          },
+          "label_sessions": {
+            "type": "integer",
+            "title": "Label Sessions"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "decision",
+          "label",
+          "horizon",
+          "label_sessions"
+        ],
+        "title": "TaskOut"
+      },
+      "TopixBenchmark": {
+        "properties": {
+          "basis": {
+            "type": "string",
+            "title": "Basis"
+          },
+          "total_return": {
+            "type": "number",
+            "title": "Total Return"
+          }
+        },
+        "type": "object",
+        "required": [
+          "basis",
+          "total_return"
+        ],
+        "title": "TopixBenchmark"
       },
       "UniverseRule": {
         "type": "string",
@@ -4845,6 +8349,51 @@
           "total_return"
         ],
         "title": "WorstSegment"
+      },
+      "YearPeriod": {
+        "properties": {
+          "start": {
+            "type": "string",
+            "format": "date",
+            "title": "Start"
+          },
+          "end": {
+            "type": "string",
+            "format": "date",
+            "title": "End"
+          },
+          "sessions": {
+            "type": "integer",
+            "title": "Sessions"
+          },
+          "net_return": {
+            "type": "number",
+            "title": "Net Return"
+          },
+          "topix_return": {
+            "type": "number",
+            "title": "Topix Return"
+          },
+          "excess_return": {
+            "type": "number",
+            "title": "Excess Return"
+          },
+          "year": {
+            "type": "integer",
+            "title": "Year"
+          }
+        },
+        "type": "object",
+        "required": [
+          "start",
+          "end",
+          "sessions",
+          "net_return",
+          "topix_return",
+          "excess_return",
+          "year"
+        ],
+        "title": "YearPeriod"
       }
     }
   }

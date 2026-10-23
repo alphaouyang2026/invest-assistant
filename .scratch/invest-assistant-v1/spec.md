@@ -1,11 +1,12 @@
 # invest-assistant v1 系统设计
 
 - 状态：Proposed
-- 日期：2026-09-23（04b 场景研究修订：2026-09-29）
+- 日期：2026-09-23（04b 场景研究修订：2026-09-29；06a 模型实验修订：2026-10-20）
 - 术语：[CONTEXT.md](../../CONTEXT.md)——本文所有领域名词都按其中的定义使用
-- 架构决定：[ADR-0001](../../docs/adr/0001-store-bars-by-security-and-date-without-point-in-time.md) 生产日线覆盖存储 · [ADR-0002](../../docs/adr/0002-use-sqlite-single-file.md) SQLite 单文件 · [ADR-0003](../../docs/adr/0003-compute-research-prices-from-adjustment-factors.md) 研究价格本地计算 · [ADR-0005](../../docs/adr/0005-freeze-data-per-research-experiment.md) 研究输入指纹与同批输入一致性 · [ADR-0006](../../docs/adr/0006-separate-research-runs-from-paper-accounts.md) 阈值研究独立保存、复用账户交易规则
+- 架构决定：[ADR-0001](../../docs/adr/0001-store-bars-by-security-and-date-without-point-in-time.md) 生产日线覆盖存储 · [ADR-0002](../../docs/adr/0002-use-sqlite-single-file.md) SQLite 单文件 · [ADR-0003](../../docs/adr/0003-compute-research-prices-from-adjustment-factors.md) 研究价格本地计算 · [ADR-0005](../../docs/adr/0005-freeze-data-per-research-experiment.md) 研究输入指纹与同批输入一致性 · [ADR-0006](../../docs/adr/0006-separate-research-runs-from-paper-accounts.md) 阈值研究独立保存、复用账户交易规则 · [ADR-0007](../../docs/adr/0007-model-experiments-keep-scores-and-artifacts-not-market-data.md) 模型实验保存折外分数和模型工件、不复制行情
 - 研究扩展：[04b 账户页面：technical_rating 策略场景研究](issues/04b-research-backtest-account-ui.md)。按 A 手选区间可见闭环、B 市场形势自动选段顺序交付；§7.5、§7.6 分别记录 A、B 的实现契约，账户状态分析明确延后。
 - 策略扩展：[TOPIX ETF 策略](../topix-etf-strategies/spec.md)（2026-10-02 起）。股票池改由策略声明的股票池规则决定（§6.1），策略还可以声明读取但不交易的参照行情（§6.2）；只交易 1306 的策略见 §6.5。
+- 模型实验：ticket 06a（GitHub #10，父任务 #9 AI 完整交易策略）的评测框架（2026-10-20 起）。模型按日期折滚动训练，只用折外分数，经模拟账户的逐日交易规则回放成完整策略并出报告；存储见 §3.8，规则见 §7.7。
 - 来历：my-invest 的简化版。取舍过程见 my-invest 会话中的架构评审与两轮追问（Q1–Q32），结论已全部写进本文、CONTEXT.md 和 ADR。
 
 ## 1. 做什么，不做什么
@@ -16,8 +17,9 @@
 2. 用两种借鉴 TradingView / QuantConnect 的技术策略，每个交易日收盘后给出信号；
 3. 模拟账户按信号在下一交易日开盘模拟成交，从过去的起始日一路推进到今天（回测），之后随每日同步继续推进（模拟交易）。
 4. 从已有 `technical_rating_v1` 账户复制初始配置，手选区间运行一组阈值并在页面查看结果（04b-A）；随后按市场形势提取区间批量运行（04b-B）。普通账户的两种策略继续保留。
+5. 模型实验（06a，§7.7）：登记一份冻结契约，按日期折滚动训练模型，只用折外分数，经按分数持仓的策略和模拟账户的逐日交易规则回放成完整的买持卖、订单、成交和净值，并和规则基线、TOPIX、合格池等权一起出报告。06a 的 Ridge 只用来证明框架能跑通，不算一个候选策略。
 
-不做：生产行情的全局点时版本管理、原始响应存档、财务 point-in-time 因子、机器学习、Qlib、分红、融资融券、做空、盘中数据、实盘下单、登录。研究保存输入指纹、配置及观察结果，首期不要求永久行情快照；不自动选冠军参数、按场景切换阈值或强制三阶段时间切分。
+不做：生产行情的全局点时版本管理、原始响应存档、财务 point-in-time 因子、Qlib、分红、融资融券、做空、盘中数据、实盘下单、登录。机器学习只在模型实验里训练和打分；模拟账户仍然只用固定规则的策略，模型不自动晋级成账户，也不自动调参（搜索预算固定为 1）；不导入 Qlib、FinRL 等外部框架的回测净值当作本项目结果。研究和模型实验保存输入指纹、配置及结果，不要求永久行情快照（ADR-0005、ADR-0007）。04b 不自动选冠军参数、按场景切换阈值或强制三阶段时间切分。
 
 ## 2. 模块与 seam
 
@@ -48,6 +50,17 @@
       ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─┼─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─   驱动方
           ┌────────────────────┴────────────────────┐
    新建账户：从起始日推进到最新交易日        每日同步成功后：所有账户推进
+
+      ridge_v1      rule_short_reversal_v1       测试用桩
+          └────────────────────┬────────────────────┘
+      ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─┼─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─   seam：训练器（06a）
+┌──────────────────────────────────────────────────────┐
+│ 模型实验模块  experiments/                              │
+│   冻结契约 → 读行情 → 特征与标签 → 日期折 →                │
+│   逐折训练、折外打分 → 按分数持仓的策略 →                   │
+│   账户模块的整段回放 replay_range → 报告与证据状态         │
+└──────────────────────────────────────────────────────┘
+   行情经行情数据模块读取；按分数持仓的策略走策略 seam；回放复用模拟账户模块的逐日交易
 ```
 
 规则：
@@ -57,6 +70,8 @@
 - 指标模块和策略不碰数据库：输入是 DataFrame 和持仓事实，输出是信号。它们的测试只需要合成 K 线。
 - 两个基线 seam 各有两个真实适配器（J-Quants：HTTP / 假数据；策略：两种策略）。04b 在账户模块内增加研究入口与观察/报告能力，按需要抽取共享逐日逻辑，不要求先引入特定 `SimulationEngine` interface。
 - 研究配置、信号观察和模拟账本由账户模块独立保存；API 只提交任务或读取报告，不复制交易规则，也不直接调用内部账本/成交函数。
+- 06a 增加第三个 seam：**训练器**（附录 A.6）。两个真实适配器 `ridge_v1` 和 `rule_short_reversal_v1`，测试里换成桩；换训练器不改日期折、回放和报告的代码。训练器和策略一样不碰数据库：输入是特征表和标签，输出是模型工件和分数。
+- 只有模型实验模块读写 `model_experiment*` 六张表（§3.8）。它从账户模块只读两样东西：来源账户的初始资金、组合规则和费用，以及已看过截止日的账户和研究部分（`experiment_inputs`，§7.7），不直接查账户和研究的表，也不写它们。实验的回放经账户模块的整段回放 `replay_range`（附录 A.4），回读账本（每天计划了哪些单、开盘生效了什么、计划想要的持仓、期末数字）也经账户模块（`Replay.days()`、`end_state` 等），不另写一套交易规则，也不自己推算账本。
 
 ## 3. 数据模型（基线 6 张表，研究扩展另存）
 
@@ -115,7 +130,7 @@
 | `name` | |
 | `strategy` | `trend_pullback_v1` / `technical_rating_v1` |
 | `strategy_params` | JSON，缺省项用策略默认值 |
-| `portfolio_rules` | JSON：`initial_cash`（默认 10,000,000）、`max_positions`（10）、`max_weight`（0.10）、`cash_floor`（0.05） |
+| `portfolio_rules` | JSON：`initial_cash`（默认 10,000,000）、`max_positions`（10）、`max_weight`（0.10）、`cash_floor`（0.05）；可选 `max_adv20_fraction`（ADV20 上限，7.2 第 4 步）：没有这个键就是不设上限，现有账户都没有，新建账户页和 API 也不提供 |
 | `costs` | JSON：`commission_rate`（0）、`commission_min`（0）、`slippage`（0.001，每边） |
 | `start_date` | 起始交易日 |
 | `advanced_through` | 已推进到的交易日；`NULL` 表示尚未推进 |
@@ -135,7 +150,7 @@
 | `execution_date` | 计划成交的交易日（信号日的下一开市日） |
 | `planned_quantity` | 计划股数（100 的整数倍） |
 | `priority` | 生成时的候选排序值 |
-| `reason` | JSON：处置、理由代码、关键指标值 |
+| `reason` | JSON：处置、理由代码、关键指标值；买单被 ADV20 上限压缩时另有 `capped: "adv20"` |
 | `status` | `pending` / `filled` / `expired` / `skipped` |
 | `outcome_reason` | 过期或放弃的原因代码（见 7.3） |
 | `filled_quantity` | 成交股数；拆合股调整为持仓股数的变化量（可为负） |
@@ -162,6 +177,21 @@
 - research_batches：UUID、唯一 request_key、请求、冻结的基础配置（不含区间）、discovery_id、选择记录（所选区间编号与候选总数）、提交时的分类指纹、代码身份、创建时间。
 - research_batch_segments：批次 + 位置（从 1 起）、区间编号、起止日。research_batch_attempts：批次 + 位置 + 第几次尝试 → 一条 `manual_research_runs`；只有单段重试带客户端 request_key。
 - 批次表不存状态：段的状态就是它最新一次尝试的研究运行状态，批次状态由各段推导（§7.6）。批次段的研究运行不出现在 A 的运行历史里，但可按 run_id 打开 A 的详情。
+
+### 3.8 模型实验记录（06a）
+
+迁移 0008 新增六张表，只由模型实验模块读写（§2）；都不对模拟账户和研究的表设外键，来源账户 ID 只写在冻结契约里作追溯。规则见 §7.7。
+
+| 表 | 主键 | 内容 |
+|---|---|---|
+| `model_experiments` | `id`（UUID） | 唯一 `request_key`、原请求、冻结契约及其 hash、`retry_of`、queued/running/completed/failed、创建／完成时间、进度、研究输入指纹、读取记录（`data_read`，§7.7）、代码身份、错误和失败种类（`error_code`）、证据状态（给历史列表用）、完成报告 |
+| `model_experiment_folds` | 实验、`model`、折号 | `model` 是 `model`（主模型）或 `baseline_1`、`baseline_2`……；训练起止、测试起止、训练样本数、耗时、模型工件（JSON）及其 hash；失败的折没有工件，记失败原因 |
+| `model_experiment_scores` | 实验、`model`、`as_of` | 只存决策日的折外分数：所在折、打分的工件 hash、`{代码: 分数}`；某折失败，它的决策日没有这一行 |
+| `model_experiment_replays` | 实验、`position` | 第几个回放（从 1 起，主模型基础成本在前）、哪个模型、`base`／`stress`、成本，结果：每日净值（含现金）、期末持仓、末日挂单、警告、各项指标、逐折、逐年 |
+| `model_experiment_orders` | 实验、`position`、序号 | 这个回放的账本记录，形状同研究运行的订单 |
+| `model_experiment_days` | 实验、`position`、日期 | 逐日记录（§7.7）及是否决策日；每个回放都有，压力场景的也有 |
+
+已完成的实验不改写，GET 只读存下的结果，不重新读行情、不重新训练；失败和中断的尝试也留着。实验存的是它自己算出来的分数、工件和账本，不存行情副本（ADR-0007）。
 
 ## 4. 行情数据模块
 
@@ -249,7 +279,7 @@ NaN 的处理也要显式规定并写进测试：宽表对齐后，某证券当�
 股票池按策略声明的**股票池规则**取（6.2、附录 A.3）。交易日 `t` 的股票池 = 同时满足：
 
 - 是规则给出的候选证券，现有两种规则：
-  - **Prime 普通股**（默认值，个股策略都用它：两个原有策略和 05 的三个候选，6.6）：`t` 所在的市场分类区间是 `market_code = 0111`（Prime）且 `product_category = 011`；
+  - **Prime 普通股**（默认值，个股策略都用它：两个原有策略、05 的三个候选（6.6）和模型实验的按分数持仓（6.7））：`t` 所在的市场分类区间是 `market_code = 0111`（Prime）且 `product_category = 011`；
   - **TOPIX ETF**（TOPIX ETF 策略用它，6.5）：只有 1306（代码 13060），且 `t` 在上市名册中，即有覆盖 `t` 的市场分类区间（1306 的市场区分是 0109 その他，商品类别 014）；
 - 最近 20 个开市日（含 `t`）的成交额平均 ≥ 5 亿日元，缺失或 `untradable` 的日子按 0 计；
 - `t` 的日线不是 `untradable`。
@@ -375,6 +405,10 @@ ticket [05](issues/05-three-ohclv-strategy-candidates.md) 的三类候选，只�
   - 预注册变体 `cross_sectional_momentum_12_1_v1` = `momentum_sessions` 252、`warmup_sessions` 253。
   - 指标值含 `close`、`from_close`、`to_close`、`momentum`、`check_day`；单独一栏画动量（每天都画）。
 
+### 6.7 按分数持仓（06a）
+
+**按分数持仓 v1**（`score_top_n_v1`）是模型实验把模型分数变成买持卖的策略：决策日持有分数最高的那几只，持仓也参与排名。分数和决策日由调用方放在一张分数表里交给它，所以它不进策略注册表，不出现在新建账户页、信号页和证券详情页，只由模型实验（以及测试里的模拟账户）直接构造。规则表、参数和理由码见 §7.7。模型的分数本身不是策略：同一张分数表换一套持有规则，就是另一个策略版本。
+
 ## 7. 模拟账户
 
 ### 7.1 推进一个交易日 `t`
@@ -402,11 +436,12 @@ PaperAccount 从 `start_date` 逐日推进到最新交易日，追上后写 `bac
 在 `t` 收盘：
 
 1. 持仓中得到「必须清仓」的 → 卖单，股数为全部持仓。已在 7.1 第 4 步重下卖单的持仓不再评价。
-   - 策略声明**持仓参与排名**（`ranks_holdings`，现在只有横截面动量，6.6）时：当天得到带排序值的「可持有」的持仓，和候选一起按排序值降序、代码升序排名，争夺其余持仓（没有排名的，例如当天停牌）留下的位置；排在位置之外的持仓 → 卖单，股数为全部持仓，理由 `ranked_out`。候选只保留排进位置的。
+   - 策略声明**持仓参与排名**（`ranks_holdings`，现在有横截面动量（6.6）和按分数持仓（6.7））时：当天得到带排序值的「可持有」的持仓，和候选一起按排序值降序、代码升序排名，争夺其余持仓（没有排名的，例如当天停牌）留下的位置；排在位置之外的持仓 → 卖单，股数为全部持仓，理由 `ranked_out`。候选只保留排进位置的。
 2. 空位 = `max_positions` − （持仓数 − 本次卖出数）。
 3. 候选 = 入场评价「可持有」且未持仓的证券，按排序值降序、代码升序，取前「空位」个。
 4. 每只候选的目标金额 = `t` 收盘净值 × `min(max_weight, (1 − cash_floor) / max_positions)`；计划股数 = ⌊目标金额 ÷ `t` 收盘成交价格 ÷ 100⌋ × 100。
-5. 预算 = 当前现金 + 本次卖单按 `t` 收盘价估算的所得 − `cash_floor` × 净值。按顺序分配，超出预算的候选记为 `skipped`（原因 `insufficient_cash`）；计划股数为 0 的记为 `skipped`（原因 `lot_unaffordable`）。
+   - **ADV20 上限**（可选，组合规则的 `max_adv20_fraction`）：设了上限、计划股数大于 0 时，计划股数再取它和 ⌊上限 × ADV20 ÷ `t` 收盘成交价格 ÷ 100⌋ × 100 中较小的一个。ADV20 = 含 `t` 在内最近 20 个开市日成交额的平均（日元），没有日线或 `untradable` 的日子按 0 计，口径同股票池的流动性条件（6.1）；查不到 ADV20 的按 0 计。被压缩的买单在理由里记 `capped: "adv20"`，压成 0 的记为 `skipped`（原因 `adv20_cap`）。没有这个键就不设上限：现有模拟账户和研究运行都不设，模型实验默认 5%（§7.7）。上限只在计划时按 `t` 收盘价算，开盘按开盘价成交，所以成交金额可能略超上限。
+5. 预算 = 当前现金 + 本次卖单按 `t` 收盘价估算的所得 − `cash_floor` × 净值。按顺序分配，超出预算的候选记为 `skipped`（原因 `insufficient_cash`）；计划股数为 0 的记为 `skipped`（原因 `lot_unaffordable`，按目标金额本来就买不起一手的，不看 ADV20 上限）。被 ADV20 上限压缩后的股数照样过这一步的预算检查。
 6. 开仓后不调仓、不加仓；持仓股数只因卖出、拆合股调整和退市结清而变化。
 
 ### 7.3 开盘成交规则
@@ -424,7 +459,7 @@ PaperAccount 从 `start_date` 逐日推进到最新交易日，追上后写 `bac
 - 手续费 = max(`commission_min`, 成交额 × `commission_rate`)，默认 0。
 - 卖出所得在成交当时就计入可用现金，同一开盘后面的买单可以使用。
 - 成交时不再检查 `cash_floor`，它只在生成订单时起作用。
-- 不做部分成交、不限制成交量占比；成交价不按呼值取整。
+- 不做部分成交；成交时不看成交量占比，成交额只在计划买单时可以按 ADV20 设上限（7.2 第 4 步，默认不设）；成交价不按呼值取整。
 
 ### 7.4 统计（读取时计算）
 
@@ -436,7 +471,7 @@ PaperAccount 从 `start_date` 逐日推进到最新交易日，追上后写 `bac
 
 s/e 都必须是已知开市日且 s≤e，TOPIX 需覆盖完整预热至结束日；全市场缺行情日明确报错，不静默改日期。为末日计划需要已知的下一开市日。每个区间相同初始资金、空仓、无挂单启动；预热只计算指标。s 收盘信号最早在下一开市日开盘成交，运行至 e 收盘估值，不强平或执行 e 之后的挂单。
 
-研究与普通账户共用逐日交易函数及公司行动／组合／成交规则。报告展示 s 收盘到 e 收盘净收益、同范围 TOPIX 价格收益及差值、最大回撤、成交数、实际手续费、每日曲线、交易记录和期末未平仓情况。已实现盈亏为总货币盈亏减期末浮盈亏，包含实际已记账公司行动现金。单日／零成交明确说明，不用短段年化或 Sharpe 排名。不含分红、税；结果为探索性，不宣称策略泛化有效。
+研究与普通账户共用逐日交易函数及公司行动／组合／成交规则。区间内的逐日循环（空仓、无挂单、初始资金起步，每天 `replay_day`，收盘记净值点）写在账户模块的整段回放 `replay_range` 里（附录 A.4），研究运行和模型实验（§7.7）都用它；它给出的净值点带当天现金，研究运行存结果时不存现金这一项，结果和抽出之前逐位相同。报告展示 s 收盘到 e 收盘净收益、同范围 TOPIX 价格收益及差值、最大回撤、成交数、实际手续费、每日曲线、交易记录和期末未平仓情况。已实现盈亏为总货币盈亏减期末浮盈亏，包含实际已记账公司行动现金。单日／零成交明确说明，不用短段年化或 Sharpe 排名。不含分红、税；结果为探索性，不宣称策略泛化有效。
 
 B 按 TOPIX 市场形势自动提取区间，逐段调用同一个独立回放（§7.6）。多阈值批量比较、全候选诊断和连续账户状态归因均延后，不是 A 的验收前置。不强制开发／验证／盲测三阶段，也不通过统计回归生成交易。
 
@@ -458,13 +493,127 @@ B 按 TOPIX 市场形势自动提取区间，逐段调用同一个独立回放�
 - 结果分布只算已完成的段，每段等权，分母 = 已完成段数（失败段不当作 0）：收益和收益差的列表与中位数；盈利（收益 > 0）／持平／亏损段数，跑赢 TOPIX（收益差 > 0）／持平／落后段数，比例 = 计数 ÷ 分母；最差收益段、最差收益差段；日期覆盖。不拼接净值、不连乘各段收益、不合成总回撤。
 - 各段长度不同、多个短段可能属于同一次行情；区间边界要事后才知道，这不是实时择时能力。TOPIX 为价格指数，不含分红、税；结果是探索性的。
 
+### 7.7 模型实验（06a）
+
+模型实验是一个后台任务：在一份冻结契约下，按日期折滚动训练模型，只用折外分数，经按分数持仓的策略（6.7）和本章的逐日交易规则回放成完整的买持卖、订单、成交和净值，同批跑规则基线，并和 TOPIX、合格池等权一起出报告。模型的分数本身不是策略，把分数变成买、持、卖、留现金的是按分数持仓的规则和组合规则。06a 的 Ridge 只证明框架能从数据一路走到净值和报告，不是候选策略。实验不建模拟账户、不改任何账户；结论最多是探索性的，06a 不出「通过」。
+
+**冻结契约**。登记时由请求、默认值和可选的来源账户算出，校验通过后冻结，连同它的 hash（规范 JSON 的 SHA256）一起存下，之后不改。改任何一项（模型、参数、持有规则、成本、区间……）都要登记新实验；重试沿用原契约。
+
+| 项 | 默认值与说明 |
+|---|---|
+| 版本 `version` | `model_experiment_v1` |
+| 任务 `task` | `prime_open_to_open_5d_v1`：`t` 收盘决策，最早 `t+1` 开盘成交；标签 = 研究价格开盘 O(t+6) ÷ O(t+1) − 1，即 `t+1` 开盘到 `t+6` 开盘的五个开市日收益，按交易日历数开市日，不按单只证券有日线的日子数；`t+1` 或 `t+6` 没有开盘价就没有标签。标签结束日是 `t+6`（`label_sessions` = 6） |
+| 数据 `data` | 文字说明：数据来源；特征和标签用研究价格，成交用成交价格；`t` 的日线 `t` 收盘后可得；行情会被覆盖，只声称保存的结果可审计；股票池口径 |
+| 特征 `features` | `ohlcv_ratios_v1` 和十个特征名（见下） |
+| 股票池规则 | Prime 普通股（6.1） |
+| 测试起止 `test_from`、`test_to` | 必填，都必须是已知开市日；测试区间内 TOPIX 要有收盘，`test_to` 之后要有已知的下一开市日 |
+| 折 `folds` | 训练窗 `train_sessions` 250、测试段 `test_sessions` 60、`expanding` false；训练窗至少 7 个开市日（比标签的 6 个多） |
+| 持有规则 `policy` | 按分数持仓 `score_top_n_v1`；第一个决策日（`anchor`）是测试区间第一天，之后每隔 `rebalance_sessions`（5）个开市日一个决策日；`max_holding_sessions` 0（不限）；`warmup_sessions` 1；另附缺分数、训练失败时怎么办的文字说明 |
+| 组合规则 | 初始资金 10,000,000、最多 10 只、单只 10%、现金下限 5%、ADV20 上限 `max_adv20_fraction` 0.05（请求里给 null 就不设） |
+| 基础成本 | 手续费率 0、最低手续费 0、滑点 0.001（每边） |
+| 压力场景 `stress` | 每个场景在基础滑点上每边再加 `extra_bps`：默认 10／25／50 bps，基础滑点 0.1% 时即每边 0.2%／0.35%／0.6%。契约存每个加成和算出的滑点（`scenarios`），以及口径说明（`basis`）。要有 1 到 5 个，每个加成都要大于 0、互不相同，算出的滑点要小于 0.1。只回放主模型；手续费率和最低手续费沿用基础成本，不加压 |
+| 模型 `model` | `ridge_v1`，参数 `alpha` 1.0（记训练器规范化后的值），搜索预算 1（不调参） |
+| 规则基线 `baselines` | `rule_short_reversal_v1`；1 到 3 个 |
+| 基准 `benchmarks` | TOPIX 价格、合格池等权 |
+| 最低要求 `minimums` | 覆盖率 0.8；主模型每折至少 20,000 个训练样本（`training_samples`）；至少 24 个有标签的决策日（`labelled_days`，标签已知、算得出 Rank IC 的）；主模型基础成本回放至少 30 笔成交。两个样本下限的取法见表后 |
+| 已看过截止日 `viewed_through` | 登记时算出，见下 |
+| 持有规则能下达的指令种类 `actions` | 只能是 `disposition`、`priority`（每只持有还是卖出、排序优先级），两个都要声明；声明目标权重 `target_weight` 或总敞口 `gross_exposure` 的契约拒绝登记，不会忽略它们照常运行；不认识的名字也拒绝 |
+| 来源账户 `source_account_id` | 可选。给了就只从来源复制初始资金、最多持有只数、单只上限、现金下限、手续费率、最低手续费、滑点，这七项请求里必须留空；ADV20 上限不从来源拿；来源账户只读不写 |
+
+不能运行的契约（不是开市日、历史不够训练窗、不认识的训练器或参数、数据还没到的开市日、来源账户不存在……）登记时就拒绝（422），不留记录。
+
+两个样本下限按真实数据定：默认契约在真实数据上要跑得过，太短的区间要拦得住。
+
+- 每折训练样本 20,000：十个特征的线性模型本身用不了这么多样本，但同一天的证券高度相关，有效样本更接近训练天数。20,000 大约是 40 个开市日 × 500 只的 Prime 合格池。真实数据上默认契约最少的一折（第 1 折）有 101,891 个，过得去；训练窗设得太短，或者训练窗大半落在 Prime 市场 2022-04-04 开设之前（那时历史 Prime 股票池是空的），就会被标出来。
+- 有标签的决策日 24 天：约半年的决策日（每 5 个开市日一个，一年约 49 个）。真实数据上 Rank IC 的日间标准差约 0.14，24 天的均值标准误约 0.03，再少就分不清均值和 0 的差别。真实数据默认区间有 184 天；只有一折 60 个开市日的测试段（约 11 个有标签的决策日）会被标出来。
+
+**日期折**。测试区间按开市日切成首尾相接的若干段，每段 `test_sessions` 个开市日（最后一段可短），从早到晚编号。每折的**训练截止**是它测试段第一天的前一个开市日：这折的模型只用到这天收盘为止已知的数据。训练窗是截止日及之前的 `train_sessions` 个开市日；`expanding` 时从日历第一天起，但第一个测试日之前仍要至少有 `train_sessions` 个开市日。历史不够就拒绝，并说明还差几个开市日。
+
+- 按交易日切：同一天的全部证券同在一折，不会一部分在训练、一部分在测试。
+- 交易日 `t` 的样本只有在 `t` 不早于训练窗起点、标签结束日 `t+6` 不晚于训练截止时才进训练。所以截止日前最后 6 个开市日的样本不进训练，它们的标签要到测试段才知道。
+- 标准化等预处理只在训练折里拟合，不看测试段。
+- `t` 之后的行情改变（价格、停牌、退市）和名单变化（某只证券之后离开 Prime）都不改变 `t` 及以前的股票池、特征、分数和逐日决定，各有测试守住。
+
+**特征与标签**（`ohlcv_ratios_v1`）。只用研究价格，只用截至 `t` 收盘的数据，全是没有单位的比值：拆合股以后研究价格会按以后的调整系数重标，绝对价格和成交量会事后改变；成交额是日元，不受拆合股影响，所以它的水平也能用。十个特征：`ret_1`、`ret_5`、`ret_20`、`ret_60`（收盘 ÷ 那么多根日线前的收盘 − 1），`dist_sma20`、`dist_sma60`（收盘 ÷ 均线 − 1），`vol_20`（最近 20 个日对数收益的样本标准差），`range_20`（最近 20 根（最高 − 最低）÷ 收盘的平均），`volume_ratio`（最近 5 根平均成交量 ÷ 最近 20 根的），`log_turnover_20`（最近 20 根平均成交额的对数）。窗口按这只证券有日线的开市日往前数（停牌不算一根，第 5 节），`ret_60` 要 61 根。缺任何一个特征，这一行既不训练也不打分。只训练和打分当天股票池里的证券。
+
+**训练器**（seam，附录 A.6）。`fit` 只拿到一折的训练样本和训练截止，返回模型工件；`predict` 用模型工件给特征表的每一行打分，分数越高越靠前。实验通过构造参数拿到一个「名字和参数 → 训练器」的工厂，测试换成桩，日期折、回放和报告的代码不用改。
+
+- `ridge_v1`：在训练折里算每个特征的均值和标准差做标准化（不变的特征标准差记 1），再拟合 Ridge 回归（scikit-learn，`alpha` 默认 1.0，固定 cholesky 解法）；搜索预算 1，不调参。打分按模型工件里的数值用 numpy 逐个特征累加，同一工件、同一输入的分数逐位相同。
+- `rule_short_reversal_v1`：规则基线，不拟合，分数 = −`ret_5`，和 05 短期反转（6.6）的过去收益同口径。
+- **模型工件**：每个模型每折一个，JSON：训练器名、参数、拟合结果（`ridge_v1` 是均值、标准差、系数、截距，规则基线为空）、训练截止、样本数，不用 pickle。工件 hash = 训练器名、参数、拟合结果和训练截止的规范 JSON 的 SHA256；读回存下的 JSON 能重算出同一个 hash。
+
+**折外分数与决策日**。每折先训练，再对测试段的每个开市日分别打分，一天调用一次，所以给 `t` 打分时看不到同折里更晚日子的特征。只把**决策日**的分数存下来，带所在折和打分的工件 hash。第一个决策日是测试区间第一天，之后按交易日历每隔 `rebalance_sessions` 个开市日一个决策日，由实验算好、连同分数放进分数表交给策略，策略自己不数开市日。某折训练或打分出错（包括工件里有非有限数）：这折记失败和原因，它的决策日一个分数都没有，其余折照常；不是有限数的分数当作没有分数。
+
+**按分数持仓**（`score_top_n_v1`，6.7）。参数只有 `max_holding_sessions`（默认 0，不限）和 `warmup_sessions`（默认 1）。持仓参与排名（7.2 第 1 步），股票池 Prime 普通股，没有参照行情，不画线。每只当天有可交易日线的证券一条信号：
+
+| 情形 | 空仓 | 持仓 |
+|---|---|---|
+| 任何一天，已持有 `max_holding_sessions` 天（大于 0 时；开仓成交日算第 1 天，数法同 6.2） | — | 必须清仓，`time_exit` |
+| 不是决策日 | 不参与，`not_check_day` | 可持有，`not_check_day`，不带排序值 |
+| 决策日，模型没有分数（这天不在分数表里、为空或全是 NaN，例如这折训练失败） | 不参与，`model_unavailable` | 可持有，`model_unavailable`，不带排序值，位置保留 |
+| 决策日，这只有分数 | 可持有，`model_rank`，排序值 = 分数 | 可持有，`model_rank`，排序值 = 分数；和候选一起排名，排在 `max_positions` 之外的由组合规则卖出（`ranked_out`） |
+| 决策日，模型有分数但这只没有（离开股票池、缺特征） | 不参与，`score_missing` | 必须清仓，`score_missing` |
+
+持有满期优先于其他规则，每天都检查。指标值是 `score`（没有分数为 NaN）和 `check_day`（1 或 0）。分数表里有不是决策日的日子，构造时就报错。不沿用旧分数：模型某个决策日没有分数，就不开新仓，持仓原样保留。组合规则带出来的行为照旧：同分按代码排；卖不出去的持仓（例如跌停开盘）留在账本里，每天重下卖单（7.1 第 4 步），到下一个决策日照样占一个位置。
+
+**读取与回放**。读取起点 = 第一折训练窗起点再往前 61 个开市日（日历开头不够就从日历第一天），这一个起点同时盖住特征、ADV20 和股票池成交额的窗口；读到 `test_to` 为止，之后的行情一概不读，所以测试段最后一两个决策日没有标签，Rank IC 和合格池不计它们。研究输入指纹覆盖读取起点到 `test_to`（ADR-0005 的口径）；区间里有缺股票行情的开市日就失败。
+
+每个回放用同一份行情、同一份股票池和契约里的组合规则、成本，按分数持仓走整段回放 `replay_range`（7.5）：测试首日空仓、无挂单、初始资金起步，`t` 收盘决策、最早 `t+1` 开盘成交，整手、停牌、涨跌停、拆合股、退市、先卖后买、费用和滑点都按本章；运行到 `test_to` 收盘估值，不强平，末日挂单保留但不执行。回放顺序（`position`）：1 是主模型基础成本；2 到 1 + k 是主模型配每个压力场景（滑点 = 基础滑点 + 加成，手续费照旧）；之后是每个规则基线的基础成本，默认共 5 个。每个压力场景都比基础成本贵，没有和基础回放逐笔相同的一档。模型和回放的键（`model`、`baseline_1`……，`base`／`stress`）和页面上的名字（主模型、规则基线 1）都由契约推出（`contract.models()`、`contract.replays()`），报告里每个模型带 `label`、每个回放带 `model_label` 和压力加成 `extra_bps`，页面不从键名里拆名字。
+
+每个回放（压力场景的也一样）每个回放日存一条逐日记录：是否决策日、模型当天有没有分数、所在折、当天股票池和有分数的只数；当天早上每只持仓的处置、理由和分数（当天没有可交易日线的记 `no_signal`）；从空仓角度可持有的候选数；收盘计划的订单和它们最后的结果（成交、过期、放弃或末日挂单）；开盘成交或过期的订单，以及拆合股调整和退市结清；这次计划想要的持仓（收盘持仓 − 计划卖出 + 计划买入）、收盘实际持仓、现金、净值；哪些约束起了作用（放弃的原因、被 ADV20 压缩、排名跌出、排在空位之外的候选）。读取决策日时附上该模型当天分数的前 max(20, 2 × `max_positions`) 名。每天收盘计划了哪些单、开盘生效了什么、哪些单在计划时就被放弃、计划想要的持仓，都由账户模块从回放的账本读出（`Replay.days()`，附录 A.4），实验不自己推算。真实数据默认契约（925 个回放日）五个回放的逐日记录共约 17.3 MB（每个回放 3.1–4.0 MB）；整个实验存下的 JSON 约 31 MB，其中决策日分数 7.8 MB、订单 5.0 MB（2026-10-21 的演示）。
+
+**读取记录**（`data_read`）。库里没有逐行的历史可得时间：日线和上市名册按证券和日期只存一份，后来的修正会覆盖原值（ADR-0001），实验不编造这种时间。每次尝试读完行情就记下：
+
+- `observed_at`：这次读取的墙上时间（UTC），只说明「这次实验什么时候看到这些数据」；
+- 四类数据各自的覆盖起止和行数：日线（实验读入的证券和行数，另引研究输入指纹覆盖同一区间全部股票和 TOPIX 的行数）、上市名册与市场分类区间（按哪些开市日定股票池，引指纹里与读取区间重叠的区间段数）、TOPIX（测试区间的收盘个数）、交易日历（读取区间的开市日加测试终点后的下一个开市日，引指纹的行数）；
+- 每类数据的可得规则 `available_from`：`t` 日的日线 `t` 收盘后同步，只用于 `t` 收盘及以后的决策、最早 `t+1` 开盘成交；`t` 日的股票池只看那天有效的市场分类区间；TOPIX 只用于基准对比，不进特征；交易日历提前同步，只用来数开市日。
+
+它是运行事实，存在实验记录的 `data_read` 列，不进冻结契约，也不进契约 hash；读取之后才失败的尝试也留着它。详情接口和页面都显示，并写明没有逐行的历史可得时间、只记录本次读取。
+
+**报告**（预测效果和组合效果分开）：
+
+- 基准：TOPIX 价格指数，测试首日收盘到末日收盘，不含分红；合格池等权：每个决策日当天股票池里有标签的证券，标签收益等权平均，逐期连乘，不扣费用、不含分红、不受整手、现金和成交规则约束。合格池等权只供参照，报告和页面都标明它不是可成交的账户；票上「可交易的等权或规则基线」里可交易的那一个是规则基线，它和模型走同一套账本和成交规则。
+- 压力场景的口径（`stress_basis`）：每边滑点 = 基础滑点 + 加成，手续费率和最低手续费沿用基础成本、不加压；每个压力回放带它的加成 `extra_bps` 和实际成本。
+- 每个回放：7.4 的统计（总收益、年化收益、最大回撤、夏普、胜率、平均持有天数、年化换手），相对 TOPIX 的收益差，成交笔数、费用、期末现金、平均现金占比（各收盘现金 ÷ 净值的平均）、已实现和未实现盈亏；成交率 = 成交 ÷（成交 + 过期），只数买卖单，附过期原因和计划时就放弃的原因计数；订单金额 ÷ ADV20 的中位数、95 分位、最大值和超过上限的笔数（成交金额 ÷ 信号日的 ADV20，买卖单都算）；逐折、逐年的扣费后收益和相对 TOPIX 的差。
+- 预测诊断（每个模型，只看决策日）：Rank IC = 当天既有分数又有标签的证券上，分数和标签的秩相关（至少 3 对、两边都有变化才算），给均值和标准差；覆盖率 = 当天有分数的只数 ÷ 当天股票池只数，模型没有分数的决策日记 0；也按折汇总。Rank IC 只是中间诊断，不代替成交后的净值。
+- 证据状态：`exploratory`（探索性）或 `insufficient_evidence`（证据不足），列出全部原因：
+
+| 原因码 | 含义 | 证据不足？ |
+|---|---|---|
+| `history_viewed` | 全部折的测试段登记前已看过 | 否 |
+| `history_partly_viewed` | 部分折已看过（列出折号） | 否 |
+| `fold_failed` | 某个模型有几折训练或打分失败，每个模型一条 | 是 |
+| `too_few_training_samples` | 主模型有几折的训练样本少于最低要求（列出折号和最少的一折） | 是 |
+| `coverage_below_minimum` | 主模型决策日平均覆盖率低于最低要求 | 是 |
+| `no_prediction_diagnostics` | 主模型没有标签已知的决策日，算不出 Rank IC | 是 |
+| `too_few_labelled_days` | 主模型有标签、算得出 Rank IC 的决策日少于最低要求 | 是 |
+| `zero_trades` | 主模型基础成本回放零成交 | 是 |
+| `too_few_trades` | 主模型基础成本回放成交少于最低要求 | 是 |
+| `framework_only` | 没有其他原因时的一条：06a 只验证框架，不出「通过」 | 否 |
+
+**已看过截止日**（`viewed_through`）。登记时取以下几项里最晚的一天冻结进契约：模拟账户已推进到的日期、已完成研究运行（含研究批次的段）的结束日、已完成模型实验的测试终点。测试段第一天不晚于它的折标为「已看过」，只能算探索性：这段历史的结果已经被看到过，重新切分折也造不出盲测。同一区间再登记一次，全部折都是已看过。
+
+**任务与重试**。任务类型 `model_experiment`（第 8 节），和同步、推进、研究共用任务锁，忙时拒绝（409）。和研究运行一样：在任务锁内冻结、校验并持久化后才接受；同一 `request_key` 同一请求返回原实验，参数不同则拒绝；状态 queued／running／completed／failed，进度分阶段（指纹、读取、特征、训练、回放、报告）；整个实验跑完才把折、分数、回放、订单、逐日记录和报告一次写入，中途出错记 failed、原因和失败种类，除指纹和读取记录外什么结果都不留；重启时把未完成的标为失败。失败种类（`error_code`）分四种：`missing_data` 缺数据（测试区间的 TOPIX、测试终点后的日历、或读取区间里某些开市日的股票日线不在库里；原因以「缺数据：」开头，写明哪几天，补齐后可以重试）、`input_changed` 行情已变（重试时指纹和最早一次不同）、`interrupted` 服务中断、`error` 其他错误。登记时就看得出的缺数据（TOPIX、日历）直接 422 拒绝，不留记录；股票日线要到任务里算指纹时才查，所以记成一次失败的尝试。只有失败的实验能重试：重试是一条新记录（`retry_of` 指向原记录），沿用原契约，回放前比对研究输入指纹，和最早一次通过指纹检查的尝试不同就失败，要求登记新实验。因缺数据失败的尝试没有通过指纹检查、不留指纹，补齐数据后的重试不受它约束。
+
+**能审计什么**（ADR-0007）。实验保存冻结契约和 hash、每折的模型工件和 hash、决策日的折外分数、研究输入指纹、读取记录、代码身份（应用源码和依赖锁文件的 SHA256）、每个回放的账本、净值和逐日记录，不保存行情副本。能核对的是这次运行当时算出了什么：工件能重算出 hash；行情没变时，把存下的分数表交给模拟账户推进同一区间，得到逐笔相同的订单和净值（有测试守住）。行情被覆盖以后，不保证重新训练能得到同样的工件，06a 不声称可以重训复现。
+
+**和票面的对应**（ticket 06a，GitHub #10）。下面几处是有意的取舍，不改代码，在这里写明：
+
+- 「冻结预测表经框架与等价手动研究回放产生一致订单／NAV」：手动研究运行（04b，§7.5）只支持技术评级，按分数持仓不在策略注册表里（6.7），研究运行跑不了它。所以测试改用同一套交易规则的模拟账户推进（`Accounts.advance`）对照：把实验存下的分数表交给一个模拟账户推进同一区间，逐条订单和每日净值与实验的主模型基础成本回放相同。研究运行和实验共用 `replay_range`（7.5），研究运行的结果在抽出它前后逐位相同，也有测试守住。
+- 持有规则固定为按分数持仓：票面允许 06a 只走 `Disposition`／`priority`。契约声明目标权重、总敞口等尚未实现的指令种类时，登记就拒绝，不会悄悄忽略。训练器只输出一个数，可以是分数，也可以是方向概率或风险估计，按分数持仓只看它的先后。动态权重、择时和风险预算留给 06c 扩展。
+- ADV20 上限默认 5%：票面要求冻结「成本／容量」，这个上限就是冻结进契约的容量条件。模拟账户默认不设（7.2 第 4 步），现有账户的行为不变。
+- 合格池等权只供参照（见上面的基准），可交易的对照是规则基线。
+- 扩展训练窗（`expanding`）、来源账户、规则基线至多 3 个、压力场景至多 5 个：来源账户是验收「来源账户保持不变」需要的，只复制初始资金、组合规则和费用；其余是小的上限和选项，不改变默认契约。
+- 代码身份：票面要求记录「代码 commit／依赖」。这里沿用 04b 的代码身份（§3.7）：`app` 下全部 Python 源码加 `uv.lock` 的 SHA256，不记 git commit——工作副本里可能有没提交的改动，按文件内容算的 hash 更准。前端不影响实验结果，不算在内。
+
 ## 8. 后台任务
 
-- FastAPI 一个任务线程、一项待处理槽位；同步／推进／研究共用文件锁。忙时立即拒绝（研究 API 返回 409），不承诺多任务排队。queued 仅表示已接受、尚未开始。
+- FastAPI 一个任务线程、一项待处理槽位；同步／推进／研究／模型实验共用文件锁。忙时立即拒绝（研究和实验 API 返回 409），不承诺多任务排队。queued 仅表示已接受、尚未开始。
 - 跨进程互斥：任务开始前取得 `var/job.lock` 文件锁；命令行入口也取这把锁，因此命令行回填与服务里的同步不会同时写库。
 - 定时器（按日本时间）：每个开市日 18:00 排入同步；同步报告「当天数据未出」时，30 分钟后再排一次，最晚到 21:00。同步成功后，排入「推进所有 active 账户」。
 - 新建账户后立即排入「推进该账户」。
 - 研究接受前在任务锁内校验并持久化配置，线程在同一把锁下读数据、执行、写结果。重启仅在能取得锁时标记旧 queued/running 为失败，不误判其他进程的活跃运行。失败重试复制冻结配置并创建新运行，重新记录实际输入，旧结果不覆盖。区间发现、研究批次提交和单段重试各是一个任务，同样在锁内校验并持久化后才接受，忙时拒绝（409）；批次在一个任务里逐段运行，某段失败不影响其他段。重启时一并把 queued/running 的区间发现标为失败。
+- 模型实验是第四种研究任务，任务类型 `model_experiment`（§7.7）：登记和重试各是一个任务，在锁内冻结契约、校验并持久化后才接受，忙时拒绝（409）；线程在同一把锁下读数据、训练、回放，跑完才一次写入全部结果。进度按阶段（指纹、读取、特征、训练、回放、报告）写进实验记录，`GET /jobs/current` 也看得到。重启时一并把 queued/running 的实验标为失败；重试是新实验，沿用原契约，回放前比对研究输入指纹。
 - 通用任务的即时进度保存在内存；每个任务结束时把结果追加到 `var/jobs.jsonl`。同步与账户推进可在服务重启后重跑；研究另有持久化运行记录，重启后须将中断运行标为失败并注明原因，重试创建新运行，不能丢失已提交的配置或把部分结果当成完成结果。
 - 命令行：`python -m app.cli sync`（前台执行同一个同步函数，用于首次回填）、`python -m app.cli advance [--account ID]`。
 
@@ -480,7 +629,9 @@ B 按 TOPIX 市场形势自动提取区间，逐段调用同一个独立回放�
 | 账户列表 `/accounts` | 模拟账户概览；技术评级账户提供「回测此策略」入口，带入来源账户配置 |
 | 新建账户 `/accounts/new` | 名称、策略、策略参数、组合规则（选策略时按它建议的值填好，可以再改）、费用、起始日；提交后开始推进 |
 | 账户详情 `/accounts/[id]` | 模拟账户统计、净值 vs 基准、回撤、持仓、待执行订单、历史账本 |
-| 指定区间研究 `/accounts/research` | 两种模式切换。「手动指定区间」：来源账户、手选起止日、一组阈值、异步状态、净值／基准／回撤、交易与期末持仓、全部运行历史；URL 的 run 参数恢复结果。「按市场形势选择区间」（`?mode=regime`）：搜索起止（默认到 TOPIX 最新日）、TOPIX 趋势、可选波动，可展开分类公式与版本；异步发现后列出全部候选区间（开市日数、TOPIX 变化、RV20 范围，单日／短段／起点被截断／可能延续到搜索范围之后／策略预热不足标注）和诊断（预热不足、缺口、零匹配）；勾选后以一个来源账户和一组阈值「对所选区间运行」，显示已选段数与单批上限，超限禁止提交；逐段显示状态、进度、收益、TOPIX、收益差、回撤、成交数、手续费和「查看详情」（即 `?run=` 的 A 报告），失败段可「重试此段」；结果分布写明分母，只按已完成段等权；列出本次发现发起的批次和全部批次；页面写明各段长度不同等权、边界事后划分、不连乘不合成回撤、TOPIX 不含分红。URL 的 discovery、batch 参数恢复；行情变化（412）提示重新发现 |
+| 指定区间研究 `/accounts/research` | 三种模式切换（第三种「模型实验」见表后）。「手动指定区间」：来源账户、手选起止日、一组阈值、异步状态、净值／基准／回撤、交易与期末持仓、全部运行历史；URL 的 run 参数恢复结果。「按市场形势选择区间」（`?mode=regime`）：搜索起止（默认到 TOPIX 最新日）、TOPIX 趋势、可选波动，可展开分类公式与版本；异步发现后列出全部候选区间（开市日数、TOPIX 变化、RV20 范围，单日／短段／起点被截断／可能延续到搜索范围之后／策略预热不足标注）和诊断（预热不足、缺口、零匹配）；勾选后以一个来源账户和一组阈值「对所选区间运行」，显示已选段数与单批上限，超限禁止提交；逐段显示状态、进度、收益、TOPIX、收益差、回撤、成交数、手续费和「查看详情」（即 `?run=` 的 A 报告），失败段可「重试此段」；结果分布写明分母，只按已完成段等权；列出本次发现发起的批次和全部批次；页面写明各段长度不同等权、边界事后划分、不连乘不合成回撤、TOPIX 不含分红。URL 的 discovery、batch 参数恢复；行情变化（412）提示重新发现 |
+
+研究页还有第三种模式「模型实验」（`?mode=experiment`，06a）：登记模型实验、查看它的冻结契约、报告和逐日决定、重试失败的实验，数据全部来自 `/api/experiments`；它只读写模型实验，不建、不改模拟账户。
 
 API（前缀 `/api`）：
 
@@ -509,9 +660,21 @@ API（前缀 `/api`）：
 - `POST /batches/{id}/segments/{position}/retry`：新 request_key，只允许最新尝试失败的段；返回 202 + 批次 id 与新运行 id。
 - 另加 412：分类所用的 TOPIX 数据自发现后已变化，须重新发现。
 
+06a 模型实验 API（前缀 `/api/experiments`，§7.7；GET 只读存下的结果，不读行情、不训练）：
+
+- `GET /defaults`：登记表的全部默认值、训练器及其默认参数、持有规则能下达和尚未支持的指令种类、任务和特征版本，以及现在登记会冻结的 `viewed_through`。
+- `POST ""`：request_key（UUID）、test_from、test_to，其余各项可选（名称、折、决策日间隔、最长持有、训练器及参数、规则基线、来源账户、初始资金／组合规则／费用、ADV20 上限（null = 不设）、压力场景的滑点加成 `stress_bps`（每边 bps，加在基础滑点上）、最低覆盖率、每折最少训练样本、最少有标签的决策日和最少成交数、指令种类）；返回 202 + id。同 request_key 同请求返回原 id，不同请求拒绝。
+- `GET ""?page=&page_size=`：历史分页，新的在前，重试也是独立的一条；每条带状态、失败种类、证据状态、测试起止、训练器、基线和契约 hash。
+- `GET /{id}`：状态、进度（训练阶段带模型的名字和训练器）、冻结契约及 hash、研究输入指纹、读取记录 `data_read`（读完行情才有）、代码身份、错误和失败种类 `error_code`、`retry_of` 和 `retried_by`、每个模型每折的结果（训练／测试起止、样本数、耗时、模型工件及 hash 或失败原因），完成后还有报告（折及「已看过」标记、各模型的名字 `label` 和预测诊断、基准、压力场景口径、各回放的模型名字、压力加成、指标／逐折／逐年、证据状态和原因、警告、各阶段耗时）。
+- `GET /{id}/replays/{position}`：一个回放的成本、每日净值（含现金）、期末持仓、末日挂单、警告和指标；`GET /{id}/replays/{position}/orders?page=&page_size=`：它的账本分页，新的在前。
+- `GET /{id}/replays/{position}/days?page=&page_size=&decision_only=`：逐日记录分页，旧的在前；决策日带当天分数前几名；每个回放都有，压力场景的也有。
+- `GET /{id}/scores/{model}/{day}`：某个模型（`model`、`baseline_1`……）在某个决策日的全部分数，从高到低，带所在折和工件 hash；不是决策日或那折失败返回 404。
+- `POST /{id}/retry`：新 request_key，只允许失败的实验，返回 202 + 新实验 id。
+- 404 记录不存在，409 任务忙，422 契约不能运行（中文原因，例如声明了尚未实现的目标权重）。
+
 ## 10. 工程与运行
 
-- 后端：Python 3.12、uv、FastAPI、SQLAlchemy 2 + Alembic、httpx、structlog、pydantic-settings、pandas、pytest。
+- 后端：Python 3.12、uv、FastAPI、SQLAlchemy 2 + Alembic、httpx、structlog、pydantic-settings、pandas、scikit-learn（只有模型实验的训练器用，06a）、pytest。
 - 前端：Next.js 16、React 19、TypeScript、Vitest、openapi-typescript、lightweight-charts。可以从 my-invest 复制前端骨架（配置、样式、API 客户端生成脚本）。
 - 运行：Docker Compose 两个服务 `backend`、`frontend`；SQLite 文件为挂载卷上的 `var/invest.db`；`JQUANTS_API_KEY` 放在 `.env`；容器时区 `Asia/Tokyo`。
 - 测试：普通测试不打网络，用假 J-Quants 适配器 + 临时 SQLite 文件 + 合成 K 线；指标用手算样例做黄金测试。
@@ -523,15 +686,17 @@ backend/
   app/
     main.py            # FastAPI 应用；启动任务线程与定时器
     config.py
-    db.py
+    db.py              # SQLite 引擎；账户、研究和实验的表共用的 JSON 列类型 JsonText
     cli.py
     jobs.py            # 任务队列、文件锁、定时器、jobs.jsonl
     market_data/       # 4 张行情表、J-Quants 适配器、同步、研究价格、质量标记、读取
     indicators.py
     strategies/        # 策略 seam、entry_candidates / history、trend_pullback.py、technical_rating.py
-    accounts/          # paper 账本、交易规则、推进/统计；04b 独立研究运行、观察和报告
+    accounts/          # paper 账本、交易规则、推进/统计、整段回放；04b 独立研究运行、观察和报告
+    experiments/       # 06a 模型实验：日期折、特征与标签、训练器、折外分数、冻结契约、任务、报告、存储
     api/
   migrations/
+  scripts/             # 在数据库副本上跑的真实数据演示，例如 demo_model_experiment.py
   tests/
 frontend/
 docker-compose.yml
@@ -547,11 +712,13 @@ docker-compose.yml
 4. [04 模拟账户：回测、模拟交易与账户页](issues/04-paper-accounts.md)——依赖 03
 5. [04b 账户页面：technical_rating 策略场景研究](issues/04b-research-backtest-account-ui.md)——依赖 04；A 手选区间并显示结果，B 自动提取市场区间；账户状态分析延后
 6. [05 三类 OHLCV 策略候选研究](issues/05-three-ohclv-strategy-candidates.md)——后续候选议题；其对旧研究流程的依赖需另行评估，不属于 04b 验收范围
+7. 06 AI 完整交易策略（GitHub #9）：先做 06a 可复用的评测框架（#10，§7.7），06b 的横截面 AI 策略、06c 的择时与风险路线都走同一套证据和回放，不为每种模型另造账本
 
 ## 12. 已知局限
 
 - PaperAccount 使用生产日线，J-Quants 后续修正不会回写已成交订单，但会影响新建账户及重新估值。研究保留配置、观察、结果和输入指纹，保证同批比较输入一致；指纹无法恢复已覆盖行情，因此不保证跨数据修正的精确重放（ADR-0001、ADR-0005）。
 - 场景分组和阈值比较仍可能受小样本、状态路径差异和反复挑选影响；报告是探索性条件绩效，不自动证明泛化或因果关系。
+- 模型实验同样是探索性的：真实库里能当测试段的历史都已经被模拟账户和研究看过，`viewed_through` 会把这些折标成「已看过」，重新切分也造不出盲测。实验只保存分数、工件和结果，行情被覆盖后不保证重新训练得到同样的模型（ADR-0007）。Prime 市场 2022-04-04 才开设，在那之前历史 Prime 股票池是空的，所以训练窗落在这之前的部分没有样本（真实数据上默认契约的第 1 折只有约 10 万个样本，后面各折 13 万到 18 万）。
 - 不含分红和税，高股息股的收益被低估（ADR-0003）。
 - ETF 分配金同样不入账：1306 每年 7 月落权那天的收益比 TOPIX 低 2.0–2.4%（2022—2026 年各一次），持有 1306 的账户这一天少算这么多。TOPIX 是价格指数，也不含分红，只是它在 3 月、9 月成分股除息时下跌，所以 TOPIX ETF 一直持有账户相对 TOPIX 的超额按整年看接近 0，短期会因两者时点不同而偏离。
 - ETF 也按 100 口一手计算；实际売買単位以交易所为准。
@@ -656,9 +823,19 @@ class SecurityHistory:
 
 策略类还可以声明 `warmup_follows: WarmupFollows | None`（参数名和多出的个数）：预热期至少是这个参数加上这个数，TOPIX 均线为 `ma_sessions` + 0，TOPIX 动量为 `lookback_sessions` + 1，其余为空。策略自己的校验和新建账户页都按它，规则只写一处。
 
-五个适配器：Trend-Pullback v1 和技术评级 v1（股票池规则取默认的 Prime 普通股，没有参照行情），TOPIX ETF 一直持有 v1（TOPIX ETF，没有参照行情），TOPIX 均线 v1 和 TOPIX 动量 v1（TOPIX ETF，参照行情 TOPIX）；后三个见 6.5。规则只读参照行情的这两个策略共用基类 `ReferenceSeriesStrategy`（6.2）。
+五个适配器：Trend-Pullback v1 和技术评级 v1（股票池规则取默认的 Prime 普通股，没有参照行情），TOPIX ETF 一直持有 v1（TOPIX ETF，没有参照行情），TOPIX 均线 v1 和 TOPIX 动量 v1（TOPIX ETF，参照行情 TOPIX）；后三个见 6.5。规则只读参照行情的这两个策略共用基类 `ReferenceSeriesStrategy`（6.2）。05 的三个候选（6.6）也在注册表里，股票池规则都是 Prime 普通股，没有参照行情。
 
-`entry_candidates` 和 `history` 不是 seam，是写在 seam 之上的两个普通函数：它们藏住「按策略声明的股票池规则取股票池、连同参照行情从第一个评价日往前读预热期那么多个开市日、调用 `evaluate`、补上证券名称」这套组装。入场候选只取股票池里的证券；`history` 交回的行情只有该证券自己的。`history` 按日循环调用同一个 `evaluate`，从每天的信号里收集指标曲线和入场点，不为画图另加方法。**删除测试**：删掉它们，「预热期决定往前读多远」会同时出现在信号页和证券详情页两个 API 处理函数里，而 A.6 规定 API 里不写业务规则。账户模块读的是覆盖整段回测的长 `frame`，不经过它们，直接调用 `evaluate`。
+```python
+@dataclass(frozen=True)
+class ScoreTable:   decision_days: frozenset[date]                  # 调用方按交易日历算好的决策日
+                    scores: Mapping[date, Mapping[str, float]]      # 决策日 → {代码: 分数}；不是决策日的日子构造时报错
+class ScoreTopN:    # name = "score_top_n_v1"，ranks_holdings = True，Prime 普通股，没有参照行情
+    def __init__(self, scores: ScoreTable, params: Mapping[str, Any]) -> None: ...
+```
+
+按分数持仓 `ScoreTopN`（6.7、§7.7）是 seam 的另一个适配器，但分数要从外面给，所以不进注册表（`build_strategy`、`STRATEGY_DEFAULTS`、`strategy_infos()` 里都没有它），由模型实验直接构造。
+
+`entry_candidates` 和 `history` 不是 seam，是写在 seam 之上的两个普通函数：它们藏住「按策略声明的股票池规则取股票池、连同参照行情从第一个评价日往前读预热期那么多个开市日、调用 `evaluate`、补上证券名称」这套组装。入场候选只取股票池里的证券；`history` 交回的行情只有该证券自己的。`history` 按日循环调用同一个 `evaluate`，从每天的信号里收集指标曲线和入场点，不为画图另加方法。**删除测试**：删掉它们，「预热期决定往前读多远」会同时出现在信号页和证券详情页两个 API 处理函数里，而 A.7 规定 API 里不写业务规则。账户模块读的是覆盖整段回测的长 `frame`，不经过它们，直接调用 `evaluate`。
 
 **删除测试**：删掉这个 seam，入场和退出规则会长进账户推进的循环里，信号页也就没法在不建账户的情况下显示候选。
 
@@ -692,7 +869,8 @@ def corporate_actions(ledger, day) -> list[Record]                # 拆合股调
 def open_session(orders, day, cash, costs) -> list[Record]        # 一次开盘的全部订单：先卖后买、买单按排序值、
                                                                   # 卖出所得当场可用、逐单按 7.3 成交或过期
 def replace_sells(expired, day) -> list[Record]                   # 7.1 第 4 步
-def plan_orders(exits, candidates, closes, cash, nav, rules) -> list[Record]   # 7.2；含被放弃的订单
+def plan_orders(exits, candidates, closes, cash, nav, rules, adv20={}) -> list[Record]   # 7.2；含被放弃的订单；
+                                                                  # adv20 只在 rules 设了 ADV20 上限时才用
 ```
 
 `day` 是账户看到的 `t` 日行情：当天的成交价格、涨跌停标志、质量标记、调整系数与除权类型，前一交易日收盘成交价格，以及哪些证券已不在名册中。`plan_orders` 收到的是 `advance` 过滤好的信号：`exits` 是持仓（未重下卖单的）得到的判断，`candidates` 是当天在股票池内、未持仓、「可持有」的入场候选；`closes` 是 `t` 日收盘成交价格，用来算计划股数和预估卖出所得。
@@ -700,6 +878,57 @@ def plan_orders(exits, candidates, closes, cash, nav, rules) -> list[Record]   #
 **删除测试**：删掉 `Ledger`，「持仓、现金由订单记录推出」会在 `advance` 和 `report` 里各写一份，迟早不一致；把 `open_session` 拆回逐单的 `fill`，先卖后买与现金流转就只能经由 `advance` 测。
 
 04b 的研究能力由账户模块提供提交配置、执行比较、读取状态/报告和逐日观察的公开入口，签名随实现确定；调用方不读取内部表或直接拼装 `Ledger`、`plan_orders`、`open_session`。研究记录、调度和报告可独立组织，交易规则仍由账户模块内的共享实现负责。
+
+06a 为研究运行和模型实验（附录 A.6）共用，从账户模块对外多给了这些：
+
+```python
+@dataclass(frozen=True)
+class PortfolioRules:  max_positions: int; max_weight: Decimal; cash_floor: Decimal
+                       max_adv20_fraction: Decimal | None = None     # ADV20 上限（7.2 第 4 步）；None = 不设
+def trading_terms(config) -> tuple[PortfolioRules, Costs, Decimal]   # 从账户或实验配置读出组合规则、成本、初始资金
+@dataclass(frozen=True)
+class Record: ...                                                    # 订单或账户事件（3.6）；BUY、SELL、FILLED、SKIPPED……常量
+def record_json(record) -> dict                                      # 研究运行和实验存、读的订单 JSON（API 的 OrderOut）
+
+class Prices:                                                        # 包住一段 MarketFrame：收盘价、ADV20……
+    def adv20(self, day: date, codes) -> dict[str, Decimal]: ...     # 口径同股票池的 20 日平均成交额，日元
+
+def replay_range(prices, strategy, universes, days, calendar, rules, costs, initial, topix, *,
+                 on_session=None) -> Replay: ...                     # 整段回放：空仓起步，逐日 replay_day
+@dataclass(frozen=True)
+class Replay:       ledger: Ledger; points: list[NavPoint]; warnings: list[str]   # 期末账本、每日净值点、警告
+    def days(self) -> list[ReplayDay]: ...                           # 逐个回放日读回账本
+@dataclass(frozen=True)
+class ReplayDay:    point: NavPoint; cash: Decimal; positions: dict[str, Position]
+                    planned: list[Record]                            # 当天收盘计划的买卖单，按最后的结果
+                    opened: list[Record]                             # 当天开盘生效的：成交或过期的单、被拆合股
+                                                                     # 压成 0 的买单、拆合股调整、退市结清
+    def given_up(self) -> list[Record]: ...                          # 计划时就被组合规则放弃、没下到开盘的单
+    def target(self) -> dict[str, int]: ...                          # 这次计划想要的持仓：收盘持仓 − 卖出 + 买入
+@dataclass(frozen=True)
+class NavPoint:     day: date; nav: Decimal; cash: Decimal; nav_curve: float; topix_curve: float; drawdown: float
+
+# replay_metrics：纯函数，输入是回放、净值点和订单记录，不碰数据库
+def end_state(replay, closes) -> dict                                # 期末持仓、挂单、警告、收益、回撤、成交数、费用、
+                                                                     # 现金、已实现／未实现盈亏；研究运行的结果和实验共用
+def holding_lines(positions, closes) -> list[dict]                   # 持仓按收盘价估值，JSON
+def replay_statistics(replay) -> Figures                             # 7.4 的统计（内部用 statistics、Ledger.closed）
+def traded(records) -> dict[str, Decimal]                            # 已成交买单、卖单各自的金额
+def fill_rate(records, *, kind=None) -> FillRate                     # 成交 ÷（成交 + 过期），过期和放弃的原因计数
+def average_cash_share(points) -> float | None
+def period_returns(points, ranges) -> list[PeriodReturn | None]      # 按给定日期段（折）的扣费后收益和 TOPIX
+def yearly_returns(points) -> dict[int, PeriodReturn]
+def annual_turnover(points, records) -> float | None                 # 7.4 的年化换手
+def adv20_usage(records, adv20, *, cap=None) -> Adv20Usage           # 成交金额 ÷ 信号日 ADV20 的分布、超上限笔数
+
+# experiment_inputs：模型实验从账户模块读的两样东西，只读
+def source_terms(engine, account_id) -> dict                         # 来源账户的初始资金、组合规则、费用
+def viewed_through(engine) -> date | None                            # 模拟账户推进到、已完成研究运行结束的最晚一天
+```
+
+`replay_range` 就是原来研究运行里的逐日循环原样搬出，研究运行改用它以后结果逐位不变；实验把同一个函数用在每个回放上，压力场景只把 `Costs` 的滑点换成基础滑点加上加成。实验经 `Replay.days()` 读每天的计划单、开盘生效的记录和计划想要的持仓（拆合股把买单压成 0 这类账本规则只在账户模块里），经 `end_state`、`replay_statistics` 和其余 `replay_metrics` 出报告；研究运行的期末数字和订单 JSON 也用 `end_state`、`record_json`，同一件事只写一处。实验不直接调用 `Ledger`、`plan_orders`、`open_session`、`statistics`。
+
+研究运行、研究批次、区间发现和模型实验共用的任务辅助函数（状态常量、`now`、`plain_json`、`code_version`、`find_request`、`submit_once`）在 `app/research_jobs.py`，不属于账户模块：两个模块都用它，就放在 `jobs` 旁边。同样，各模块的表存 JSON 用的列类型 `JsonText`（键排好序再存成文字，同一个值总是同一段文字）在 `app/db.py`，实验的表从那里拿，不引用账户模块的表定义。
 
 ### A.5 任务模块 `jobs`
 
@@ -712,9 +941,63 @@ class Jobs:
 
 藏住单线程队列、`var/job.lock` 文件锁、定时器和 `var/jobs.jsonl`。API、定时器和命令行都只看见这三个方法。
 
-### A.6 调用关系
+### A.6 模型实验模块 `experiments`（06a）
 
-下图展示现有基线。04b 的研究提交、查询与任务执行也经由账户模块的公开入口，研究任务交给 Jobs 执行（忙时直接拒绝，不排队）；账户模块内部复用交易规则并写入独立研究记录，不经 paper account 的账本写入路径。
+```python
+# 日期折（folds.py）
+@dataclass(frozen=True)
+class Fold:         number: int; train_from: date; train_to: date; test_from: date; test_to: date   # train_to = 训练截止
+def make_folds(sessions, *, test_from, test_to, train_sessions, test_sessions, expanding=False) -> list[Fold]
+def training_days(sessions, fold, *, label_sessions) -> list[date]   # 能训练这折的交易日：标签结束不晚于训练截止
+
+# 特征与标签（features.py），纯 pandas，不碰数据库
+FEATURES_V1 = "ohlcv_ratios_v1"; FEATURE_NAMES: tuple[str, ...]; HORIZON = 5
+def label_sessions(horizon=HORIZON) -> int                           # 标签结束日离交易日几个开市日，= horizon + 1
+def feature_table(frame: MarketFrame, days) -> DataFrame             # 索引 (as_of, code)；缺特征的行不出现
+def labels(frame: MarketFrame, days, horizon=HORIZON) -> Series      # 同索引；没有标签的行不出现
+def within_universe(table, universes) -> DataFrame | Series          # 只留当天股票池里的行
+
+# 训练器 seam（trainers.py）
+@dataclass(frozen=True)
+class TrainingSet:  features: DataFrame; labels: Series
+@dataclass(frozen=True)
+class ModelArtifact:
+                    trainer: str; params: Mapping; state: Mapping; train_cutoff: date; samples: int
+    def hash(self) -> str: ...                                       # 规范 JSON（trainer、params、state、train_cutoff）的 SHA256
+    def as_dict(self) -> dict: ...; from_dict(data) -> ModelArtifact  # 存成 JSON、读回
+class Trainer(Protocol):
+    name: str
+    def fit(self, training: TrainingSet, cutoff: date) -> ModelArtifact: ...
+    def predict(self, artifact: ModelArtifact, features: DataFrame) -> Series: ...   # 分数越高越靠前
+def build_trainer(name: str, params: Mapping) -> Trainer: ...        # ridge_v1、rule_short_reversal_v1；不认识的名字或参数报错
+TRAINER_DEFAULTS: Mapping[str, Mapping[str, Any]]
+
+# 折外分数（oof.py）
+def out_of_fold(trainer, folds, features, labels, *, sessions, label_sessions) -> OutOfFold
+@dataclass(frozen=True)
+class OutOfFold:    scores: DataFrame                                # as_of, code, score, fold, artifact_hash
+                    folds: list[FoldResult]                          # 每折：工件或失败原因、样本数、耗时
+
+# 实验本身（service.py；契约 contract.py，报告 report.py，逐日记录 decisions.py，表 tables.py）
+class ModelExperiments:
+    def __init__(self, engine, market: MarketData, jobs: Jobs, *, trainers=build_trainer): ...
+    def submit(self, request: dict, key: str, *, retry_of: str | None = None) -> str: ...   # 登记或重试，返回实验 id
+    def recover(self) -> None: ...                                   # 启动时把未完成的标为失败
+    def viewed_through(self) -> date | None: ...
+    def get(self, experiment_id) -> dict: ...; history(page, page_size) -> dict: ...
+    def replay(self, experiment_id, position) -> dict: ...; orders(...) -> dict: ...; days(...) -> dict: ...
+    def scores(self, experiment_id, model, day) -> dict: ...
+```
+
+藏在后面：冻结契约的默认值、校验和 hash，契约在交易日历上推出的折、回放日、决策日和读取起点，契约推出的模型和回放（`contract.models()`：键 `model`、`baseline_N` 和页面上的名字；`contract.replays()`：位置、模型、`base`／`stress`、滑点和压力加成），读行情、研究输入指纹和读取记录（`reads.py`），特征、标签和折外打分，按分数持仓 + `replay_range` 的各个回放，报告、证据状态和逐日记录，失败种类，六张表的全部 SQL，任务、重启和重试。
+
+**训练器 seam**：`fit` 只拿到一折的训练样本和截止日，`predict` 一次只拿到一个交易日的特征，所以训练器既看不到测试段的标签，也看不到同折里更晚日子的特征。两个真实适配器 `ridge_v1` 和 `rule_short_reversal_v1`；训练器从 `trainers` 工厂按契约里的名字和参数建出来，测试传入桩工厂。**删除测试**：删掉这个 seam，Ridge 的拟合和打分会长进折外循环和实验任务里，换一种模型就要改切分、回放和报告的代码，06b、06c 也就没法沿用同一条证据路径。
+
+**删除测试**（整个模块）：删掉它，「训练样本的标签不能越过训练截止」「只保留决策日的分数」「压力场景只在基础滑点上加成」「已看过的折只能算探索性」会散进 API 处理函数和账户模块的研究代码里，而账户模块只该管交易规则。
+
+### A.7 调用关系
+
+下图展示现有基线。04b 的研究提交、查询与任务执行也经由账户模块的公开入口，研究任务交给 Jobs 执行（忙时直接拒绝，不排队）；账户模块内部复用交易规则并写入独立研究记录，不经 paper account 的账本写入路径。06a 的模型实验同样经 Jobs 执行，它在任务里读行情、训练、经账户模块的 `replay_range` 回放，写自己的六张表（图里没有画出研究和实验这两条路径）。
 
 ```text
 API / 命令行 / 定时器
@@ -731,4 +1014,4 @@ API / 命令行 / 定时器
                                          └─ Ledger · plan_orders · open_session（内部）
 ```
 
-规则：API 处理函数里不写业务规则，只调用上面这些方法并把结果转成 JSON；策略不碰数据库；`Ledger`、`plan_orders`、`open_session` 等内部函数不越过账户模块被别处调用。
+规则：API 处理函数里不写业务规则，只调用上面这些方法并把结果转成 JSON；策略和训练器不碰数据库；`Ledger`、`plan_orders`、`open_session` 等内部函数不越过账户模块被别处调用，模型实验只经 `replay_range`、`Prices`、`trading_terms`、`Replay.days()` 和 `replay_metrics` 使用交易规则和账本。

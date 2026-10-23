@@ -1,5 +1,6 @@
 """Strategies (spec §6, A.3): the stock strategies, the TOPIX ETF ones and
-ticket 05's candidates, adapters behind one seam."""
+ticket 05's candidates, adapters behind one seam — and ticket 06a's score
+top-N, which is built round a model's scores rather than picked by name."""
 
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -14,6 +15,7 @@ from app.strategies import (
     topix_momentum, trend_pullback,
 )
 from app.strategies.assembly import Candidate, SecurityHistory, entry_candidates, history
+from app.strategies.score_top_n import ScoreTable, ScoreTopN
 
 _STRATEGIES = {
     trend_pullback.TrendPullback.name: trend_pullback.TrendPullback,
@@ -64,7 +66,7 @@ def build_strategy(name: str, params: Mapping[str, Any]) -> Strategy:
 
 
 __all__ = [
-    "STRATEGY_DEFAULTS", "Candidate", "Disposition", "Holding", "Judgement", "Plot", "SecurityHistory", "Signal",
-    "Strategy", "StrategyInfo", "WarmupFollows", "build_strategy", "codes_to_read", "entry_candidates", "history",
-    "strategy_infos",
+    "STRATEGY_DEFAULTS", "Candidate", "Disposition", "Holding", "Judgement", "Plot", "ScoreTable", "ScoreTopN",
+    "SecurityHistory", "Signal", "Strategy", "StrategyInfo", "WarmupFollows", "build_strategy", "codes_to_read",
+    "entry_candidates", "history", "strategy_infos",
 ]

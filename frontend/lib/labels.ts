@@ -197,6 +197,87 @@ const OUTCOMES: Record<string, string> = {
   lot_unaffordable: "买不起一手",
   delisted: "已退市",
   split_rounding: "拆合股后不足一手",
+  adv20_cap: "按成交额上限压成 0 股",
 };
 
 export const outcome = (code: string | null | undefined) => (code ? (OUTCOMES[code] ?? code) : "");
+
+// ---------------------------------------------------------------- model experiments (06a)
+
+/** What score top-N and the portfolio rules say about a holding or an order in a model experiment. */
+const EXPERIMENT_REASONS: Record<string, { label: string; tone: string }> = {
+  model_rank: { label: "按模型分数排名", tone: "up" },
+  not_check_day: { label: "不是决策日", tone: "" },
+  model_unavailable: { label: "当天模型没有分数，不开新仓", tone: "" },
+  score_missing: { label: "模型可用，但这只没有分数", tone: "down" },
+  no_signal: { label: "当天没有可交易日线", tone: "" },
+};
+
+export const experimentReason = (code: string) => EXPERIMENT_REASONS[code]?.label ?? reason(code);
+export const experimentReasonTone = (code: string) => EXPERIMENT_REASONS[code]?.tone ?? reasonTone(code);
+
+export const DISPOSITIONS: Record<string, string> = { hold: "持有", exit: "卖出" };
+
+/** The kinds of instruction a contract may say its holding rules give: 06a runs the first two and refuses the rest. */
+export const ACTIONS: Record<string, string> = {
+  disposition: "每只持有还是卖出",
+  priority: "排序优先级",
+  target_weight: "目标权重",
+  gross_exposure: "总敞口",
+};
+
+/** What kind of failure stopped a model experiment, and what to do about it. */
+export const EXPERIMENT_FAILURES: Record<string, { label: string; hint: string }> = {
+  missing_data: { label: "缺数据", hint: "行情、TOPIX 或交易日历还没补齐；补齐后可以重试" },
+  input_changed: { label: "行情已变", hint: "读取区间的行情和第一次尝试时不同，重试不会通过；请登记新实验" },
+  interrupted: { label: "服务中断", hint: "运行到一半服务停了；可以重试" },
+  error: { label: "运行出错", hint: "" },
+};
+
+export const EXPERIMENT_EVIDENCE: Record<string, { label: string; tone: string }> = {
+  exploratory: { label: "探索性", tone: "warn" },
+  insufficient_evidence: { label: "证据不足", tone: "down" },
+};
+
+const TRAINERS: Record<string, { label: string; about: string }> = {
+  ridge_v1: {
+    label: "Ridge 回归",
+    about: "用十个特征对未来五日收益做线性回归，每折只在训练段上重新算标准化和系数；分数越高越优先",
+  },
+  rule_short_reversal_v1: {
+    label: "规则：短期反转",
+    about: "不训练：分数 = 过去 5 个开市日收益取负，跌得越多越优先，和 05 短期反转的排序一样",
+  },
+};
+
+/** "Ridge 回归（ridge_v1）". */
+export const trainerLabel = (name: string) => (TRAINERS[name] ? `${TRAINERS[name].label}（${name}）` : name);
+export const trainerAbout = (name: string) => TRAINERS[name]?.about ?? "";
+
+export const TRAINER_PARAMS: Record<string, { label: string; hint: string }> = {
+  alpha: { label: "正则强度 alpha", hint: "越大，系数被压得越小；固定一个值，不调参" },
+};
+
+export const FEATURES: Record<string, string> = {
+  ret_1: "1 日收益",
+  ret_5: "5 日收益",
+  ret_20: "20 日收益",
+  ret_60: "60 日收益",
+  dist_sma20: "收盘离 20 日均线多远",
+  dist_sma60: "收盘离 60 日均线多远",
+  vol_20: "20 日波动率",
+  range_20: "20 日平均振幅",
+  volume_ratio: "5 日均量 ÷ 20 日均量",
+  log_turnover_20: "20 日平均成交额（取对数）",
+};
+
+const STAGES: Record<string, string> = {
+  fingerprint: "核对研究输入",
+  reading: "读取行情",
+  features: "计算特征和标签",
+  training: "逐折训练、打分",
+  replaying: "回放",
+  reporting: "生成报告",
+};
+
+export const stage = (code: string | undefined) => (code ? (STAGES[code] ?? code) : "等待开始");

@@ -1,8 +1,10 @@
 """How the research services accept work and what every record carries.
 
-Runs, batches and discoveries are each accepted as one job under the shared
-writer lock, idempotently on the client's request key, and stored with a
-timestamp, JSON-ready values and the code version that produced them.
+Research runs, batches and regime discoveries (the accounts module's) and
+model experiments (the experiments module's) are each accepted as one job
+under the shared writer lock, idempotently on the client's request key, and
+stored with a timestamp, JSON-ready values and the code version that
+produced them. Neither module's own: both use it, so it sits beside `jobs`.
 """
 from __future__ import annotations
 
@@ -38,7 +40,7 @@ def plain_json(value: Any) -> Any:
 
 def code_version() -> str:
     """Every application source file and the dependency lock, hashed."""
-    root = Path(__file__).resolve().parents[1]
+    root = Path(__file__).resolve().parent  # app/
     digest = hashlib.sha256()
     for path in sorted(root.rglob("*.py")):
         digest.update(str(path.relative_to(root)).encode())

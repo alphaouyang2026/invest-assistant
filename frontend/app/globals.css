@@ -930,6 +930,16 @@ a.code.strong {
   font-size: 13px;
 }
 
+/* A sub-heading inside a card, between tables: one model experiment day's decisions. */
+.day-h {
+  padding: 9px 20px;
+  font-size: 13px;
+  font-weight: 600;
+  background: var(--surface2);
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
 /* ---------------------------------------------------------------- narrow */
 
 @media (max-width: 760px) {
