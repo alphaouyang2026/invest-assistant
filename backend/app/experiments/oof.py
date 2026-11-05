@@ -129,8 +129,16 @@ def top_n_excess(scores: pd.Series, labels: pd.Series, top_n: int) -> float | No
     both = pd.DataFrame({"score": scores, "label": labels}).dropna()
     if len(both) < top_n or top_n < 1:
         return None
-    best = both.sort_values(["score"], ascending=False, kind="stable").head(top_n)
-    return float(best["label"].mean() - both["label"].mean())
+    return float(best_scored(both, top_n)["label"].mean() - both["label"].mean())
+
+
+def best_scored(rows: pd.DataFrame, top_n: int) -> pd.DataFrame:
+    """The `top_n` of `rows` with the highest `score`, ties by code as the
+    portfolio rules break them (spec §7.2) — whatever order they come in.
+    The codes are the index, or its level `code`."""
+    codes = rows.index.get_level_values(CODE) if rows.index.nlevels > 1 else rows.index
+    order = rows.assign(_code=codes.to_numpy()).sort_values(["score", "_code"], ascending=[False, True])
+    return order.head(top_n).drop(columns="_code")
 
 
 def _try(search: Search, fold: Fold, calendar: Sequence[date], training: Callable[[Fold], np.ndarray],

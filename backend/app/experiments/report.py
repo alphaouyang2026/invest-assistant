@@ -38,7 +38,7 @@ from app.accounts.replay_metrics import (
 )
 from app.experiments.features import AS_OF
 from app.experiments.folds import Fold
-from app.experiments.oof import top_n_excess
+from app.experiments.oof import best_scored, top_n_excess
 from app.market_data.frame import CODE
 from app.strategies import ScoreTable
 
@@ -116,9 +116,8 @@ def top_n_hit(scores: Mapping[str, float], labels: pd.Series | None, top_n: int)
     both = pd.DataFrame({"score": pd.Series(scores, dtype=float), "label": labels}).dropna()
     if len(both) < top_n:
         return None
-    both = both.rename_axis("code").reset_index()
-    picked = set(both.sort_values(["score", "code"], ascending=[False, True]).head(top_n)["code"])
-    best = set(both.sort_values(["label", "code"], ascending=[False, True]).head(top_n)["code"])
+    picked = set(best_scored(both, top_n).index)
+    best = set(best_scored(both.assign(score=both["label"]), top_n).index)
     return len(picked & best) / top_n
 
 

@@ -288,3 +288,13 @@ def test_the_top_n_excess_is_the_best_scored_codes_labels_over_all():
     labels_ = pd.Series({"a": 0.3, "b": 0.1, "c": 0.0, "d": 0.0})
     assert top_n_excess(scores, labels_, 2) == pytest.approx(0.2 - 0.1)
     assert top_n_excess(scores, labels_.drop(["b", "c", "d"]), 2) is None
+
+
+def test_the_top_n_excess_breaks_ties_by_code_as_the_portfolio_rules_do_whatever_the_rows_order():
+    """Spec §7.2: by score, then code. Three equal scores, one place: a."""
+    labels_ = pd.Series({"a": 0.3, "b": 0.0, "c": -0.3})
+    for order in (["a", "b", "c"], ["c", "b", "a"], ["b", "c", "a"]):
+        scores = pd.Series(1.0, index=order)
+        assert top_n_excess(scores, labels_.reindex(order), 1) == pytest.approx(0.3)
+    on_days = pd.MultiIndex.from_tuples([(date(2025, 10, 1), code) for code in ("c", "b", "a")], names=["as_of", "code"])
+    assert top_n_excess(pd.Series(1.0, index=on_days), pd.Series([-0.3, 0.0, 0.3], index=on_days), 1) == pytest.approx(0.3)
