@@ -195,6 +195,21 @@ def test_the_same_training_set_gives_the_same_booster_byte_for_byte() -> None:
         ranking_set(), CUTOFF).hash()
 
 
+def test_a_row_missing_a_feature_gets_no_score_from_the_ranker_as_from_ridge() -> None:
+    """Missing or infinite: no finite score — out of fold such a score is
+    dropped (`oof._score`), so the strategy treats the code as one the
+    model could not score (score_missing); the other rows are untouched."""
+    rows = ranking_set(days=2, seed=4).features
+    broken = rows.copy()
+    broken.iloc[0, 0], broken.iloc[1, 3] = np.nan, np.inf
+    for name, params in (("xgb_rank_ndcg_v1", {"n_estimators": 30}), ("ridge_v1", {})):
+        trainer = build_trainer(name, params)
+        artifact = trainer.fit(ranking_set(), CUTOFF)
+        whole, scores = trainer.predict(artifact, rows), trainer.predict(artifact, broken)
+        assert not np.isfinite(scores.iloc[:2].to_numpy()).any(), name
+        assert np.array_equal(scores.iloc[2:].to_numpy(), whole.iloc[2:].to_numpy()), name
+
+
 @pytest.mark.parametrize("params, why", [
     ({"max_depth": 0}, "max_depth"), ({"learning_rate": 0}, "learning_rate"), ({"subsample": 1.5}, "subsample"),
     ({"min_child_weight": -1}, "min_child_weight"), ({"threads": 0}, "threads"), ({"depth": 3}, "没有这些参数"),

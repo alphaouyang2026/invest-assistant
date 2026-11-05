@@ -175,8 +175,14 @@ class XgbRankNdcgV1:
         names = list(artifact.state["features"])
         booster = xgb.Booster(params={"nthread": artifact.params["threads"]})
         booster.load_model(bytearray(artifact.state["booster"].encode()))
-        scores = booster.predict(xgb.DMatrix(features[names].to_numpy(float), feature_names=names))
-        return pd.Series(np.asarray(scores, float), index=features.index, name="score")
+        x = features[names].to_numpy(float)
+        # As with Ridge, a row missing a feature has no score: XGBoost would send a NaN down its missing-value
+        # branches and refuse an infinity outright. Only the whole rows are scored.
+        whole = np.isfinite(x).all(axis=1)
+        scores = np.full(len(x), np.nan)
+        if whole.any():
+            scores[whole] = booster.predict(xgb.DMatrix(x[whole], feature_names=names))
+        return pd.Series(scores, index=features.index, name="score")
 
     def _booster_params(self) -> dict[str, Any]:
         p = self.params
