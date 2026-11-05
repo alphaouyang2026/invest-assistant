@@ -11,7 +11,7 @@ import pandas as pd
 import pytest
 
 from app.experiments import build_trainer
-from app.experiments.contract import FEATURE_BARS, contract_hash, freeze, models, plan, replays
+from app.experiments.contract import CANDIDATE_A, FEATURE_BARS, contract_hash, freeze, models, plan, replays
 from app.experiments.folds import Fold
 from app.experiments.report import eligible_equal_weight, evidence, prediction_diagnostics, rank_ic, top_n_hit
 
@@ -151,6 +151,21 @@ def test_the_ranker_as_the_model_freezes_its_four_parameter_sets_and_the_validat
     main, first, second = models(contract)
     assert (main.search, first.search) == (search, None)
     assert [m.label for m in (main, first, second)] == ["主模型", "对照 1", "对照 2"]
+
+
+def test_candidate_a_is_the_ranker_with_ridge_and_short_reversal_over_its_own_span_and_the_rest_the_defaults():
+    """The version 06c's risk pairing locks (spec §7.7): on a calendar of
+    weekdays from late 2021, as the real one runs."""
+    weekdays = [date(2021, 9, 1) + timedelta(days=n) for n in range(1900)]
+    calendar = [day for day in weekdays if day.weekday() < 5]
+    contract = freeze(CANDIDATE_A, sessions=calendar, source=None, viewed_through=None, trainers=build_trainer)
+    assert (contract["name"], contract["test_from"], contract["test_to"]) == ("06b 候选 A v1", "2023-01-04", "2026-10-16")
+    assert contract["model"] == frozen(trainer="xgb_rank_ndcg_v1")["model"] and contract["model"]["search_budget"] == 4
+    assert [b["trainer"] for b in contract["baselines"]] == ["ridge_v1", "rule_short_reversal_v1"]
+    defaults = freeze({**CANDIDATE_A, "trainer": "ridge_v1", "baselines": ["rule_short_reversal_v1"]},
+                      sessions=calendar, source=None, viewed_through=None, trainers=build_trainer)
+    keys = set(contract) - {"model", "baselines"}
+    assert {key: contract[key] for key in keys} == {key: defaults[key] for key in keys}
 
 
 def test_a_search_grid_can_be_given_and_a_single_set_is_no_search():

@@ -68,9 +68,16 @@ function initialForm({ defaults: v, trainers }: Defaults): Form {
   };
 }
 
+/** 06b's candidate A: the defaults, with what the server says to change. */
+function candidateForm(defaults: Defaults): Form {
+  const a = defaults.candidate_a;
+  const trainer = String(a.trainer);
+  return { ...initialForm(defaults), name: String(a.name), testFrom: String(a.test_from), testTo: String(a.test_to),
+    trainer, params: paramsText(defaults.trainers[trainer]), baselines: a.baselines as string[] };
+}
+
 /** The parameter sets `trainer` tries as the model; one set is no search. */
 const searchOf = (defaults: Defaults, trainer: string) => defaults.searches[trainer] ?? [{}];
-
 
 /** "10, 25，50" → [10, 25, 50]: the basis points each stress scenario adds to the base slippage. */
 const stressList = (text: string) => text.split(/[\s,，、]+/).filter(Boolean).map(Number);
@@ -176,6 +183,8 @@ export function ExperimentWorkspace({ initialExperiment = "" }: { initialExperim
     {!defaults && !error && <p role="status">正在读取实验默认值…</p>}
     {defaults && form && <form className="card" aria-label="登记模型实验" onSubmit={e => { e.preventDefault(); void submit(); }}>
       <div className="card-h"><h2>登记模型实验</h2><span>{defaults.task.name} · {defaults.features.version}</span></div>
+      <p className="meta">06b 候选 A：XGBoost 排序作主模型，Ridge 和短期反转作对照，测试段 {String(defaults.candidate_a.test_from)} 至 {String(defaults.candidate_a.test_to)}，其余用默认值。06c 锁定的就是这一版。{" "}
+        <button type="button" className="btn" onClick={() => setForm(candidateForm(defaults))}>填入候选 A</button></p>
       <div className="form three">
         <div className="field wide"><label htmlFor="experiment-name">实验名称</label>
           <input id="experiment-name" className="input" maxLength={100} placeholder="可留空" value={form.name}

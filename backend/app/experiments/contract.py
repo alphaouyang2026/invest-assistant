@@ -118,6 +118,17 @@ DEFAULTS: Mapping[str, Any] = {
     "actions": list(SUPPORTED_ACTIONS),
 }
 
+# 06b's candidate A as one request, everything else the defaults: the
+# version 06c's risk pairing locks (spec §7.7). Never edited — a changed A
+# is a new version beside it.
+CANDIDATE_A: Mapping[str, Any] = {
+    "name": "06b 候选 A v1",
+    "test_from": "2023-01-04",
+    "test_to": "2026-10-16",
+    "trainer": "xgb_rank_ndcg_v1",
+    "baselines": ["ridge_v1", "rule_short_reversal_v1"],
+}
+
 
 @dataclass(frozen=True)
 class ExperimentPlan:

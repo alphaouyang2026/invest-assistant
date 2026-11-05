@@ -24,6 +24,8 @@ const defaults: Schemas["ExperimentDefaults"] = {
       { max_depth: 4, n_estimators: 100 }, { max_depth: 4, n_estimators: 200 }] },
   supported_actions: ["disposition", "priority"], unsupported_actions: ["target_weight", "gross_exposure"],
   task, features, viewed_through: "2026-10-19",
+  candidate_a: { name: "06b 候选 A v1", test_from: "2023-01-04", test_to: "2026-10-16", trainer: "xgb_rank_ndcg_v1",
+    baselines: ["ridge_v1", "rule_short_reversal_v1"] },
 };
 const contract: Schemas["ExperimentContract"] = {
   version: "model_experiment_v1", name: "Ridge 冒烟", task,
@@ -235,6 +237,25 @@ it("表单默认值来自服务端，提示已看过的历史，登记时按填�
   });
   expect(await screen.findByRole("region", { name: "冻结契约" })).toBeInTheDocument();
   expect(window.location.search).toContain("experiment=exp-1-aaaaaaaa");
+});
+
+it("「填入候选 A」按服务端给的候选 A 填好表单，其余是默认值，提交的就是这一版", async () => {
+  render(<ResearchWorkspace initialMode="experiment" />);
+  const form = await screen.findByRole("form", { name: "登记模型实验" });
+  fireEvent.click(within(form).getByRole("button", { name: "填入候选 A" }));
+
+  expect(within(form).getByLabelText("实验名称")).toHaveValue("06b 候选 A v1");
+  expect(within(form).getByLabelText("主模型")).toHaveValue("xgb_rank_ndcg_v1");
+  expect(within(form).getByRole("checkbox", { name: /Ridge/ })).toBeChecked();
+  expect(within(form).getByRole("checkbox", { name: /规则：短期反转/ })).toBeChecked();
+  fireEvent.click(within(form).getByRole("button", { name: "登记并运行" }));
+
+  await waitFor(() => expect(posts).toHaveLength(1));
+  expect(posts[0].body).toMatchObject({
+    name: "06b 候选 A v1", test_from: "2023-01-04", test_to: "2026-10-16", trainer: "xgb_rank_ndcg_v1",
+    trainer_params: defaults.trainers.xgb_rank_ndcg_v1, baselines: ["ridge_v1", "rule_short_reversal_v1"],
+    train_sessions: 250, test_sessions: 60, validation_sessions: 60, max_positions: 10, stress_bps: [10, 25, 50],
+  });
 });
 
 it("选了来源账户时，资金、组合规则和费用留空交给服务端复制，并说明会复制什么", async () => {

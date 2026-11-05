@@ -1510,11 +1510,16 @@ export interface components {
          * @description For the registration form: every default, the trainers and their
          *     parameters, the parameter sets each tries when it is the model, the
          *     actions a contract may declare, and how far history has been seen —
-         *     what a contract registered now would freeze.
+         *     what a contract registered now would freeze. `candidate_a` is 06b's
+         *     candidate A, what to change from the defaults to register it.
          */
         ExperimentDefaults: {
             /** Defaults */
             defaults: {
+                [key: string]: unknown;
+            };
+            /** Candidate A */
+            candidate_a: {
                 [key: string]: unknown;
             };
             /** Trainers */

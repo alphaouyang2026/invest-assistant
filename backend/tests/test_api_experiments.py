@@ -27,6 +27,8 @@ def test_register_poll_browse_retry_and_refusals(migrated_database):
         assert defaults["viewed_through"] is None and defaults["task"]["label_sessions"] == 6
         assert defaults["defaults"]["stress_bps"] == [10, 25, 50]
         assert (defaults["defaults"]["min_training_samples"], defaults["defaults"]["min_labelled_days"]) == (20_000, 24)
+        assert defaults["candidate_a"]["trainer"] == "xgb_rank_ndcg_v1"
+        assert defaults["candidate_a"]["baselines"] == ["ridge_v1", "rule_short_reversal_v1"]
 
         body = {**request(), "request_key": str(uuid4())}
         response = client.post("/api/experiments", json=body)

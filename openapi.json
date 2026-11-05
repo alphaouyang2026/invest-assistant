@@ -4775,6 +4775,11 @@
             "type": "object",
             "title": "Defaults"
           },
+          "candidate_a": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Candidate A"
+          },
           "trainers": {
             "additionalProperties": {
               "additionalProperties": true,
@@ -4830,6 +4835,7 @@
         "type": "object",
         "required": [
           "defaults",
+          "candidate_a",
           "trainers",
           "searches",
           "supported_actions",
@@ -4839,7 +4845,7 @@
           "viewed_through"
         ],
         "title": "ExperimentDefaults",
-        "description": "For the registration form: every default, the trainers and their\nparameters, the parameter sets each tries when it is the model, the\nactions a contract may declare, and how far history has been seen —\nwhat a contract registered now would freeze."
+        "description": "For the registration form: every default, the trainers and their\nparameters, the parameter sets each tries when it is the model, the\nactions a contract may declare, and how far history has been seen —\nwhat a contract registered now would freeze. `candidate_a` is 06b's\ncandidate A, what to change from the defaults to register it."
       },
       "ExperimentDetail": {
         "properties": {

@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 from app.research_jobs import RunStatus
 from app.api.research import ERRORS, call_service
 from app.api.schemas import NavPointOut, OrderOut, ResearchHolding
-from app.experiments.contract import DEFAULTS, SUPPORTED_ACTIONS, TASK, UNSUPPORTED_ACTIONS, ModelRole, Scenario
+from app.experiments.contract import CANDIDATE_A, DEFAULTS, SUPPORTED_ACTIONS, TASK, UNSUPPORTED_ACTIONS, ModelRole, Scenario
 from app.experiments.features import FEATURE_NAMES, FEATURES_V1
 from app.experiments.service import FailureKind
 from app.experiments.trainers import TRAINER_DEFAULTS, TRAINER_SEARCH
@@ -87,8 +87,10 @@ class ExperimentDefaults(BaseModel):
     """For the registration form: every default, the trainers and their
     parameters, the parameter sets each tries when it is the model, the
     actions a contract may declare, and how far history has been seen —
-    what a contract registered now would freeze."""
+    what a contract registered now would freeze. `candidate_a` is 06b's
+    candidate A, what to change from the defaults to register it."""
     defaults: dict[str, Any]
+    candidate_a: dict[str, Any]
     trainers: dict[str, dict[str, Any]]
     searches: dict[str, list[dict[str, Any]]]  # one set: no search
     supported_actions: list[str]
@@ -585,7 +587,7 @@ class DayScores(BaseModel):
 @router.get("/defaults")
 def defaults(request: Request) -> ExperimentDefaults:
     return ExperimentDefaults(
-        defaults=dict(DEFAULTS), trainers={name: dict(params) for name, params in TRAINER_DEFAULTS.items()},
+        defaults=dict(DEFAULTS), candidate_a=dict(CANDIDATE_A), trainers={name: dict(params) for name, params in TRAINER_DEFAULTS.items()},
         searches={name: [dict(entry) for entry in grid] for name, grid in TRAINER_SEARCH.items()},
         supported_actions=list(SUPPORTED_ACTIONS), unsupported_actions=list(UNSUPPORTED_ACTIONS),
         task=TaskOut(**TASK), features=FeaturesOut(version=FEATURES_V1, names=list(FEATURE_NAMES)),
