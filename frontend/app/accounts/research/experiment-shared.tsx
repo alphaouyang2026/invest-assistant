@@ -2,7 +2,7 @@ import type { Schemas } from "@/lib/api/client";
 import { experimentReason, experimentReasonTone, trainerLabel } from "@/lib/labels";
 
 /** What the model experiment's views share: how its models, replays and hashes are shown. The models' names
- * (主模型, 规则基线 1, …) come from the API, never from their keys. */
+ * (主模型, 对照 1, …) come from the API, never from their keys. */
 
 type Report = Schemas["ExperimentReport"];
 type Replay = Pick<Schemas["ReplaySummary"], "model" | "model_label" | "scenario" | "extra_bps">;
@@ -38,3 +38,7 @@ export function Reasons({ codes, capped }: { codes: unknown; capped?: unknown })
 /** 0.000384 → "0.038%": order sizes against ADV20 are small. */
 export const smallPercent = (value: number | null | undefined) =>
   value === null || value === undefined ? "—" : `${Number((value * 100).toPrecision(3))}%`;
+
+/** The parameters a search sets itself: those whose values differ between its sets. */
+export const searchedKeys = (grid: Record<string, unknown>[]) =>
+  [...new Set(grid.flatMap(Object.keys))].filter(key => new Set(grid.map(set => String(set[key]))).size > 1);

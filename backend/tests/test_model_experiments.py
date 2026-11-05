@@ -2,10 +2,12 @@
 `tests/experiment_market.py`: three ten-session test folds from S100 to
 S129 on a 30-session rolling window, decisions every five sessions from
 S100, three positions. The job reads, scores out of fold, replays through
-score top-N on the paper accounts' own trading day, and stores it all."""
+score top-N on the paper accounts' own trading day, and stores it all.
+06b's ranker runs the same way, choosing its parameters fold by fold."""
 
 from __future__ import annotations
 
+import hashlib
 from datetime import date, timedelta
 from decimal import Decimal
 from types import SimpleNamespace
@@ -30,6 +32,10 @@ from tests.experiment_market import CODES, SESSIONS, TEST_FROM, TEST_TO, experim
 
 S = SESSIONS
 DECISION_DAYS = S[100:130:5]
+# 06b's candidate A, small enough for this market: two parameter sets, a ten-session validation stretch.
+RANKER = {"trainer": "xgb_rank_ndcg_v1", "trainer_params": {"n_estimators": 20},
+          "search_grid": [{"max_depth": 2}, {"max_depth": 3}], "validation_sessions": 10,
+          "baselines": ["ridge_v1", "rule_short_reversal_v1"]}
 FOLD_TESTS = [(S[100], S[109]), (S[110], S[119]), (S[120], S[129])]
 
 
@@ -164,9 +170,9 @@ def test_an_experiment_freezes_its_contract_scores_out_of_fold_and_replays_five_
                       (3, "model", "stress", "0.0035"), (4, "model", "stress", "0.006"),
                       (5, "baseline_1", "base", "0.001")]
     assert [(r["model_label"], r["extra_bps"]) for r in report["replays"]] == [
-        ("主模型", None), ("主模型", 10), ("主模型", 25), ("主模型", 50), ("规则基线 1", None)]
+        ("主模型", None), ("主模型", 10), ("主模型", 25), ("主模型", 50), ("对照 1", None)]
     assert [r["costs"]["commission_rate"] for r in report["replays"]] == ["0.0"] * 5
-    assert [(m["key"], m["label"]) for m in report["models"]] == [("model", "主模型"), ("baseline_1", "规则基线 1")]
+    assert [(m["key"], m["label"]) for m in report["models"]] == [("model", "主模型"), ("baseline_1", "对照 1")]
     base, stressed = all_orders(env.experiments, found["id"], 1), all_orders(env.experiments, found["id"], 3)
     first_buy = next(o for o in stressed if o["kind"] == "buy" and o["status"] == "filled")
     with env.engine.connect() as con:
@@ -219,6 +225,46 @@ def test_an_experiment_freezes_its_contract_scores_out_of_fold_and_replays_five_
     assert len(replay["nav"]) == report["sessions"] == 30
 
 
+def test_the_ranker_chooses_its_parameters_fold_by_fold_and_reruns_the_same(env):
+    found = run(env, **RANKER)
+    model = found["contract"]["model"]
+    assert model["search_budget"] == 2 and model["search"]["top_n"] == 3
+    folds = {(f["model"], f["fold"]): f for f in found["fold_results"]}
+    for number in (1, 2, 3):
+        fold = folds[("model", number)]
+        assert [t["params"]["max_depth"] for t in fold["search"]] == [2, 3]
+        assert sum(t["chosen"] for t in fold["search"]) == 1
+        assert all(t["error"] is None and t["days"] == 4 for t in fold["search"])  # ten held out, six unlabelled
+        kept = next(t for t in fold["search"] if t["chosen"])
+        assert fold["artifact"]["params"] == kept["params"] and fold["artifact"]["trainer"] == "xgb_rank_ndcg_v1"
+        assert folds[("baseline_1", number)]["search"] is None and folds[("baseline_2", number)]["search"] is None
+        # The detail names the booster by its length and sha256; the whole artifact is one call away and hashes back.
+        booster = fold["artifact"]["state"]["booster"]
+        whole = env.experiments.artifact(found["id"], "model", number)
+        assert booster["omitted"] and booster["characters"] == len(whole["state"]["booster"])
+        assert booster["sha256"] == hashlib.sha256(whole["state"]["booster"].encode()).hexdigest()
+        assert ModelArtifact.from_dict(whole).hash() == fold["artifact_hash"]
+    assert found["fold_results"][-1]["artifact"] == env.experiments.artifact(found["id"], "baseline_2", 3)
+    report = found["report"]
+    assert [(m["label"], m["trainer"]) for m in report["models"]] == [
+        ("主模型", "xgb_rank_ndcg_v1"), ("对照 1", "ridge_v1"), ("对照 2", "rule_short_reversal_v1")]
+    main = report["models"][0]["diagnostics"]
+    assert main["top_n_hit_mean"] is not None and main["top_n_excess_mean"] is not None
+    assert report["timings"]["peak_memory_mb"] > 0
+    assert [(r["model"], r["scenario"]) for r in report["replays"]] == [
+        ("model", "base"), ("model", "stress"), ("model", "stress"), ("model", "stress"),
+        ("baseline_1", "base"), ("baseline_2", "base")]
+
+    again = run(env, **RANKER)
+    # The same terms; only how far history had been seen moved on — the first run's test span now has been.
+    assert again["contract"]["viewed_through"] == TEST_TO.isoformat() and found["contract"]["viewed_through"] is None
+    assert {k: v for k, v in again["contract"].items() if k != "viewed_through"} == {
+        k: v for k, v in found["contract"].items() if k != "viewed_through"}
+    assert stored_scores(env.engine, again["id"]) == stored_scores(env.engine, found["id"])
+    assert [f["artifact_hash"] for f in again["fold_results"]] == [f["artifact_hash"] for f in found["fold_results"]]
+    assert all_orders(env.experiments, again["id"]) == all_orders(env.experiments, found["id"])
+
+
 def test_training_sees_only_labels_known_by_its_cutoff_and_whole_days(env):
     stub = Stub()
     experiments = ModelExperiments(env.engine, env.market, env.jobs, trainers=with_stub(stub))
@@ -243,15 +289,16 @@ def test_training_sees_only_labels_known_by_its_cutoff_and_whole_days(env):
         assert cutoff == stub.fits[fold][0] and len(index) == len(CODES)
 
 
-def test_later_market_changes_change_neither_earlier_scores_nor_earlier_decisions(env):
-    before = run(env)
+@pytest.mark.parametrize("model", [{}, RANKER], ids=["ridge", "ranker"])
+def test_later_market_changes_change_neither_earlier_scores_nor_earlier_decisions(env, model):
+    before = run(env, **model)
     after_day = S[112]  # inside fold 2's test stretch, after its cutoff S109
     with env.engine.begin() as con:
         con.execute(text("UPDATE daily_bars SET open = CAST(open AS REAL) * 2, high = CAST(high AS REAL) * 2, "
                          "low = CAST(low AS REAL) * 2, close = CAST(close AS REAL) * 2 "
                          "WHERE date > :day AND code IN (" + ", ".join(f"'{c}'" for c in CODES[:6]) + ")"),
                     {"day": after_day.isoformat()})
-    after = run(env)
+    after = run(env, **model)
     assert after["input_fingerprint"]["sha256"] != before["input_fingerprint"]["sha256"]
     old, new = stored_scores(env.engine, before["id"]), stored_scores(env.engine, after["id"])
     assert {d: s for d, s in old.items() if d <= after_day} == {d: s for d, s in new.items() if d <= after_day}
@@ -462,7 +509,7 @@ REFUSED = [
     ({"test_from": S[20].isoformat()}, "还差"),
     ({"test_to": S[90].isoformat()}, "不能晚于"),
     ({"test_to": (S[139] + timedelta(days=1)).isoformat()}, "TOPIX"),  # a session the data has not reached
-    ({"baselines": []}, "规则基线"),
+    ({"baselines": []}, "对照模型"),
     ({"max_weight": 0}, "单只上限"),
     ({"stress_bps": []}, "压力场景要有 1 到"),
     ({"stress_bps": [0]}, "滑点加成"),

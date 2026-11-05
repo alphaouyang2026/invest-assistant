@@ -1,11 +1,12 @@
-"""A model experiment's records (migration 0008), isolated from paper
+"""A model experiment's records (migrations 0008, 0009), isolated from paper
 accounts and manual research: nothing here is a foreign key to either.
 
 - experiments: the frozen contract and its hash, the job's status, the
   research input fingerprint, what it read and when, the code version, the
   report, and what kind of failure stopped it;
 - folds: each model's fold — its dates, how many samples it was fitted on,
-  its JSON artifact and hash, or why it failed;
+  its JSON artifact and hash, or why it failed, and (06b) the parameter
+  sets it tried on its validation stretch;
 - scores: the out-of-fold scores kept, one row per model and decision day;
 - replays: each replay's costs and result (NAV with cash, figures, holdings);
 - orders and days: each replay's ledger, and what it decided day by day.
@@ -49,6 +50,7 @@ folds = Table(
     Column("artifact", JsonText),
     Column("artifact_hash", Text),
     Column("error", Text),
+    Column("search", JsonText),  # 06b: every parameter set tried and which was kept; null without a search
 )
 scores = Table(
     "model_experiment_scores", metadata,

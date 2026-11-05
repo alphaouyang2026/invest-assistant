@@ -112,6 +112,24 @@ def test_from_nothing_it_opens_holds_ranks_out_times_out_waits_out_the_model_and
     assert all(r.status == FILLED for r in last.records if r.status != PENDING)  # no limits: every order due filled
 
 
+def test_a_decision_day_with_an_empty_universe_opens_nothing_keeps_holdings_and_still_times_out() -> None:
+    """Ticket 06b: no stock eligible that day, so the model scores none —
+    the day missing from the table or there with nothing. Not one stock
+    left the universe while the others stayed: nothing is ranked out or
+    sold for a missing score, nothing is bought, and the time exit still
+    runs. The next decision day trades as usual."""
+    universes = {day: list(CODES) for day in DAYS} | {D[4]: []}
+    for empty in ({}, {D[4]: {}}):
+        scores = {D[1]: {"A": 3.0, "B": 2.0}, **empty, D[7]: {"C": 5.0, "D": 4.0, "A": 1.0}}
+        days = replay(flat_market(), strategy(scores, max_holding_sessions=4), universes)
+
+        assert planned(days[D[4]]) == []
+        assert held(days[D[5]]) == {"A": D[2], "B": D[2]}
+        assert planned(days[D[5]]) == [(SELL, "A", "time_exit"), (SELL, "B", "time_exit")]
+        assert held(days[D[6]]) == {}
+        assert planned(days[D[7]]) == [(BUY, "C", "model_rank"), (BUY, "D", "model_rank")]
+
+
 def test_a_buy_that_cannot_fill_leaves_the_place_free_for_the_next_check_day() -> None:
     """B's buy meets a limit-up open: the ledger has no B, so the strategy
     is not told it holds B, and on the next check day B is a candidate
