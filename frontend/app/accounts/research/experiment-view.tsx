@@ -134,6 +134,14 @@ function Evidence({ report }: { report: Report }) {
   </section>;
 }
 
+/** The model's parameters as the contract fixes them. With a search, the ones its sets differ in are
+ * each fold's own choice, so the base values are not shown for them. */
+function modelParamsText(model: Detail["contract"]["model"]) {
+  const searched = searchedKeys(model.search?.grid ?? []);
+  const fixed = paramSetText(model.params, Object.keys(model.params).filter(key => !searched.includes(key))) || "没有参数";
+  return searched.length ? `${fixed} · ${paramSetText(Object.fromEntries(searched.map(k => [k, "各折自选"])))}（见参数搜索）` : fixed;
+}
+
 function ContractTerms({ detail: x }: { detail: Detail }) {
   const c = x.contract;
   const r = c.portfolio_rules;
@@ -156,7 +164,7 @@ function ContractTerms({ detail: x }: { detail: Detail }) {
     ["组合规则", `初始资金 ¥${yen(Number(r.initial_cash))} · 最多 ${r.max_positions} 只 · 单只上限 ${percentText(Number(r.max_weight))}% · 现金下限 ${percentText(Number(r.cash_floor))}% · 成交额上限 ${r.max_adv20_fraction ? `${percentText(Number(r.max_adv20_fraction))}% ADV20` : "不设"}`],
     ["基础成本", `手续费率 ${percentText(Number(c.costs.commission_rate))}% · 最低手续费 ¥${yen(Number(c.costs.commission_min))} · 每边滑点 ${bps(c.costs.slippage)}`],
     ["压力场景", `${c.stress.scenarios.map(s => `每边滑点 +${s.extra_bps} bps（共 ${bps(s.slippage)}）`).join("、")}。${c.stress.basis}`],
-    ["主模型", `${trainerLabel(c.model.trainer)} · ${paramSetText(c.model.params) || "没有参数"} · 搜索预算 ${c.model.search_budget}`],
+    ["主模型", `${trainerLabel(c.model.trainer)} · ${modelParamsText(c.model)} · 搜索预算 ${c.model.search_budget}`],
     ...(c.model.search ? [["参数搜索", `验证段 ${c.model.search.validation_sessions} 个开市日 · 看前 ${c.model.search.top_n} 名 · ${
       c.model.search.grid.map((set, n) => `第 ${n + 1} 组 ${paramSetText(set, searchedKeys(c.model.search!.grid))}`).join("；")}。${
       c.model.search.basis}`] as [string, string]] : []),

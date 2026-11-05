@@ -479,7 +479,9 @@ it("排序模型的实验：契约写出参数搜索，各折写出选了哪组�
   const terms = await screen.findByRole("table", { name: "冻结契约" });
   expect(within(terms).getByRole("rowheader", { name: "参数搜索" }).nextSibling).toHaveTextContent(
     "验证段 60 个开市日 · 看前 10 名 · 第 1 组 树的最大深度 3、树的棵数 100；第 2 组 树的最大深度 3、树的棵数 200");
-  expect(within(terms).getByRole("rowheader", { name: "主模型" }).nextSibling).toHaveTextContent("搜索预算 4");
+  const main = within(terms).getByRole("rowheader", { name: "主模型" }).nextSibling;
+  expect(main).toHaveTextContent("树的最大深度 各折自选、树的棵数 各折自选（见参数搜索） · 搜索预算 4");
+  expect(main).not.toHaveTextContent("树的最大深度 3");
   expect(within(terms).getByRole("rowheader", { name: "对照模型" }).nextSibling).toHaveTextContent(
     "Ridge 回归（ridge_v1）、规则：短期反转（rule_short_reversal_v1）");
 
